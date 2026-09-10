@@ -109,8 +109,22 @@
     info:    'Informativo'
   };
 
-  var isMobile = false;
-  try { isMobile = window.innerWidth <= 575; } catch(e) { isMobile = false; }
+  // Antes: `isMobile = window.innerWidth <= 575` evaluado UNA sola vez al
+  // cargar. Quedaba congelado: al rotar el dispositivo o redimensionar la
+  // ventana la toolbar mantenia la config del tamano inicial. Se usa matchMedia
+  // con el MISMO breakpoint que el @media de arriba (575.98px) para tener una
+  // sola fuente de verdad, y su evento 'change' dispara solo al CRUZAR el
+  // breakpoint (no en cada pixel de resize), asi que no hace falta debounce.
+  var mqMobile = null;
+  try { mqMobile = window.matchMedia('(max-width: 575.98px)'); } catch(e) { mqMobile = null; }
+  var isMobile = !!(mqMobile && mqMobile.matches);
+  function toolbarPara(mobile){
+    return {
+      left: mobile ? 'prev,next' : 'prev,next today',
+      center: 'title',
+      right: mobile ? 'today' : ''
+    };
+  }
   var cal = new FullCalendar.Calendar(calendarEl, {
     initialView: 'dayGridMonth',
     initialDate: initialDate,
@@ -121,11 +135,7 @@
     firstDay: 1,
     buttonText: { today: '↻ Hoy', month: 'Mes', list: 'Lista' },
     noEventsText: 'Sin eventos para mostrar',
-    headerToolbar: {
-      left: isMobile ? 'prev,next' : 'prev,next today',
-      center: 'title',
-      right: isMobile ? 'today' : ''
-    },
+    headerToolbar: toolbarPara(isMobile),
     height: 'auto',
     contentHeight: isMobile ? 560 : 720,
     expandRows: true,
@@ -213,6 +223,23 @@
     }
   });
   cal.render();
+
+  // Reconfigura la toolbar cuando se cruza el breakpoint (rotacion / resize).
+  function aplicarModo(mobile){
+    if (mobile === isMobile) return;
+    isMobile = mobile;
+    cal.setOption('headerToolbar', toolbarPara(isMobile));
+    cal.setOption('contentHeight', isMobile ? 560 : 720);
+  }
+  if (mqMobile){
+    if (mqMobile.addEventListener) {
+      mqMobile.addEventListener('change', function(ev){ aplicarModo(!!ev.matches); });
+    } else if (mqMobile.addListener) {
+      // Safari < 14
+      mqMobile.addListener(function(ev){ aplicarModo(!!ev.matches); });
+    }
+  }
+
   // Vista switcher
   document.querySelectorAll('[data-view]').forEach(function(btn){
     btn.addEventListener('click', function(){ var v = btn.getAttribute('data-view'); if(v){ cal.changeView(v); } });
