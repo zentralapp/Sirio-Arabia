@@ -4920,15 +4920,10 @@ def notificaciones():
 
     try:
 
-        active_alerts = _compute_alerts_for_all_clients(
-
-            now_dt,
-
-            include_delivery_alerts=True,
-
-            include_inactivity_alerts=True,
-
-        )
+        # Notificaciones muestra SOLO cobranzas atrasadas, igual que el contador de la campana.
+        # Se usan los defaults (include_delivery_alerts=False, include_inactivity_alerts=False)
+        # para que el numero de la campana y el listado de esta pagina coincidan siempre.
+        active_alerts = _compute_alerts_for_all_clients(now_dt)
 
     except Exception:
 
