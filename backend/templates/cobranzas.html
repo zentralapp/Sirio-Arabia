@@ -170,18 +170,32 @@
 
     .cob-search-input { min-height: 40px; }
 
-    /* ── H10: la banda 768–991.98px no tenía dueño ─────────────────────────
+    /* ── H10: la banda 768–1199.98px no tenía dueño ────────────────────────
        Medido en /deudas a 900px de viewport ANTES del fix: #cobTable = 1361px
-       de ancho natural dentro de un contenedor de 846px => 515px de scroll
-       horizontal, el peor de la app. La causa son los anchos fijos de arriba
+       de ancho natural dentro de un contenedor de 850px => 519px de scroll
+       horizontal. La causa son los anchos fijos de arriba
        (.col-date 120px, .col-forma 110px, .col-money 118px, padding .65rem por
        lado, badge de "Días" en nowrap): están calculados para escritorio y en
        esta banda son justamente los que estiran la tabla.
+
+       H10b — techo subido de 991.98px a 1199.98px. Arriba de 992px aparece el
+       sidebar (~200px), así que el contenedor SE ENCOGE al cruzar 992 (medido:
+       941px a 991 -> 777px a 992) mientras la tabla volvía a su ancho natural
+       de 1361px: 584px de scroll, peor que la banda que se había arreglado.
+       El techo en 1199.98 hace que la compactación cubra 992–1199 también.
+       A partir de 1200px no cambia NADA.
+
+       Los anchos de columna de este bloque están elegidos para el borde
+       INFERIOR de la banda (768–991, sin sidebar), que es donde la tabla tiene
+       que quedar legible; en 992–1199 el contenedor es más chico que a 991
+       (sidebar) así que ahí queda scroll residual a propósito — acortarlo más
+       requeriría apretar también 768–991, que hoy ya entra casi justo.
+
        Fix conservador y H2-SAFE: NO cambia de estrategia (sigue siendo tabla
        real con scroll horizontal, no pasa a tarjetas ni toca
        `table-mobile-cards`); sólo baja el ancho que la tabla NECESITA para que
        el scroll sea corto en vez de brutal.                                  */
-    @media (min-width: 768px) and (max-width: 991.98px) {
+    @media (min-width: 768px) and (max-width: 1199.98px) {
       .table-cobranzas thead th,
       .table-cobranzas tbody td { padding-left: .3rem; padding-right: .3rem; }
 

@@ -779,21 +779,33 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   H10 — la banda 768–991.98px no tenía dueño
+   H10 — la banda 768–1199.98px no tenía dueño
    ───────────────────────────────────────────────────────────────────────────
    Toda la compactación de tabla de esta hoja está en `max-width:767.98px`, y
    arriba de 768px no había NINGUNA regla de tabla: la tabla volvía a fuente
    heredada de 16px y padding de celda de ~10.4px por lado. Medido en /deudas a
    900px de viewport: `#cobTable` = 1361px de ancho natural dentro de un
-   contenedor de 846px => 515px de scroll horizontal, el peor de la app (a
-   1512px la misma tabla entra sin scroll, y abajo de 768px ya está compactada).
+   contenedor de 850px => 519px de scroll horizontal (abajo de 768px ya está
+   compactada).
+
+   H10b — el techo se subió de 991.98px a 1199.98px.
+   1361px NO era "el ancho en el viewport más chico sin ser móvil": es
+   simplemente el ancho natural SIN compactar, y aparece igual en toda la banda
+   de arriba. Y a partir de 992px entra el sidebar (`@media (min-width:992px)`,
+   ~200px), así que el contenedor NO crece de forma monótona con el viewport:
+   hay un salto HACIA ABAJO en 992. Medido en /deudas con el techo en 991.98:
+     991 -> tabla  969px / contenedor 941px / scroll  28px   (compactada)
+     992 -> tabla 1361px / contenedor 777px / scroll 584px   (SIN compactar)
+   O sea la peor banda de la app pasó a ser 992–1199, peor que la que se
+   arregló. Con el techo en 1199.98 la compactación cubre también esa banda.
+   A partir de 1200px no cambia NADA (escritorio intacto).
 
    Fix conservador y H2-SAFE: NO cambia de estrategia (sigue siendo tabla real
    con scroll horizontal, no pasa a tarjetas ni toca `table-mobile-cards`).
    Sólo reduce el ancho que la tabla NECESITA en esta banda, para que el scroll
    sea corto en vez de brutal. La compactación es la misma que ya se usa abajo
    de 768px, un punto menos agresiva.                                          */
-@media (min-width: 768px) and (max-width: 991.98px){
+@media (min-width: 768px) and (max-width: 1199.98px){
   .table{font-size:13px}
   .table th, .table td{padding:.35rem .45rem}
   .table thead th{font-size:12px}
