@@ -1,8 +1,15 @@
 from datetime import datetime, timedelta, date
 from enum import Enum
+from typing import NamedTuple, Optional
 from .extensions import db
 from flask_login import UserMixin
+from sqlalchemy import and_, func, or_, select
 from werkzeug.security import generate_password_hash, check_password_hash
+
+try:
+    from zoneinfo import ZoneInfo  # Python 3.9+
+except ImportError:  # pragma: no cover - solo entornos < 3.9
+    ZoneInfo = None
 
 
 class AppUser(db.Model, UserMixin):
@@ -265,13 +272,32 @@ class Collection(db.Model):
     fecha_pago_estimada = db.Column(db.DateTime)
     fecha_cobro_efectiva = db.Column(db.DateTime)
 
+    # --- Estado y vencimiento: TODO delega en la fuente única del final de
+    # --- este archivo. No reimplementes la lógica acá ni en los templates.
+
+    @property
+    def entrega_efectiva(self):
+        """Entrega efectiva resuelta (regla 2 de la fuente única)."""
+        return entrega_efectiva_de(self)
+
+    @property
+    def vencimiento_efectivo(self):
+        """Vencimiento efectivo resuelto (regla 1 de la fuente única).
+
+        Es el valor que deben consumir los templates y el JS: ni el Jinja ni
+        el navegador vuelven a derivar el vencimiento.
+        """
+        return vencimiento_efectivo_de(self)
+
     @property
     def status(self):
-        if self.fecha_cobro_efectiva:
-            return "COBRADO"
-        if self.fecha_pago_estimada and datetime.utcnow() > self.fecha_pago_estimada:
-            return "ATRASADO"
-        return "EN CAMINO"
+        """COBRADO | ATRASADO | A_COBRAR | EN_CAMINO (regla 5).
+
+        OJO: antes devolvía "EN CAMINO" (con espacio) y no existía el bucket
+        A_COBRAR. Ahora devuelve las mismas claves que usan los filtros de
+        /deudas y las queries SQL, para que no haya dos vocabularios.
+        """
+        return estado_cobranza_de(self)
 
 
 class CollectionPayment(db.Model):
@@ -375,4 +401,218 @@ class ClientAlertState(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint("client_id", "order_id", "kind", name="uq_client_alert_state"),
+    )
+
+
+# ===========================================================================
+#  FUENTE ÚNICA DE VERDAD — vencimiento efectivo de una cobranza y su estado
+# ===========================================================================
+#
+#  ESTA ES *LA* DEFINICIÓN. NO LA DUPLIQUES.
+#
+#  Antes de esto había 8 implementaciones distintas del mismo concepto
+#  (property del modelo, 3 queries SQL, badge Jinja, JS del navegador, orden
+#  visual) y se contradecían entre sí: había filas cuyo badge decía ATRASADO
+#  pero que el filtro "Atrasado" nunca devolvía, y que las notificaciones no
+#  veían. Si necesitás el vencimiento o el estado de una deuda —en SQL, en
+#  Python, en un template o en JS— pasá por acá. No copies la lógica.
+#
+#  REGLAS (idénticas en el mundo SQL y en el mundo Python):
+#
+#  1. Vencimiento efectivo:
+#         Collection.fecha_pago_estimada
+#         si es NULL  ->  entrega efectiva + plazo de pago (días)
+#         si tampoco hay entrega efectiva  ->  NULL (no hay vencimiento)
+#     NO se persiste nada: la derivación es al vuelo, en cada consulta.
+#     Se aceptó explícitamente el costo (los índices sobre
+#     collection.fecha_pago_estimada no aplican a este filtro). Es un CRM
+#     interno de bajo volumen.
+#
+#  2. Entrega efectiva:
+#         coalesce(LogisticsStatus.fecha_entrega_efectiva,
+#                  Collection.fecha_entrega_efectiva,
+#                  LogisticsStatus.fecha_entrega_estimada)
+#
+#  3. Plazo de pago (días):
+#         coalesce(Order.plazo_pago_dias,
+#                  Company.plazo_pago_promedio_dias,
+#                  30)
+#
+#  4. "Hoy" es SIEMPRE la fecha local de Argentina (ver TZ_NEGOCIO). Que una
+#     deuda esté atrasada es un concepto de negocio, y el negocio vive en
+#     Argentina: vence al final del día argentino, no del día UTC. Por eso
+#     acá NO se usa datetime.utcnow() (utcnow queda sólo para timestamps de
+#     auditoría: created_at / updated_at / uploaded_at).
+#
+#  5. Los cuatro estados son mutuamente excluyentes y exhaustivos:
+#         COBRADO   -> hay fecha_cobro_efectiva
+#         ATRASADO  -> sin cobrar y vencimiento efectivo < hoy
+#         A_COBRAR  -> sin cobrar, no vencido y ya entregado (entrega <= hoy)
+#         EN_CAMINO -> sin cobrar, no vencido y todavía no entregado
+#     PARCIAL es ORTOGONAL (un flag, no un estado): una deuda con pagos
+#     parciales o borradores puede estar en cualquiera de los cuatro. Se
+#     resuelve aparte (partial_exists / partial_order_ids) y no se toca acá.
+# ===========================================================================
+
+TZ_NEGOCIO = "America/Argentina/Buenos_Aires"
+PLAZO_PAGO_DIAS_DEFAULT = 30
+
+ESTADOS_COBRANZA = ("COBRADO", "ATRASADO", "A_COBRAR", "EN_CAMINO")
+
+
+def hoy_negocio() -> date:
+    """Fecha de 'hoy' según el huso del negocio (Argentina).
+
+    Único 'hoy' válido para decidir si una deuda está vencida.
+    """
+    if ZoneInfo is None:
+        return date.today()
+    return datetime.now(ZoneInfo(TZ_NEGOCIO)).date()
+
+
+def _as_date(value) -> Optional[date]:
+    """Normaliza datetime | date | None -> date | None."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return None
+
+
+# ---------------------------------------------------------------------------
+#  Mundo Python: para una fila ya cargada en memoria (ORM / templates)
+# ---------------------------------------------------------------------------
+
+def plazo_pago_dias_de(order) -> int:
+    """Regla 3 en Python. Debe dar lo mismo que plazo_pago_dias_expr()."""
+    if order is not None:
+        propio = getattr(order, "plazo_pago_dias", None)
+        if propio is not None:
+            return int(propio)
+        company = getattr(order, "company", None)
+        if company is not None:
+            de_empresa = getattr(company, "plazo_pago_promedio_dias", None)
+            if de_empresa is not None:
+                return int(de_empresa)
+    return PLAZO_PAGO_DIAS_DEFAULT
+
+
+def entrega_efectiva_de(coll) -> Optional[datetime]:
+    """Regla 2 en Python. Debe dar lo mismo que entrega_efectiva_expr()."""
+    if coll is None:
+        return None
+    order = getattr(coll, "order", None)
+    logistics = getattr(order, "logistics", None) if order is not None else None
+    return (
+        getattr(logistics, "fecha_entrega_efectiva", None)
+        or getattr(coll, "fecha_entrega_efectiva", None)
+        or getattr(logistics, "fecha_entrega_estimada", None)
+    )
+
+
+def vencimiento_efectivo_de(coll) -> Optional[datetime]:
+    """Regla 1 en Python. Debe dar lo mismo que vencimiento_efectivo_expr()."""
+    if coll is None:
+        return None
+    persistido = getattr(coll, "fecha_pago_estimada", None)
+    if persistido is not None:
+        return persistido
+    entrega = entrega_efectiva_de(coll)
+    if entrega is None:
+        return None
+    return entrega + timedelta(days=plazo_pago_dias_de(getattr(coll, "order", None)))
+
+
+def estado_cobranza_de(coll, hoy: Optional[date] = None) -> str:
+    """Regla 5 en Python. Debe dar lo mismo que condiciones_estado_cobranza()."""
+    if getattr(coll, "fecha_cobro_efectiva", None):
+        return "COBRADO"
+    if hoy is None:
+        hoy = hoy_negocio()
+    vencimiento = _as_date(vencimiento_efectivo_de(coll))
+    if vencimiento is not None and vencimiento < hoy:
+        return "ATRASADO"
+    entrega = _as_date(entrega_efectiva_de(coll))
+    if entrega is not None and entrega <= hoy:
+        return "A_COBRAR"
+    return "EN_CAMINO"
+
+
+# ---------------------------------------------------------------------------
+#  Mundo SQL: expresiones reutilizables para filtrar/ordenar en queries
+# ---------------------------------------------------------------------------
+#  PRECONDICIÓN: la query tiene que tener Collection, Order y LogisticsStatus
+#  en el FROM (join / outerjoin). Company NO hace falta joinearla: se resuelve
+#  con un subquery correlacionado, así estas expresiones se pueden pegar en
+#  cualquier query sin obligar a cambiar sus joins.
+# ---------------------------------------------------------------------------
+
+def entrega_efectiva_expr():
+    """Regla 2 en SQL (timestamp)."""
+    return func.coalesce(
+        LogisticsStatus.fecha_entrega_efectiva,
+        Collection.fecha_entrega_efectiva,
+        LogisticsStatus.fecha_entrega_estimada,
+    )
+
+
+def plazo_pago_dias_expr():
+    """Regla 3 en SQL (entero de días)."""
+    # .correlate(Order) es OBLIGATORIO: sin eso SQLAlchemy mete "order" en el
+    # FROM del subquery y devuelve más de una fila (producto cartesiano).
+    plazo_de_empresa = (
+        select(Company.plazo_pago_promedio_dias)
+        .where(Company.id == Order.company_id)
+        .correlate(Order)
+        .scalar_subquery()
+    )
+    return func.coalesce(
+        Order.plazo_pago_dias,
+        plazo_de_empresa,
+        PLAZO_PAGO_DIAS_DEFAULT,
+    )
+
+
+def vencimiento_efectivo_expr():
+    """Regla 1 en SQL. Devuelve un DATE (o NULL si no hay vencimiento)."""
+    return func.coalesce(
+        func.date(Collection.fecha_pago_estimada),
+        func.date(entrega_efectiva_expr()) + plazo_pago_dias_expr(),
+    )
+
+
+class CondicionesCobranza(NamedTuple):
+    """Condiciones SQL de los 4 estados + las expresiones de fecha crudas."""
+
+    vencimiento: object
+    entrega: object
+    cobrado: object
+    atrasado: object
+    a_cobrar: object
+    en_camino: object
+
+
+def condiciones_estado_cobranza(hoy: Optional[date] = None) -> CondicionesCobranza:
+    """Regla 5 en SQL. Debe dar lo mismo que estado_cobranza_de()."""
+    if hoy is None:
+        hoy = hoy_negocio()
+
+    vencimiento = vencimiento_efectivo_expr()
+    entrega = entrega_efectiva_expr()
+
+    sin_cobrar = Collection.fecha_cobro_efectiva.is_(None)
+    # `vencimiento IS NOT NULL` nunca es NULL, así que estas dos condiciones
+    # son complementarias exactas (no hay agujero por lógica trivaluada).
+    vencido = and_(vencimiento.isnot(None), vencimiento < hoy)
+    no_vencido = or_(vencimiento.is_(None), vencimiento >= hoy)
+    ya_entregado = and_(entrega.isnot(None), func.date(entrega) <= hoy)
+    no_entregado = or_(entrega.is_(None), func.date(entrega) > hoy)
+
+    return CondicionesCobranza(
+        vencimiento=vencimiento,
+        entrega=entrega,
+        cobrado=Collection.fecha_cobro_efectiva.isnot(None),
+        atrasado=and_(sin_cobrar, vencido),
+        a_cobrar=and_(sin_cobrar, no_vencido, ya_entregado),
+        en_camino=and_(sin_cobrar, no_vencido, no_entregado),
     )

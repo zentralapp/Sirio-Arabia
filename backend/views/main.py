@@ -40,6 +40,15 @@ from ..extensions import db
 
 from ..models import Client, Company, ClientCompanyLink, ClientCompanyBalance, RelationStatus, Order, LogisticsStatus, Collection, CollectionPayment, PaymentMethod, ClientBranch, ClientDeliveryPlace, ClientBirthday, OrderAttachment, ClientDocument, CompanyDocument, CompanyProductSheet, ClientAlertState, CommissionState, AppUser, CollectionDraft, OrderDraft
 
+# FUENTE ÚNICA DE VERDAD del vencimiento efectivo y del estado de una
+# cobranza. Está definida en backend/models.py (bloque del final del
+# archivo). NO reimplementes nada de esto acá: consumila.
+from ..models import (
+    condiciones_estado_cobranza,
+    estado_cobranza_de,
+    vencimiento_efectivo_expr,
+)
+
 from sqlalchemy import func, text, or_, and_
 
 from sqlalchemy.exc import OperationalError
@@ -1933,12 +1942,11 @@ def _compute_alerts_for_all_clients(
 
             .join(Company, Order.company_id == Company.id)
 
-            .filter(Collection.fecha_cobro_efectiva.is_(None))
-
-            .filter(Collection.fecha_pago_estimada.isnot(None))
-
-            # Alinear exactamente con /deudas (ATRASADO): vencimiento por fecha local.
-            .filter(func.date(Collection.fecha_pago_estimada) < now_date_local)
+            # ATRASADO según la FUENTE ÚNICA DE VERDAD (backend/models.py).
+            # Antes esto era un copy-paste de la condición de /deudas y exigía
+            # fecha_pago_estimada IS NOT NULL, así que las deudas con
+            # vencimiento derivado quedaban invisibles para las notificaciones.
+            .filter(condiciones_estado_cobranza(now_date_local).atrasado)
 
             .filter(Order.deleted_at.is_(None))
 
@@ -3580,63 +3588,10 @@ def index():
 
     partial_exists = or_(partial_pay_exists, partial_draft_exists)
 
-    has_due = Collection.fecha_pago_estimada.isnot(None)
-
-    no_due = Collection.fecha_pago_estimada.is_(None)
-
-    entrega_efectiva_expr = func.coalesce(
-
-        LogisticsStatus.fecha_entrega_efectiva,
-
-        Collection.fecha_entrega_efectiva,
-
-        LogisticsStatus.fecha_entrega_estimada,
-
-    )
-
-    due_overdue = and_(
-
-        has_due,
-
-        func.date(Collection.fecha_pago_estimada) < today_local,
-
-    )
-
-    due_not_overdue = or_(
-
-        no_due,
-
-        func.date(Collection.fecha_pago_estimada) >= today_local,
-
-    )
-
-    en_camino_effective = and_(
-
-        Collection.fecha_cobro_efectiva.is_(None),
-
-        due_not_overdue,
-
-        or_(
-
-            entrega_efectiva_expr.is_(None),
-
-            func.date(entrega_efectiva_expr) > today_local,
-
-        ),
-
-    )
-
-    a_cobrar_effective = and_(
-
-        Collection.fecha_cobro_efectiva.is_(None),
-
-        due_not_overdue,
-
-        entrega_efectiva_expr.isnot(None),
-
-        func.date(entrega_efectiva_expr) <= today_local,
-
-    )
+    # Estados de cobranza según la FUENTE ÚNICA DE VERDAD (backend/models.py).
+    # Antes acá había un copy-paste de la condición de /deudas; los KPIs del
+    # dashboard contaban distinto que el listado.
+    cond_cob = condiciones_estado_cobranza(today_local)
 
     def _coll_by_status(status_key: str):
 
@@ -3644,23 +3599,25 @@ def index():
 
         if status_key == "COBRADO":
 
-            return q_st.filter(Collection.fecha_cobro_efectiva.isnot(None))
+            return q_st.filter(cond_cob.cobrado)
 
         if status_key == "EN_CAMINO":
 
-            return q_st.filter(en_camino_effective)
+            return q_st.filter(cond_cob.en_camino)
 
         if status_key == "ATRASADO":
 
-            return q_st.filter(and_(Collection.fecha_cobro_efectiva.is_(None), due_overdue))
+            return q_st.filter(cond_cob.atrasado)
 
         if status_key == "PARCIAL":
 
+            # PARCIAL es ortogonal a los 4 estados (ver models.py): no se
+            # deriva del vencimiento, sino de la existencia de pagos/borradores.
             return q_st.filter(and_(Collection.fecha_cobro_efectiva.is_(None), partial_exists))
 
         if status_key == "A_COBRAR":
 
-            return q_st.filter(and_(a_cobrar_effective, ~partial_exists))
+            return q_st.filter(and_(cond_cob.a_cobrar, ~partial_exists))
 
         return q_st.filter(text("1=0"))
 
@@ -12045,87 +12002,37 @@ def deudas_pendientes():
 
 
 
-        has_due = Collection.fecha_pago_estimada.isnot(None)
-
-        no_due = Collection.fecha_pago_estimada.is_(None)
-
-        entrega_efectiva_expr = func.coalesce(
-            LogisticsStatus.fecha_entrega_efectiva,
-            Collection.fecha_entrega_efectiva,
-            LogisticsStatus.fecha_entrega_estimada,
-        )
-
-        today_local = now_date_local
-
-        due_overdue = and_(
-
-            has_due,
-
-            func.date(Collection.fecha_pago_estimada) < today_local,
-
-        )
-
-        due_not_overdue = or_(
-
-            no_due,
-
-            func.date(Collection.fecha_pago_estimada) >= today_local,
-
-        )
-
-        en_camino_effective = and_(
-
-            Collection.fecha_cobro_efectiva.is_(None),
-
-            due_not_overdue,
-
-            or_(
-
-                entrega_efectiva_expr.is_(None),
-
-                func.date(entrega_efectiva_expr) > today_local,
-
-            ),
-
-        )
-
-        a_cobrar_effective = and_(
-
-            Collection.fecha_cobro_efectiva.is_(None),
-
-            due_not_overdue,
-
-            entrega_efectiva_expr.isnot(None),
-
-            func.date(entrega_efectiva_expr) <= today_local,
-
-        )
-
-
+        # Estados de cobranza según la FUENTE ÚNICA DE VERDAD (backend/models.py).
+        # El vencimiento efectivo ya viene derivado (fecha_pago_estimada, o
+        # entrega efectiva + plazo de pago), así que el filtro coincide con el
+        # badge que pinta el template. Antes no coincidía: había filas con
+        # badge ATRASADO que este filtro nunca devolvía.
+        cond_cob = condiciones_estado_cobranza(now_date_local)
 
         # Filtros excluyentes (no mezclar)
 
         if "COBRADO" in estados:
 
-            conds.append(Collection.fecha_cobro_efectiva.isnot(None))
+            conds.append(cond_cob.cobrado)
 
 
 
         if "EN_CAMINO" in estados:
 
-            conds.append(en_camino_effective)
+            conds.append(cond_cob.en_camino)
 
 
 
         if "ATRASADO" in estados:
 
-            conds.append(and_(Collection.fecha_cobro_efectiva.is_(None), due_overdue))
+            conds.append(cond_cob.atrasado)
 
 
 
         if "PARCIAL" in estados:
 
-            # Parcial = sin cobro + con pagos/borrador (puede estar vigente o vencido)
+            # Parcial = sin cobro + con pagos/borrador (puede estar vigente o vencido).
+            # Es ORTOGONAL a los 4 estados, no se deriva del vencimiento.
 
             conds.append(and_(Collection.fecha_cobro_efectiva.is_(None), partial_exists))
 
@@ -12135,7 +12042,7 @@ def deudas_pendientes():
 
             # A cobrar = sin cobro + entrega efectiva hoy/pasada + vencimiento NO vencido
 
-            conds.append(and_(a_cobrar_effective, ~partial_exists))
+            conds.append(and_(cond_cob.a_cobrar, ~partial_exists))
 
         if conds:
 
@@ -12235,8 +12142,6 @@ def deudas_pendientes():
 
     sort_col = None
 
-    use_python_vencimiento_asc = bool(sort == "vencimiento" and direction == "asc")
-
     sort_entrega_expr = func.coalesce(
         LogisticsStatus.fecha_entrega_efectiva,
         Collection.fecha_entrega_efectiva,
@@ -12249,131 +12154,31 @@ def deudas_pendientes():
 
     elif sort == "vencimiento":
 
-        sort_col = func.coalesce(Collection.fecha_pago_estimada, sort_entrega_expr)
+        # Ordenar por el vencimiento EFECTIVO de la FUENTE ÚNICA DE VERDAD.
+        # Antes había dos ordenamientos distintos y ninguno era el de los
+        # filtros: en SQL se usaba coalesce(fecha_pago_estimada, entrega) SIN
+        # sumar el plazo de pago, y para el caso asc se reordenaba en Python
+        # con una tercera copia de la derivación. Ahora SQL alcanza para las
+        # dos direcciones, así que se borró el camino en Python.
+        sort_col = vencimiento_efectivo_expr()
 
-    if sort_col is not None and not use_python_vencimiento_asc:
+    if sort_col is not None:
 
         sort_dir = sort_col.desc() if direction == "desc" else sort_col.asc()
 
         q = q.order_by(sort_col.is_(None).asc(), sort_dir, Collection.id.desc())
 
-    elif not use_python_vencimiento_asc:
+    else:
 
         q = q.order_by(Collection.id.desc())
 
-    if use_python_vencimiento_asc:
+    try:
 
-        def _as_date(v):
+        items = q.limit(per_page).offset((page - 1) * per_page).all()
 
-            if v is None:
+    except Exception:
 
-                return None
-
-            try:
-
-                return v.date() if hasattr(v, "date") else v
-
-            except Exception:
-
-                return None
-
-        def _effective_venc_date(coll):
-
-            try:
-
-                due = _as_date(getattr(coll, "fecha_pago_estimada", None))
-
-                if due is not None:
-
-                    return due
-
-                o = getattr(coll, "order", None)
-
-                lg = getattr(o, "logistics", None) if o is not None else None
-
-                entrega = (
-
-                    getattr(lg, "fecha_entrega_efectiva", None)
-
-                    or getattr(coll, "fecha_entrega_efectiva", None)
-
-                    or getattr(lg, "fecha_entrega_estimada", None)
-
-                )
-
-                entrega = _as_date(entrega)
-
-                if entrega is None:
-
-                    return None
-
-                plazo = 30
-
-                try:
-
-                    if o is not None and getattr(o, "plazo_pago_dias", None) is not None:
-
-                        plazo = int(o.plazo_pago_dias or 0)
-
-                    elif (
-
-                        o is not None
-
-                        and getattr(o, "company", None) is not None
-
-                        and getattr(o.company, "plazo_pago_promedio_dias", None) is not None
-
-                    ):
-
-                        plazo = int(o.company.plazo_pago_promedio_dias or 0)
-
-                except Exception:
-
-                    plazo = 30
-
-                return entrega + timedelta(days=int(plazo or 0))
-
-            except Exception:
-
-                return None
-
-        try:
-
-            all_items = q.order_by(Collection.id.desc()).all()
-
-        except Exception:
-
-            all_items = q.all()
-
-        decorated = []
-
-        for coll in all_items:
-
-            eff_due = _effective_venc_date(coll)
-
-            coll_id = int(getattr(coll, "id", 0) or 0)
-
-            decorated.append((eff_due is None, eff_due, -coll_id, coll))
-
-        decorated.sort(key=lambda t: (t[0], t[1], t[2]))
-
-        sorted_items = [t[3] for t in decorated]
-
-        start = max(0, (page - 1) * per_page)
-
-        end = start + per_page
-
-        items = sorted_items[start:end]
-
-    else:
-
-        try:
-
-            items = q.limit(per_page).offset((page - 1) * per_page).all()
-
-        except Exception:
-
-            items = q.limit(per_page).all()
+        items = q.limit(per_page).all()
 
 
 
@@ -12501,7 +12306,10 @@ def deudas_pendientes():
 
                 is_cobrado = bool(getattr(c, "fecha_cobro_efectiva", None))
 
-                is_overdue = bool(getattr(c, "status", None) == "ATRASADO")
+                # FUENTE ÚNICA DE VERDAD, con el mismo "hoy" que el resto del
+                # request (antes esto salía de Collection.status, que comparaba
+                # contra datetime.utcnow() y no conocía el bucket A_COBRAR).
+                is_overdue = bool(estado_cobranza_de(c, now_date_local) == "ATRASADO")
 
                 is_partial = bool(oid and (oid in partial_order_ids))
 
@@ -12570,6 +12378,12 @@ def deudas_pendientes():
         items=items,
 
         now_date=now_date_local,
+
+        # El template NO deriva más el vencimiento ni el estado: consume este
+        # helper, que es la FUENTE ÚNICA DE VERDAD (backend/models.py) evaluada
+        # con el MISMO "hoy" que usaron los filtros SQL de arriba. El
+        # vencimiento sale de la property Collection.vencimiento_efectivo.
+        estado_cobranza=(lambda coll: estado_cobranza_de(coll, now_date_local)),
 
         partial_order_ids=partial_order_ids,
 

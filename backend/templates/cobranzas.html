@@ -472,6 +472,20 @@
 
         {% for c in items %}
 
+          {#
+            FUENTE ÚNICA DE VERDAD (backend/models.py). Este template NO deriva
+            ni el vencimiento ni el estado: los consume ya resueltos por el
+            backend, con el mismo "hoy" (hora de Argentina) que usaron los
+            filtros SQL. Si te da ganas de escribir acá un
+            "entrega + plazo_pago_dias", NO: ese cálculo vive en models.py, y
+            duplicarlo es exactamente el bug que esto vino a arreglar.
+          #}
+          {% set entrega_input = c.entrega_efectiva %}
+
+          {% set venc_value = c.vencimiento_efectivo %}
+
+          {% set estado = estado_cobranza(c) %}
+
           <tr data-cliente="{{ ((c.order.client.apellido or '') ~ ' ' ~ (c.order.client.nombre or ''))|lower }}" data-empresa="{{ (c.order.company.nombre or '')|lower }}">
 
             <td class="col-client">{{ c.order.client.apellido }}
@@ -486,18 +500,6 @@
             <td class="d-none d-md-table-cell col-orderdate">{{ fecha_compra_ref.strftime('%d/%m/%Y') if fecha_compra_ref else '' }}</td>
 
             <td class="d-none d-md-table-cell col-date col-entrega">
-
-              {% set lg_entrega_input = (c.order.logistics.fecha_entrega_efectiva if c.order and c.order.logistics else None) %}
-
-              {% set lg_entrega_est = (c.order.logistics.fecha_entrega_estimada if c.order and c.order.logistics else None) %}
-
-              {% set entrega_input = (lg_entrega_input if lg_entrega_input else (c.fecha_entrega_efectiva if c and c.fecha_entrega_efectiva else None)) %}
-
-              {% if not entrega_input %}
-
-                {% set entrega_input = (lg_entrega_est if lg_entrega_est else None) %}
-
-              {% endif %}
 
               <input name="fecha_entrega_efectiva" type="text" data-datepicker class="form-control form-control-sm js-cob-entrega"
 
@@ -569,35 +571,21 @@
 
             <td class="col-date">
 
-                {% set venc_value = (c.fecha_pago_estimada if c and c.fecha_pago_estimada else None) %}
-
-                {% if not venc_value and entrega_input %}
-
-                  {% set plazo_dias = (c.order.plazo_pago_dias if c.order and c.order.plazo_pago_dias is not none else (c.order.company.plazo_pago_promedio_dias if c.order and c.order.company and c.order.company.plazo_pago_promedio_dias is not none else 30)) %}
-
-                  {% set venc_value = (entrega_input + timedelta(days=plazo_dias|int)) %}
-
-                {% endif %}
-
+                {# venc_value ya viene de c.vencimiento_efectivo (fuente única). #}
                 <input name="pago_estimado" type="text" data-datepicker class="form-control form-control-sm js-cob-estimado" placeholder="Vencimiento" value="{{ venc_value.strftime('%Y-%m-%d') if venc_value else '' }}" form="upd{{ c.order.id }}">
 
             </td>
 
             <td>
 
-              {% set lg_entrega_dias = (c.order.logistics.fecha_entrega_efectiva if c.order and c.order.logistics else None) %}
+              {# Todo sale de la fuente única: entrega_input, venc_value y estado. #}
+              {% set entrega_dias = entrega_input %}
 
-              {% set coll_entrega_dias = (c.fecha_entrega_efectiva if c and c.fecha_entrega_efectiva else None) %}
+              {% set due_days = venc_value %}
 
-              {% set entrega_dias = (entrega_input if entrega_input else (lg_entrega_dias if lg_entrega_dias else coll_entrega_dias)) %}
+              {% set is_a_cobrar_days = (estado == 'A_COBRAR') %}
 
-              {% set due_days = (venc_value if venc_value else None) %}
-
-              {% set is_overdue_days = (not c.fecha_cobro_efectiva and due_days and now_date and (due_days.date() < now_date)) %}
-
-              {% set is_a_cobrar_days = (not c.fecha_cobro_efectiva and (not is_overdue_days) and entrega_dias and now_date and (entrega_dias.date() <= now_date)) %}
-
-              {% set is_en_camino_days = (not c.fecha_cobro_efectiva and (not is_overdue_days) and ((not entrega_dias) or (entrega_dias.date() > now_date))) %}
+              {% set is_en_camino_days = (estado == 'EN_CAMINO') %}
 
               {% if is_en_camino_days %}
 
@@ -683,21 +671,10 @@
 
             <td class="col-status">
 
+              {# PARCIAL es ortogonal: se pinta ADEMÁS del estado, no en vez de. #}
               {% set is_partial = (partial_order_ids is defined and c.order and (c.order.id in partial_order_ids)) %}
 
-              {% set due_status = (venc_value if venc_value else None) %}
-
-              {% set lg_entrega_status = (c.order.logistics.fecha_entrega_efectiva if c.order and c.order.logistics else None) %}
-
-              {% set coll_entrega_status = (c.fecha_entrega_efectiva if c and c.fecha_entrega_efectiva else None) %}
-
-              {% set entrega_efectiva_status = (entrega_input if entrega_input else (lg_entrega_status if lg_entrega_status else coll_entrega_status)) %}
-
-              {% set is_overdue = (not c.fecha_cobro_efectiva and due_status and now_date and (due_status.date() < now_date)) %}
-
-              {% set is_a_cobrar_status = (not c.fecha_cobro_efectiva and (not is_overdue) and entrega_efectiva_status and now_date and (entrega_efectiva_status.date() <= now_date)) %}
-
-              {% if c.fecha_cobro_efectiva %}
+              {% if estado == 'COBRADO' %}
 
                 <span class="badge bg-success js-status-badge">COBRADO</span>
 
@@ -709,11 +686,11 @@
 
                 {% endif %}
 
-                {% if is_overdue %}
+                {% if estado == 'ATRASADO' %}
 
                   <span class="badge bg-danger js-status-badge">ATRASADO</span>
 
-                {% elif is_a_cobrar_status %}
+                {% elif estado == 'A_COBRAR' %}
 
                   <span class="badge bg-info text-dark js-status-badge">A COBRAR</span>
 
@@ -2515,17 +2492,29 @@
 
 (function(){
 
+  // "Hoy" del NEGOCIO (hora de Argentina), calculado por el backend con la
+  // FUENTE ÚNICA DE VERDAD (backend/models.py -> hoy_negocio()).
+  // Antes el JS usaba new Date() del navegador: si el usuario tenía otro huso
+  // (o la máquina mal configurada), veía un estado distinto al del servidor.
+  var HOY_NEGOCIO_ISO = '{{ now_date.isoformat() if now_date else "" }}';
+
   function isoToday(){
 
-    var d = new Date();
+    return HOY_NEGOCIO_ISO;
 
-    var y = d.getFullYear();
+  }
 
-    var m = String(d.getMonth() + 1).padStart(2, '0');
+  // Devuelve SIEMPRE una Date nueva a medianoche: los callers le hacen
+  // setHours()/getTime(), así que no se puede compartir una sola instancia.
+  function todayNegocio(){
 
-    var dd = String(d.getDate()).padStart(2, '0');
+    var d = parseIsoDate(HOY_NEGOCIO_ISO);
 
-    return y + '-' + m + '-' + dd;
+    if (!d) d = new Date();
+
+    d.setHours(0,0,0,0);
+
+    return d;
 
   }
 
@@ -2635,13 +2624,14 @@
 
     var entrega = tr.querySelector('input.js-cob-entrega');
 
+    // OJO: el input de vencimiento YA trae el vencimiento efectivo resuelto
+    // por el backend (fuente única). Acá NO se re-deriva "entrega + plazo":
+    // sólo se re-evalúa el estado cuando el usuario edita las fechas a mano.
     var vencDt = venc ? parseIsoDate(venc.value) : null;
 
     var entregaDt = entrega ? parseIsoDate(entrega.value) : null;
 
-    var today = new Date();
-
-    today.setHours(0,0,0,0);
+    var today = todayNegocio();
 
     if (vencDt) {
 
@@ -2691,9 +2681,7 @@
 
     var status = computeStatusFromRow(tr);
 
-    var today = new Date();
-
-    today.setHours(0,0,0,0);
+    var today = todayNegocio();
 
     if (status === 'EN_CAMINO') {
 
