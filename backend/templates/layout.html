@@ -123,6 +123,9 @@
       body.sidebar-collapsed #sidebarShowBtn { display: inline-flex !important; }
       #sidebarShowBtn { display: none; }
 
+      /* NO BORRAR: sin min-width:0 el flex item no puede encogerse por debajo de su min-content (tablas anchas) y la .row se envuelve, mandando el main debajo del sidebar */
+      main.col { min-width: 0; }
+
       @media (max-width: 991.98px) {
         #topMenu {
           max-height: calc(100vh - 56px);
