@@ -481,7 +481,7 @@
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                   <div class="text-muted small">
                     Última subida: <strong>{{ last_sheet.filename }}</strong>
-                    {% if last_sheet.uploaded_at %} ({{ last_sheet.uploaded_at.strftime('%d/%m/%Y %H:%M') }}){% endif %}
+                    {% if last_sheet.uploaded_at %} ({{ last_sheet.uploaded_at|fecha_hora }}){% endif %}
                   </div>
                   <div class="d-flex align-items-center gap-2" style="white-space: nowrap;">
                     <button

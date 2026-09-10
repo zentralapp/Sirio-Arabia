@@ -269,12 +269,11 @@
       hideNoteSuggestions();
     }
 
+    // Formateo unificado: SirioFechas (static/js/fechas.js).
     function fmtIsoToAr(isoDate){
       const s = String(isoDate || '').trim();
       if (!s) return '';
-      const p = s.split('-');
-      if (p.length !== 3) return s;
-      return [p[2], p[1], p[0]].join('/');
+      return window.SirioFechas.format(s, s);
     }
 
     function renderNoteSuggestions(filterText){
@@ -1352,7 +1351,7 @@
           const row = document.createElement('div');
           row.className = 'list-group-item';
           const showDate = String((o.fecha_compra_date || o.created_date || '')).trim();
-          const dtTxt = showDate ? showDate.split('-').reverse().join('/') : '';
+          const dtTxt = window.SirioFechas.format(showDate);
           const prev = (o.descripcion||'').split('\n').find(Boolean) || (o.nota||'');
           const top = document.createElement('div');
           top.className = 'd-flex align-items-center justify-content-between gap-2';

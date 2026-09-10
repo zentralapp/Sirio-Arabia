@@ -111,10 +111,12 @@
       return { empty: isNaN(oid), v: isNaN(oid) ? null : oid };
     }
     if (key === 'ultima_compra') {
+      // Parseo unificado: SirioFechas (static/js/fechas.js). Date.parse()
+      // sobre una fecha ISO sin hora la toma como UTC.
       var iso = String(row.getAttribute('data-last-order-date') || '').trim();
       if (!iso) return { empty: true, v: null };
-      var t = Date.parse(iso);
-      return { empty: isNaN(t), v: isNaN(t) ? null : t };
+      var t = window.SirioFechas.time(iso);
+      return { empty: (t == null), v: t };
     }
     var txt = getRowTextAttr(row, key);
     var empty = (!txt || txt === '-');

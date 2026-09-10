@@ -1576,7 +1576,71 @@ def _parse_amount_like(s: str):
 
 
 
-def _parse_date_like(raw: str):
+# ---------------------------------------------------------------------------
+
+# FUENTE UNICA DE VERDAD del PARSEO de fechas de entrada.
+
+#
+
+# Formatos aceptados, en este orden de prioridad:
+
+#   1. ISO, via datetime.fromisoformat: "AAAA-MM-DD", "AAAAMMDD",
+
+#      "AAAA-MM-DDTHH:MM[:SS[.ffffff]]", "AAAA-MM-DD HH:MM", con offset o "Z".
+
+#   2. DD/MM/AAAA y D/M/AAAA -- lo que escribe el usuario (mascara de Fase 2).
+
+#   3. DD-MM-AAAA y D-M-AAAA.
+
+#   4. AAAA-M-D (ISO sin cero a la izquierda; fromisoformat lo rechaza).
+
+#   5. 8 digitos con cualquier separador ("10 09 2026", "10.09.2026") -> DDMMAAAA.
+
+#
+
+# Son DOS funciones publicas A PROPOSITO, no una: tienen tipo de retorno
+
+# distinto y ~40 call sites que dependen de ese tipo.
+
+#   - _parse_datetime_like -> datetime | None. La usan los call sites que
+
+#     escriben columnas DateTime (fecha_compra, fecha_cobro_efectiva, ...).
+
+#   - _parse_date_like     -> date | None. La usan los call sites de columnas
+
+#     Date (fecha_incorporacion, fechas de comisiones) y los filtros de busqueda.
+
+# NO se fusionan: se comparten los formatos. _parse_date_like delega en
+
+# _parse_datetime_like y trunca la hora, asi nunca se separan.
+
+#
+
+# _RE_DMY_DASH / _RE_ISO_LOOSE son mutuamente excluyentes: una exige 1-2
+
+# digitos al principio y la otra exige 4, asi que no hay ambiguedad entre
+
+# "10-09-2026" (DD-MM-AAAA) y "2026-9-10" (ISO flojo).
+
+# ---------------------------------------------------------------------------
+
+
+
+_RE_DMY_DASH = re.compile(r"^(\d{1,2})-(\d{1,2})-(\d{4})$")
+
+_RE_ISO_LOOSE = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")
+
+
+
+def _parse_date_flexible(raw: str):
+
+    """Formatos NO-ISO (2 a 5 de la lista de arriba) -> date | None.
+
+
+
+    Interno: los callers usan _parse_date_like / _parse_datetime_like.
+
+    """
 
     raw = (raw or "").strip()
 
@@ -1584,99 +1648,227 @@ def _parse_date_like(raw: str):
 
         return None
 
-    # ISO date
+    # DD/MM/AAAA -- se acepta cualquier largo de anio para no perder datos que
 
-    try:
+    # el parser viejo si aceptaba (ver "10/09/26" en el reporte de Fase 5).
 
-        if "-" in raw:
+    if "/" in raw:
 
-            return date.fromisoformat(raw)
+        parts = [p.strip() for p in raw.split("/")]
 
-    except Exception:
+        if len(parts) == 3:
 
-        pass
+            try:
 
-    # DD/MM/YYYY
+                return date(int(parts[2]), int(parts[1]), int(parts[0]))
 
-    try:
+            except (ValueError, TypeError):
 
-        if "/" in raw:
+                pass
 
-            parts = [p.strip() for p in raw.split("/")]
+    m = _RE_DMY_DASH.match(raw)
 
-            if len(parts) == 3:
+    if m:
 
-                dd = int(parts[0])
+        try:
 
-                mm = int(parts[1])
+            return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
 
-                yyyy = int(parts[2])
+        except (ValueError, TypeError):
 
-                return date(yyyy, mm, dd)
+            pass
 
-    except Exception:
+    m = _RE_ISO_LOOSE.match(raw)
 
-        pass
+    if m:
 
-    # DDMMYYYY
+        try:
 
-    try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
 
-        digits = _only_digits(raw)
+        except (ValueError, TypeError):
 
-        if len(digits) == 8:
+            pass
 
-            dd = int(digits[0:2])
+    digits = _only_digits(raw)
 
-            mm = int(digits[2:4])
+    if len(digits) == 8:
 
-            yyyy = int(digits[4:8])
+        try:
 
-            return date(yyyy, mm, dd)
+            return date(int(digits[4:8]), int(digits[2:4]), int(digits[0:2]))
 
-    except Exception:
+        except (ValueError, TypeError):
 
-        pass
+            pass
 
     return None
-
-
 
 
 
 def _parse_datetime_like(raw: str):
 
+    """Cualquiera de los formatos aceptados -> datetime | None."""
+
     raw = (raw or "").strip()
 
     if not raw:
 
         return None
 
-    # Full ISO datetime or ISO date
+    # ISO completo (fecha o fecha+hora). Va PRIMERO: es lo que mandan los
+
+    # inputs con flatpickr (dateFormat 'Y-m-d') y las APIs internas.
 
     try:
 
         return datetime.fromisoformat(raw)
 
-    except Exception:
+    except (ValueError, TypeError):
 
         pass
 
-    # If it looks like a date-only in other formats, normalize to midnight.
+    d = _parse_date_flexible(raw)
 
-    try:
+    if d is not None:
 
-        d = _parse_date_like(raw)
-
-        if d:
-
-            return datetime(d.year, d.month, d.day)
-
-    except Exception:
-
-        pass
+        return datetime(d.year, d.month, d.day)
 
     return None
+
+
+
+def _parse_date_like(raw: str):
+
+    """Cualquiera de los formatos aceptados -> date | None (trunca la hora)."""
+
+    dt = _parse_datetime_like(raw)
+
+    return dt.date() if dt is not None else None
+
+
+
+# ---------------------------------------------------------------------------
+
+# FUENTE UNICA DE VERDAD de la VISUALIZACION de fechas.
+
+#
+
+# Toda fecha que el usuario VE se muestra como DD/MM/AAAA. Se expone como
+
+# filtro Jinja para no repetir strftime ni, peor, rebanar strings ISO a mano
+
+# en los templates (comisiones.html lo hacia con last_paid_iso[8:10] ~ '/' ...).
+
+#
+
+# Acepta date, datetime, string en cualquiera de los formatos que parsea
+
+# _parse_datetime_like, y None. Si no puede interpretar el valor devuelve
+
+# `default` en lugar de reventar el render.
+
+#
+
+# Uso en templates:
+
+#     {{ o.created_at|fecha }}            -> "10/09/2026"
+
+#     {{ o.created_at|fecha('-') }}        -> "-" si es None/invalido
+
+#     {{ s.uploaded_at|fecha_hora }}       -> "10/09/2026 14:30"
+
+#     {{ d|fecha_iso }}                    -> "2026-09-10" (para value= de inputs)
+
+#
+
+# El formato corto "%d/%m" NO se expone a proposito: la unica excepcion viva
+
+# son las etiquetas del eje X del grafico del dashboard (ver chart_labels).
+
+# ---------------------------------------------------------------------------
+
+
+
+_FMT_FECHA = "%d/%m/%Y"
+
+_FMT_FECHA_HORA = "%d/%m/%Y %H:%M"
+
+
+
+def _coerce_fecha(value):
+
+    """date | datetime | str | None -> date | datetime | None."""
+
+    if value is None:
+
+        return None
+
+    if isinstance(value, datetime):
+
+        return value
+
+    if isinstance(value, date):
+
+        return value
+
+    if isinstance(value, str):
+
+        return _parse_datetime_like(value)
+
+    return None
+
+
+
+def fmt_fecha(value, default: str = "") -> str:
+
+    """DD/MM/AAAA. Fuente unica de verdad de la fecha visible."""
+
+    d = _coerce_fecha(value)
+
+    return d.strftime(_FMT_FECHA) if d is not None else default
+
+
+
+def fmt_fecha_hora(value, default: str = "") -> str:
+
+    """DD/MM/AAAA HH:MM. Solo donde la hora aporta (auditoria, uploads)."""
+
+    d = _coerce_fecha(value)
+
+    if d is None:
+
+        return default
+
+    if not isinstance(d, datetime):
+
+        return d.strftime(_FMT_FECHA)
+
+    return d.strftime(_FMT_FECHA_HORA)
+
+
+
+def fmt_fecha_iso(value, default: str = "") -> str:
+
+    """AAAA-MM-DD. Para los value= de los inputs: es lo que espera el backend
+
+    y el dateFormat de flatpickr. NO es formato de lectura."""
+
+    d = _coerce_fecha(value)
+
+    if d is None:
+
+        return default
+
+    return (d.date() if isinstance(d, datetime) else d).isoformat()
+
+
+
+bp.add_app_template_filter(fmt_fecha, "fecha")
+
+bp.add_app_template_filter(fmt_fecha_hora, "fecha_hora")
+
+bp.add_app_template_filter(fmt_fecha_iso, "fecha_iso")
 
 
 
@@ -3172,33 +3364,15 @@ def index():
 
         rank_mode = "pending"
 
-    def _parse_filter_date(s: str):
+    # Antes habia un parser propio aca que solo aceptaba "%Y-%m-%d" y
 
-        s = (s or "").strip()
+    # "%d/%m/%Y". Ahora se usa el parser compartido (superset verificado: no
 
-        if not s:
+    # perdio ningun formato, y suma DD-MM-AAAA, DDMMAAAA e ISO con hora).
 
-            return None
+    d_from = _parse_date_like(raw_from)
 
-        try:
-
-            return datetime.strptime(s, "%Y-%m-%d").date()
-
-        except Exception:
-
-            pass
-
-        try:
-
-            return datetime.strptime(s, "%d/%m/%Y").date()
-
-        except Exception:
-
-            return None
-
-    d_from = _parse_filter_date(raw_from)
-
-    d_to = _parse_filter_date(raw_to)
+    d_to = _parse_date_like(raw_to)
 
     if d_from is None and d_to is None:
 
@@ -3382,6 +3556,12 @@ def index():
 
         chart_days = sorted(set(order_days))
 
+    # EXCEPCION deliberada al formato DD/MM/AAAA: son las etiquetas del eje X
+
+    # del grafico de 30 dias del dashboard. Con el anio completo no entran y el
+
+    # grafico queda ilegible. El anio ya esta implicito en el rango elegido.
+
     chart_labels = [d.strftime("%d/%m") for d in chart_days]
 
     chart_days_iso = [d.isoformat() for d in chart_days]
@@ -3434,7 +3614,7 @@ def index():
 
             "date_iso": day_iso,
 
-            "date_label": compra_date.strftime("%d/%m/%Y"),
+            "date_label": fmt_fecha(compra_date),
 
             "client": client_label,
 
@@ -4043,9 +4223,9 @@ def index():
 
                 "to": d_to.isoformat() if d_to else "",
 
-                "from_label": d_from.strftime("%d/%m/%Y") if d_from else "",
+                "from_label": fmt_fecha(d_from),
 
-                "to_label": d_to.strftime("%d/%m/%Y") if d_to else "",
+                "to_label": fmt_fecha(d_to),
 
                 "period_label": "Período completo" if not d_from and not d_to else "",
 

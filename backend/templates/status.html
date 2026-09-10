@@ -245,17 +245,17 @@
             <td class="col-company">{{ s.order.company.nombre }}</td>
             <td class="d-none d-md-table-cell">
               <input name="fecha_compra" form="upd{{ s.order.id }}" type="text" data-datepicker class="form-control form-control-sm js-compra status-date"
-                     value="{{ s.fecha_compra.strftime('%Y-%m-%d') if s.fecha_compra else '' }}">
+                     value="{{ s.fecha_compra|fecha_iso }}">
             </td>
             <td class="d-none d-md-table-cell">
               <div class="d-flex align-items-center gap-2">
                 <input name="fecha_entrega_estimada" form="upd{{ s.order.id }}" type="text" data-datepicker class="form-control form-control-sm js-entrega status-date"
-                       value="{{ (s.fecha_entrega_efectiva or s.fecha_entrega_estimada).strftime('%Y-%m-%d') if (s.fecha_entrega_efectiva or s.fecha_entrega_estimada) else '' }}">
+                       value="{{ (s.fecha_entrega_efectiva or s.fecha_entrega_estimada)|fecha_iso }}">
                 <input type="hidden" name="fecha_entrega_efectiva" form="upd{{ s.order.id }}" class="js-entrega-efectiva-hid"
-                       value="{{ s.fecha_entrega_efectiva.strftime('%Y-%m-%d') if s.fecha_entrega_efectiva else '' }}">
+                       value="{{ s.fecha_entrega_efectiva|fecha_iso }}">
                 {% if not s.fecha_entrega_efectiva %}
                   <form class="m-0" method="post" action="{{ url_for('main.status_mark_entregado', order_id=s.order.id) }}" data-js="status-entregar">
-                    <input type="hidden" name="fecha" value="{{ s.fecha_entrega_estimada.strftime('%Y-%m-%d') if s.fecha_entrega_estimada else '' }}">
+                    <input type="hidden" name="fecha" value="{{ s.fecha_entrega_estimada|fecha_iso }}">
                     <button type="submit" class="btn btn-sm btn-success" title="Marcar entrega efectiva">✅</button>
                   </form>
                 {% endif %}
@@ -639,13 +639,12 @@
           if (!compraVal) return;
           var demora = parseInt(tr.getAttribute('data-demora') || '0', 10);
           if (isNaN(demora) || demora < 0) demora = 0;
-          var base = new Date(compraVal + 'T00:00:00');
-          if (isNaN(base.getTime())) return;
-          base.setDate(base.getDate() + demora);
-          var y = base.getFullYear();
-          var m = String(base.getMonth() + 1).padStart(2, '0');
-          var d = String(base.getDate()).padStart(2, '0');
-          var iso = y + '-' + m + '-' + d;
+          // Parseo/formateo unificado: SirioFechas (static/js/fechas.js).
+          // El truco de concatenar 'T00:00:00' para forzar hora local ya no
+          // hace falta: SirioFechas.parse() nunca usa el camino UTC.
+          var base = window.SirioFechas.addDays(compraVal, demora);
+          if (!base) return;
+          var iso = window.SirioFechas.toIso(base);
           if (est._flatpickr) {
             try { est._flatpickr.setDate(iso, false, 'Y-m-d'); } catch(e) {}
           } else {
@@ -770,25 +769,17 @@
     var thead = table.querySelector('thead');
     if (!thead) return;
 
+    // Parseo unificado: SirioFechas (static/js/fechas.js).
+    // Antes probaba Date.parse() PRIMERO, y Date.parse('2026-09-10') se
+    // interpreta como UTC: en Argentina (UTC-3) eso cae el 09/09 a las 21:00
+    // LOCAL, con lo cual el orden por fecha se corria un dia.
     function parseDateValue(cell){
       if (!cell) return null;
       var inp = cell.querySelector && cell.querySelector('input');
       var v = '';
       if (inp) v = (inp.value || '').trim();
       else v = (cell.textContent || '').trim();
-      if (!v) return null;
-      var t = Date.parse(v);
-      if (!isNaN(t)) return t;
-      var m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      if (m) {
-        var dd = parseInt(m[1], 10);
-        var mm = parseInt(m[2], 10) - 1;
-        var yy = parseInt(m[3], 10);
-        var dt = new Date(yy, mm, dd);
-        var tt = dt.getTime();
-        return isNaN(tt) ? null : tt;
-      }
-      return null;
+      return window.SirioFechas.time(v);
     }
 
     function sortByDateColumn(colIndex, direction){
@@ -857,12 +848,11 @@
 </script>
 <script>
   (function(){
+    // Formateo unificado: SirioFechas (static/js/fechas.js).
+    // OJO: /status no recibe el "hoy de negocio" de la Fase 4, asi que aca
+    // sigue siendo el reloj del navegador (mismo comportamiento que antes).
     function isoToday(){
-      var d = new Date();
-      var y = d.getFullYear();
-      var m = String(d.getMonth() + 1).padStart(2, '0');
-      var dd = String(d.getDate()).padStart(2, '0');
-      return y + '-' + m + '-' + dd;
+      return window.SirioFechas.hoyIso();
     }
 
     function showRowFlash(tr, ok){
@@ -904,10 +894,12 @@
       var est = tr.querySelector('input.js-entrega');
       var v = est ? (est.value || '').trim() : '';
       if (!v) return 'EN CAMINO';
-      var t = Date.parse(v);
-      if (isNaN(t)) return 'EN CAMINO';
-      var now = new Date();
-      now.setHours(0,0,0,0);
+      // Antes: Date.parse(v) (UTC para una fecha ISO sin hora) comparado
+      // contra medianoche LOCAL -> marcaba ATRASADO un dia antes.
+      // Ahora ambos lados son medianoche local. La REGLA no cambia.
+      var t = window.SirioFechas.time(v);
+      if (t == null) return 'EN CAMINO';
+      var now = window.SirioFechas.hoy();
       return (t < now.getTime()) ? 'ATRASADO' : 'EN CAMINO';
     }
 

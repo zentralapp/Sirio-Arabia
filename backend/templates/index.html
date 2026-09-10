@@ -316,11 +316,9 @@
     toggleScopeFilter(viewModeInput.value || 'company');
   }
 
+  // Formateo unificado: SirioFechas (static/js/fechas.js).
   function fmtIso(d){
-    var y = d.getFullYear();
-    var m = String(d.getMonth() + 1).padStart(2, '0');
-    var dd = String(d.getDate()).padStart(2, '0');
-    return y + '-' + m + '-' + dd;
+    return window.SirioFechas.toIso(d);
   }
 
   function monthRange(refDate){

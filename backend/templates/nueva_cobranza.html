@@ -1827,11 +1827,8 @@
       // Default fecha: hoy al habilitar (solo si está vacía)
       if (enabled) {
         try {
-          const today = new Date();
-          const y = today.getFullYear();
-          const m = String(today.getMonth() + 1).padStart(2, '0');
-          const d = String(today.getDate()).padStart(2, '0');
-          const iso = `${y}-${m}-${d}`;
+          // Formateo unificado: SirioFechas (static/js/fechas.js).
+          const iso = window.SirioFechas.hoyIso();
           const dateInp = document.querySelector(`[name="${prefix}_date"][data-datepicker]`);
           if (dateInp && !String(dateInp.value || '').trim()) {
             // asegurar flatpickr

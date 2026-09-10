@@ -81,12 +81,17 @@
       if (cal) { cal.changeView('listDay', info.dateStr); }
     },
     dayCellDidMount: function(arg){
+      // Antes: arg.date.toISOString().slice(0,10). Eso NO estaba roto en
+      // Argentina (UTC-3: medianoche local = 03:00Z, mismo dia), pero se
+      // rompe en cualquier huso con offset POSITIVO, donde la medianoche
+      // local cae el dia anterior en UTC. Se unifica por consistencia y para
+      // que no dependa del huso del navegador.
       var el = arg.el;
       if (!el) return;
       el.setAttribute('role','button');
       el.setAttribute('tabindex','0');
-      el.addEventListener('click', function(){ if (cal) cal.changeView('listDay', arg.date.toISOString().slice(0,10)); });
-      el.addEventListener('keydown', function(ev){ if(ev.key==='Enter' || ev.key===' '){ ev.preventDefault(); if (cal) cal.changeView('listDay', arg.date.toISOString().slice(0,10)); }});
+      el.addEventListener('click', function(){ if (cal) cal.changeView('listDay', window.SirioFechas.toIso(arg.date)); });
+      el.addEventListener('keydown', function(ev){ if(ev.key==='Enter' || ev.key===' '){ ev.preventDefault(); if (cal) cal.changeView('listDay', window.SirioFechas.toIso(arg.date)); }});
     },
     events: function(info, success, failure){
       var url = "{{ url_for('main.api_calendario_events') }}" + '?start=' + encodeURIComponent(info.startStr) + '&end=' + encodeURIComponent(info.endStr);

@@ -334,7 +334,7 @@
                               <input type="hidden" name="birthday_role_list" value="{{ b.puesto or '' }}">
                             </td>
                             <td data-label="Cumpleaños">
-                              {{ b.fecha.strftime('%d/%m/%Y') if b.fecha else '' }}
+                              {{ b.fecha|fecha }}
                               <input type="hidden" name="birthday_date_list" value="{{ b.fecha.isoformat() if b.fecha else '' }}">
                             </td>
                             <td class="text-end" data-label="Acciones">
@@ -1448,11 +1448,10 @@ document.addEventListener('DOMContentLoaded', function(){
     return String(str).replace(/"/g,'&quot;');
   }
 
+  // Formateo unificado: SirioFechas (static/js/fechas.js).
   function formatDate(isoDate){
     if (!isoDate) return '';
-    var parts = isoDate.split('-');
-    if (parts.length === 3) return parts[2] + '/' + parts[1] + '/' + parts[0];
-    return isoDate;
+    return window.SirioFechas.format(isoDate, isoDate);
   }
 
   var editNotasCache = '';

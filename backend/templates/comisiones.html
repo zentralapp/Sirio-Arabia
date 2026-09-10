@@ -36,11 +36,11 @@
     <form class="row g-2 align-items-end" method="post" action="{{ url_for('main.comisiones_marcar') }}">
       <div class="col-12 col-md-4">
         <label class="form-label">Fecha última comisión cobrada</label>
-        <input class="form-control" type="text" data-datepicker name="paid_at" value="{{ (last_paid_iso[8:10] ~ '/' ~ last_paid_iso[5:7] ~ '/' ~ last_paid_iso[0:4]) if last_paid_iso else '' }}">
+        <input class="form-control" type="text" data-datepicker name="paid_at" value="{{ last_paid_iso|fecha }}">
       </div>
       <div class="col-12 col-md-4">
         <label class="form-label">Fecha de comisión</label>
-        <input class="form-control" type="text" data-datepicker name="commission_date" value="{{ (commission_date_iso[8:10] ~ '/' ~ commission_date_iso[5:7] ~ '/' ~ commission_date_iso[0:4]) if commission_date_iso else '' }}" disabled>
+        <input class="form-control" type="text" data-datepicker name="commission_date" value="{{ commission_date_iso|fecha }}" disabled>
       </div>
       <div class="col-12 col-md-4">
         <button class="btn btn-outline-primary" type="submit">Guardar fecha</button>
@@ -115,7 +115,7 @@
                           {% endif %}
                         </td>
                         <td style="text-align:center;">{{ r.client }}</td>
-                        <td style="white-space:nowrap;">{{ (r.date[8:10] ~ '/' ~ r.date[5:7] ~ '/' ~ r.date[0:4]) if r.date else '' }}</td>
+                        <td style="white-space:nowrap;">{{ r.date|fecha }}</td>
                         <td>
                           {% if r.is_complete %}
                             <span class="badge bg-success">COMPLETA</span>
@@ -349,6 +349,10 @@
 
         var fp = flatpickr(input, {
           mode: 'range',
+          // Visible DD/MM/AAAA como el resto de la app; dateFormat sigue
+          // siendo 'Y-m-d' porque es lo que se manda en from/to al backend.
+          altInput: true,
+          altFormat: 'd/m/Y',
           dateFormat: 'Y-m-d',
           allowInput: false,
           disableMobile: true,

@@ -92,6 +92,10 @@
 
       var fp = flatpickr(input, {
         mode: 'range',
+        // Visible DD/MM/AAAA como el resto de la app; dateFormat sigue
+        // siendo 'Y-m-d' porque es lo que se manda en from/to al backend.
+        altInput: true,
+        altFormat: 'd/m/Y',
         dateFormat: 'Y-m-d',
         allowInput: false,
         disableMobile: true,

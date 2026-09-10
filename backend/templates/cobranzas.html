@@ -497,13 +497,13 @@
             <td class="col-company">{{ c.order.company.nombre }}</td>
 
             {% set fecha_compra_ref = (c.order.logistics.fecha_compra if c.order and c.order.logistics and c.order.logistics.fecha_compra else (c.order.created_at if c.order and c.order.created_at else None)) %}
-            <td class="d-none d-md-table-cell col-orderdate">{{ fecha_compra_ref.strftime('%d/%m/%Y') if fecha_compra_ref else '' }}</td>
+            <td class="d-none d-md-table-cell col-orderdate">{{ fecha_compra_ref|fecha }}</td>
 
             <td class="d-none d-md-table-cell col-date col-entrega">
 
               <input name="fecha_entrega_efectiva" type="text" data-datepicker class="form-control form-control-sm js-cob-entrega"
 
-                     value="{{ entrega_input.strftime('%Y-%m-%d') if entrega_input else '' }}" form="upd{{ c.order.id }}">
+                     value="{{ entrega_input|fecha_iso }}" form="upd{{ c.order.id }}">
 
             </td>
 
@@ -572,7 +572,7 @@
             <td class="col-date">
 
                 {# venc_value ya viene de c.vencimiento_efectivo (fuente única). #}
-                <input name="pago_estimado" type="text" data-datepicker class="form-control form-control-sm js-cob-estimado" placeholder="Vencimiento" value="{{ venc_value.strftime('%Y-%m-%d') if venc_value else '' }}" form="upd{{ c.order.id }}">
+                <input name="pago_estimado" type="text" data-datepicker class="form-control form-control-sm js-cob-estimado" placeholder="Vencimiento" value="{{ venc_value|fecha_iso }}" form="upd{{ c.order.id }}">
 
             </td>
 
@@ -665,7 +665,7 @@
 
               <input name="fecha_cobro_efectiva" type="text" data-datepicker class="form-control form-control-sm js-cob-cobro"
 
-                     value="{{ c.fecha_cobro_efectiva.strftime('%Y-%m-%d') if c.fecha_cobro_efectiva else '' }}" form="upd{{ c.order.id }}">
+                     value="{{ c.fecha_cobro_efectiva|fecha_iso }}" form="upd{{ c.order.id }}">
 
             </td>
 
@@ -1044,6 +1044,12 @@
 
 
 
+  // Parseo unificado: SirioFechas (static/js/fechas.js). Antes esto repetia
+
+  // los regex de ISO y DD/MM/AAAA a mano y caia en Date.parse, que interpreta
+
+  // una fecha ISO sin hora como UTC y corre el orden un dia.
+
   function parseDateValue(cell){
 
     if (!cell) return null;
@@ -1056,49 +1062,7 @@
 
     else v = (cell.textContent || '').trim();
 
-    if (!v) return null;
-
-    var mIso = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-
-    if (mIso) {
-
-      var yy0 = parseInt(mIso[1], 10);
-
-      var mm0 = parseInt(mIso[2], 10) - 1;
-
-      var dd0 = parseInt(mIso[3], 10);
-
-      var dt0 = new Date(yy0, mm0, dd0);
-
-      var tt0 = dt0.getTime();
-
-      return isNaN(tt0) ? null : tt0;
-
-    }
-
-    var m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-
-    if (m) {
-
-      var dd = parseInt(m[1], 10);
-
-      var mm = parseInt(m[2], 10) - 1;
-
-      var yy = parseInt(m[3], 10);
-
-      var dt = new Date(yy, mm, dd);
-
-      var tt = dt.getTime();
-
-      return isNaN(tt) ? null : tt;
-
-    }
-
-    var t = Date.parse(v);
-
-    if (!isNaN(t)) return t;
-
-    return null;
+    return window.SirioFechas.time(v);
 
   }
 
@@ -2496,7 +2460,13 @@
   // FUENTE ÚNICA DE VERDAD (backend/models.py -> hoy_negocio()).
   // Antes el JS usaba new Date() del navegador: si el usuario tenía otro huso
   // (o la máquina mal configurada), veía un estado distinto al del servidor.
-  var HOY_NEGOCIO_ISO = '{{ now_date.isoformat() if now_date else "" }}';
+  var HOY_NEGOCIO_ISO = '{{ now_date|fecha_iso }}';
+
+  // Se le pasa a SirioFechas para que TODA la pagina (y no solo este bloque)
+
+  // use el hoy del negocio en vez del reloj del navegador.
+
+  window.SirioFechas.setHoyNegocio(HOY_NEGOCIO_ISO);
 
   function isoToday(){
 
@@ -2582,29 +2552,13 @@
 
 
 
+  // Parseo unificado: SirioFechas (static/js/fechas.js). Misma convencion que
+
+  // antes (fecha sin hora = medianoche LOCAL), ahora en un solo lugar.
+
   function parseIsoDate(s){
 
-    s = (s || '').trim();
-
-    if (!s) return null;
-
-    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-
-    if (m) {
-
-      var yy = parseInt(m[1], 10);
-
-      var mm = parseInt(m[2], 10) - 1;
-
-      var dd = parseInt(m[3], 10);
-
-      return new Date(yy, mm, dd);
-
-    }
-
-    var t = Date.parse(s);
-
-    return isNaN(t) ? null : new Date(t);
+    return window.SirioFechas.parse(s);
 
   }
 
