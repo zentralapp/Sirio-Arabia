@@ -217,7 +217,8 @@
             <a href="{{ url_for('main.notificaciones') }}" class="btn btn-light position-relative" aria-label="Centro de notificaciones" title="Notificaciones">
               <i class="bi bi-bell"></i>
               {% if notif_active_count is defined and notif_active_count|int > 0 %}
-                <span id="notifBellCount" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">{{ notif_active_count }}</span>
+                {# end-0 + translate-middle-y en vez de start-100 + translate-middle: el badge queda contenido horizontalmente dentro del botón (sin importar cuántos dígitos tenga) y no genera scroll horizontal de página en viewports chicos #}
+                <span id="notifBellCount" class="position-absolute top-0 end-0 translate-middle-y badge rounded-pill bg-danger">{{ notif_active_count }}</span>
               {% endif %}
             </a>
           </div>
@@ -583,7 +584,9 @@
           if (!badge){
             badge = document.createElement('span');
             badge.id = 'notifBellCount';
-            badge.className = 'position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger';
+            // Mismas clases que el badge renderizado en el markup: end-0 + translate-middle-y
+            // lo mantiene contenido dentro del botón y evita scroll horizontal de página.
+            badge.className = 'position-absolute top-0 end-0 translate-middle-y badge rounded-pill bg-danger';
             a.appendChild(badge);
           }
           badge.textContent = String(n);
