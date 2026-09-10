@@ -8723,6 +8723,10 @@ def cobranzas_pago_anular(payment_id: int):
 
             pass
 
+        # Si se cobro, asumir entrega efectiva (regla unica en _sync_entrega_desde_cobro)
+
+        _sync_entrega_desde_cobro(coll, lg)
+
 
 
     try:
