@@ -3015,6 +3015,87 @@ def _invalidate_notif_count_cache():
 
 
 
+def _sync_entrega_desde_cobro(coll, lg=None):
+
+    """Fuente unica de verdad: si la cobranza esta cobrada, la entrega se da por realizada.
+
+    Regla pedida por negocio: "cuando una cobranza se realice, dar por hecho que la
+
+    entrega se realizo tambien" (para sacarla de Status Mercaderia y apagar la alerta).
+
+    Decisiones:
+
+    - Sin cobro (`fecha_cobro_efectiva is None`) no hace nada: no se asumen entregas
+
+      de cobranzas que todavia no se cobraron.
+
+    - Idempotente: si `fecha_entrega_efectiva` ya tiene valor NO se pisa. Un cobro no
+
+      reescribe una fecha de entrega que logistica ya confirmo.
+
+    - No crea el `LogisticsStatus` si no existe: sin fila de logistica no hay status
+
+      ATRASADO que apagar (ver `LogisticsStatus.status` en models.py). El caller que
+
+      necesite crearla lo hace antes y la pasa por parametro.
+
+    - Fecha asumida: la entrega estimada de logistica; si no hay, la entrega efectiva
+
+      ya registrada en la cobranza; como ultimo recurso `datetime.utcnow()`, que es la
+
+      convencion que ya usaba este codigo (unificar husos horarios es otra fase).
+
+    Devuelve True si completo la entrega, False si no toco nada.
+
+    """
+
+    if coll is None:
+
+        return False
+
+    if getattr(coll, "fecha_cobro_efectiva", None) is None:
+
+        return False
+
+    if lg is None:
+
+        order_id = getattr(coll, "order_id", None)
+
+        if order_id is None:
+
+            return False
+
+        lg = LogisticsStatus.query.filter_by(order_id=order_id).first()
+
+    if lg is None:
+
+        return False
+
+    if getattr(lg, "fecha_entrega_efectiva", None) is not None:
+
+        return False
+
+    picked = (
+
+        getattr(lg, "fecha_entrega_estimada", None)
+
+        or getattr(coll, "fecha_entrega_efectiva", None)
+
+        or datetime.utcnow()
+
+    )
+
+    lg.fecha_entrega_efectiva = picked
+
+    if getattr(coll, "fecha_entrega_efectiva", None) is None:
+
+        coll.fecha_entrega_efectiva = picked
+
+    return True
+
+
+
+
 @bp.get("/api/notificaciones/count")
 
 def api_notificaciones_count():
@@ -10606,6 +10687,12 @@ def historial_update(order_id: int):
 
 
 
+    # Si se cobro, asumir entrega efectiva (regla unica en _sync_entrega_desde_cobro)
+
+    _sync_entrega_desde_cobro(coll, lg)
+
+
+
     if monto is not None:
 
         o.precio_final = monto
@@ -14924,57 +15011,11 @@ def nueva_cobranza_create():
 
         pass
 
-    try:
+    # Si se cobro, asumir entrega efectiva (regla unica en _sync_entrega_desde_cobro)
 
-        if (not is_draft) and getattr(coll, "fecha_cobro_efectiva", None):
+    if not is_draft:
 
-            lg = LogisticsStatus.query.filter_by(order_id=order_id).first()
-
-            if lg is not None and getattr(lg, "fecha_entrega_efectiva", None) is None:
-
-                picked = None
-
-                try:
-
-                    picked = getattr(lg, "fecha_entrega_estimada", None)
-
-                except Exception:
-
-                    picked = None
-
-                if picked is None:
-
-                    try:
-
-                        picked = getattr(coll, "fecha_entrega_efectiva", None)
-
-                    except Exception:
-
-                        picked = None
-
-                picked = picked or datetime.utcnow()
-
-                try:
-
-                    lg.fecha_entrega_efectiva = picked
-
-                except Exception:
-
-                    pass
-
-                try:
-
-                    if getattr(coll, "fecha_entrega_efectiva", None) is None:
-
-                        coll.fecha_entrega_efectiva = picked
-
-                except Exception:
-
-                    pass
-
-    except Exception:
-
-        pass
+        _sync_entrega_desde_cobro(coll)
 
 
 
@@ -15692,7 +15733,9 @@ def cobranzas_mark_cobrado(order_id: int):
 
 
 
-    # Si se cobró, asumir entrega efectiva (para sacar de Status Mercadería y apagar alerta)
+    # Desde esta pantalla, si no hay fila de logística se crea para poder asumir la entrega
+
+    logistics = None
 
     try:
 
@@ -15762,25 +15805,13 @@ def cobranzas_mark_cobrado(order_id: int):
 
 
 
-        if not getattr(logistics, "fecha_entrega_efectiva", None):
-
-            picked = getattr(logistics, "fecha_entrega_estimada", None) or datetime.utcnow()
-
-            logistics.fecha_entrega_efectiva = picked
-
-            try:
-
-                if not getattr(coll, "fecha_entrega_efectiva", None):
-
-                    coll.fecha_entrega_efectiva = picked
-
-            except Exception:
-
-                pass
-
     except Exception:
 
         pass
+
+    # Si se cobro, asumir entrega efectiva (regla unica en _sync_entrega_desde_cobro)
+
+    _sync_entrega_desde_cobro(coll, logistics)
 
     db.session.commit()
 
@@ -16156,55 +16187,9 @@ def cobranzas_update(order_id: int):
 
                 pass
 
-    try:
+    # Si se cobro, asumir entrega efectiva (regla unica en _sync_entrega_desde_cobro)
 
-        if getattr(coll, "fecha_cobro_efectiva", None):
-
-            if logistics and getattr(logistics, "fecha_entrega_efectiva", None) is None:
-
-                picked = None
-
-                try:
-
-                    picked = getattr(logistics, "fecha_entrega_estimada", None)
-
-                except Exception:
-
-                    picked = None
-
-                if picked is None:
-
-                    try:
-
-                        picked = getattr(coll, "fecha_entrega_efectiva", None)
-
-                    except Exception:
-
-                        picked = None
-
-                picked = picked or datetime.utcnow()
-
-                try:
-
-                    logistics.fecha_entrega_efectiva = picked
-
-                except Exception:
-
-                    pass
-
-                try:
-
-                    if getattr(coll, "fecha_entrega_efectiva", None) is None:
-
-                        coll.fecha_entrega_efectiva = picked
-
-                except Exception:
-
-                    pass
-
-    except Exception:
-
-        pass
+    _sync_entrega_desde_cobro(coll, logistics)
 
     # Mantener consistencia con la Orden
 
