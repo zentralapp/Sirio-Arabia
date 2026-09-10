@@ -5,7 +5,10 @@
 </div>
 <div class="card">
   <div class="card-body p-0">
-    <div class="table-responsive">
+    {# H4: `table-fit` es el opt-out del `min-width:720px` que esta vista heredaba
+       de body[data-active="clientes"] (el active lo fija main.py y se comparte con
+       la lista de /clientes). La regla vive en static/css/app.css. #}
+    <div class="table-responsive table-fit">
       <table class="table table-hover align-middle mb-0">
         <thead class="table-light">
           <tr>

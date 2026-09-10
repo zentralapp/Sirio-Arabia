@@ -650,3 +650,116 @@ h1,h2{letter-spacing:.2px}
   .table-tight td.col-money, .table-tight th.col-money,
   .table-cobranzas td.col-money, .table-cobranzas th.col-money{min-width: 140px}
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   H4 — /estado-clientes no debe heredar el min-width de la lista de /clientes
+   ───────────────────────────────────────────────────────────────────────────
+   `/estado-clientes` se renderiza con active="clientes" (backend/views/main.py),
+   así que comparte body[data-active="clientes"] con la lista de clientes y
+   heredaba `min-width:720px` para una tabla de 4 columnas. Medido a 390px:
+   tabla 720px dentro de un contenedor de 371px => 349px de scroll horizontal
+   inútil (/usuarios, con las mismas 4 columnas, entra sin scroll).
+
+   Por qué opt-out por clase y no un data-active propio: `active` lo fija
+   main.py (que está fuera de alcance) y además layout.html usa `{{ active }}`
+   para marcar el ítem del sidebar y en JS (`var active0 = '{{ active }}'`),
+   así que cambiar el valor rompería el resaltado del menú. Por qué no acotar
+   `body[data-active="clientes"] .table-responsive > .table`: ese selector
+   también cubre las tablas de los modales de /clientes, y recortarlo cambiaría
+   el ancho mínimo de esas tablas (efecto colateral no pedido).
+   Sin media query a propósito: neutraliza tanto el 720px de esta hoja
+   (portrait) como el de layout.html (que aplica en landscape). min-width:0 es
+   el valor por defecto, así que en escritorio no cambia nada.
+   Se aplica sólo donde el template pone `.table-fit` (estado_clientes.html).  */
+/* `body[data-active]` está a propósito: la regla que hay que vencer es
+   `body[data-active="clientes"] .table-responsive > .table` (0,3,2) y sin el
+   `body` este selector quedaba en (0,3,1) y PERDÍA aunque tuviera !important
+   (verificado: min-width computado seguía en 720px). */
+body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   H3 — fuga de orientación en los kill-switches de `table-mobile-cards`
+   ───────────────────────────────────────────────────────────────────────────
+   `.table-mobile-cards` se define en layout.html (línea ~74) dentro de
+   `@media (max-width:767.98px)` SIN condición de orientación, pero todos los
+   kill-switches que la apagan viven en el bloque
+   `@media (max-width:767.98px) and (orientation:portrait)` de este archivo.
+   Consecuencia medida a 736x414 (teléfono horizontal): en /deudas el
+   `#cobTable` computaba `display:block` y su `thead` `display:none`, o sea
+   caía en modo tarjeta, mientras que en vertical es tabla real.
+
+   Esto NO decide estrategia de tabla: replica en landscape el kill-switch que
+   ya rige en portrait, o sea PRESERVA el comportamiento efectivo actual.
+   Cubre exactamente las vistas que ya lo tenían (clientes, empresas, status,
+   deudas, historial, comisiones, crm). /pedidos y /nueva-cobranza NO se tocan:
+   hoy muestran tarjetas en las dos orientaciones y así quedan.
+
+   Se usa un bloque hermano con `orientation:landscape` en vez de quitarle la
+   condición al bloque portrait porque ahí hay reglas que SÍ deben ser
+   sólo-portrait — p.ej. `.desktop-table{display:none}` y
+   `.mobile-cards{display:flex}` de las líneas iniciales del bloque.          */
+@media (max-width: 767.98px) and (orientation: landscape){
+  body[data-active="clientes"] .table-mobile-cards .table,
+  body[data-active="empresas"] .table-mobile-cards .table,
+  body[data-active="status"] .table-mobile-cards .table,
+  body[data-active="deudas"] .table-mobile-cards .table,
+  body[data-active="historial"] .table-mobile-cards .table,
+  body[data-active="comisiones"] .table-mobile-cards .table,
+  body[data-active="crm"] .table-mobile-cards .table{display:table !important; width:100% !important}
+
+  body[data-active="clientes"] .table-mobile-cards .table thead,
+  body[data-active="empresas"] .table-mobile-cards .table thead,
+  body[data-active="status"] .table-mobile-cards .table thead,
+  body[data-active="deudas"] .table-mobile-cards .table thead,
+  body[data-active="historial"] .table-mobile-cards .table thead,
+  body[data-active="comisiones"] .table-mobile-cards .table thead,
+  body[data-active="crm"] .table-mobile-cards .table thead{display:table-header-group !important}
+
+  body[data-active="clientes"] .table-mobile-cards .table tbody,
+  body[data-active="empresas"] .table-mobile-cards .table tbody,
+  body[data-active="status"] .table-mobile-cards .table tbody,
+  body[data-active="deudas"] .table-mobile-cards .table tbody,
+  body[data-active="historial"] .table-mobile-cards .table tbody,
+  body[data-active="comisiones"] .table-mobile-cards .table tbody,
+  body[data-active="crm"] .table-mobile-cards .table tbody{display:table-row-group !important}
+
+  body[data-active="clientes"] .table-mobile-cards .table tbody tr,
+  body[data-active="empresas"] .table-mobile-cards .table tbody tr,
+  body[data-active="status"] .table-mobile-cards .table tbody tr,
+  body[data-active="deudas"] .table-mobile-cards .table tbody tr,
+  body[data-active="historial"] .table-mobile-cards .table tbody tr,
+  body[data-active="comisiones"] .table-mobile-cards .table tbody tr,
+  body[data-active="crm"] .table-mobile-cards .table tbody tr{display:table-row !important; background:transparent !important; border:0 !important; border-radius:0 !important; margin:0 !important; overflow:visible !important}
+
+  body[data-active="clientes"] .table-mobile-cards .table tbody tr > *,
+  body[data-active="empresas"] .table-mobile-cards .table tbody tr > *,
+  body[data-active="status"] .table-mobile-cards .table tbody tr > *,
+  body[data-active="deudas"] .table-mobile-cards .table tbody tr > *,
+  body[data-active="historial"] .table-mobile-cards .table tbody tr > *,
+  body[data-active="comisiones"] .table-mobile-cards .table tbody tr > *,
+  body[data-active="crm"] .table-mobile-cards .table tbody tr > *{display:table-cell !important; width:auto !important; border-bottom:inherit !important; padding:.35rem .5rem !important}
+
+  body[data-active="clientes"] .table-mobile-cards .table tbody tr > td::before,
+  body[data-active="empresas"] .table-mobile-cards .table tbody tr > td::before,
+  body[data-active="status"] .table-mobile-cards .table tbody tr > td::before,
+  body[data-active="deudas"] .table-mobile-cards .table tbody tr > td::before,
+  body[data-active="historial"] .table-mobile-cards .table tbody tr > td::before,
+  body[data-active="comisiones"] .table-mobile-cards .table tbody tr > td::before,
+  body[data-active="crm"] .table-mobile-cards .table tbody tr > td::before,
+  body[data-active="clientes"] .table-mobile-cards .table tbody tr > th::before,
+  body[data-active="empresas"] .table-mobile-cards .table tbody tr > th::before,
+  body[data-active="status"] .table-mobile-cards .table tbody tr > th::before,
+  body[data-active="deudas"] .table-mobile-cards .table tbody tr > th::before,
+  body[data-active="historial"] .table-mobile-cards .table tbody tr > th::before,
+  body[data-active="comisiones"] .table-mobile-cards .table tbody tr > th::before,
+  body[data-active="crm"] .table-mobile-cards .table tbody tr > th::before{content:none !important; display:none !important}
+
+  body[data-active="clientes"] .table-mobile-cards .col-actions,
+  body[data-active="empresas"] .table-mobile-cards .col-actions,
+  body[data-active="status"] .table-mobile-cards .col-actions,
+  body[data-active="deudas"] .table-mobile-cards .col-actions,
+  body[data-active="historial"] .table-mobile-cards .col-actions,
+  body[data-active="comisiones"] .table-mobile-cards .col-actions,
+  body[data-active="crm"] .table-mobile-cards .col-actions{width:1% !important; text-align:right !important; white-space:nowrap}
+}
