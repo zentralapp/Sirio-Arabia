@@ -170,6 +170,50 @@
 
     .cob-search-input { min-height: 40px; }
 
+    /* ── H10: la banda 768–991.98px no tenía dueño ─────────────────────────
+       Medido en /deudas a 900px de viewport ANTES del fix: #cobTable = 1361px
+       de ancho natural dentro de un contenedor de 846px => 515px de scroll
+       horizontal, el peor de la app. La causa son los anchos fijos de arriba
+       (.col-date 120px, .col-forma 110px, .col-money 118px, padding .65rem por
+       lado, badge de "Días" en nowrap): están calculados para escritorio y en
+       esta banda son justamente los que estiran la tabla.
+       Fix conservador y H2-SAFE: NO cambia de estrategia (sigue siendo tabla
+       real con scroll horizontal, no pasa a tarjetas ni toca
+       `table-mobile-cards`); sólo baja el ancho que la tabla NECESITA para que
+       el scroll sea corto en vez de brutal.                                  */
+    @media (min-width: 768px) and (max-width: 991.98px) {
+      .table-cobranzas thead th,
+      .table-cobranzas tbody td { padding-left: .3rem; padding-right: .3rem; }
+
+      .table-cobranzas th.col-date,
+      .table-cobranzas td.col-date,
+      .table-cobranzas th.col-entrega,
+      .table-cobranzas td.col-entrega { width: 104px; min-width: 104px; }
+
+      .table-cobranzas td.col-date .form-control,
+      .table-cobranzas td.col-entrega .form-control { width: 104px; max-width: 104px; }
+
+      .table-cobranzas th.col-forma,
+      .table-cobranzas td.col-forma { width: 98px; min-width: 98px; }
+      .table-cobranzas td.col-forma .form-select { width: 98px; }
+
+      .table-cobranzas th.col-money,
+      .table-cobranzas td.col-money { width: 106px; min-width: 106px; }
+      .table-cobranzas td.col-money input.js-cob-monto { width: 80px; max-width: 80px; flex: 0 0 80px; }
+      /* `@media (min-width:768px)` de app.css le pone min-width:140px al grupo
+         de monto (ancho de escritorio) y eso pisaba el width:106px de la
+         columna: medido, la tabla volvía de 983px a 1011px. */
+      .table-cobranzas td.col-money .js-cob-price-group { min-width: 0 !important; max-width: 100% !important; }
+
+      /* "Atraso 55 día(s)" venía en nowrap y reservaba 111px medidos para una
+         columna titulada "Días". Que parta en dos líneas. */
+      #cobTable tbody td .badge { white-space: normal; }
+
+      /* Cliente/Empresa: partir en vez de estirar la columna. */
+      #cobTable td.col-client,
+      #cobTable td.col-company { max-width: 130px; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+    }
+
     @media (max-width: 767.98px) {
       .cob-toolbar {
         margin-top: .35rem !important;
@@ -266,10 +310,6 @@
         width: 104px;
       }
 
-      #cobTable .w-actions {
-        min-width: 50px;
-        width: 50px;
-      }
 
       #cobPagination {
         flex-direction: column;
@@ -291,6 +331,62 @@
       #cobPagination #cobPerPage {
         width: 100% !important;
         max-width: 140px;
+      }
+
+      /* ── H9: piso de área táctil y de legibilidad en mobile ───────────────
+         Medido en /deudas a 390px de viewport ANTES del fix: 57 controles con
+         menos de 40px de alto (42 de ellos dentro de #cobTable) y texto de
+         hasta 9.2px (.cob-sort-arrow). Se agranda el AREA (padding +
+         min-height/min-width), nunca el tamaño visual del ícono.
+         Va acá y no en app.css porque el <style> del template se resuelve
+         después de la hoja global y así no hace falta pelear con !important
+         contra `body[data-active="deudas"] .table .btn{min-height:0}`.        */
+      .cob-filter-wrap .btn-group .btn,
+      .cob-type-group .btn,
+      .cob-search-bar .btn,
+      #cobPagination .btn {
+        min-height: 40px;
+        font-size: 12px;
+      }
+
+      .date-soft .btn-clear {
+        min-width: 40px;
+        min-height: 40px;
+        padding: .25rem .5rem;
+        font-size: 12px;
+      }
+
+      /* Link de orden del thead: 14.6px de alto medidos. */
+      #cobTable thead th .cob-sort-link {
+        min-height: 40px;
+        padding-top: .25rem;
+        padding-bottom: .25rem;
+      }
+
+      .cob-sort-arrow {
+        font-size: 12px;
+      }
+
+      /* Único disparador de acciones de la fila: 25x26.9px medidos.
+         El ícono no cambia de tamaño, sólo el área del botón. */
+      #cobTable tbody td .dropdown > .btn {
+        min-width: 40px;
+        min-height: 40px;
+        padding: .35rem;
+        line-height: 1;
+      }
+
+      #cobTable tbody td .dropdown-menu .dropdown-item {
+        min-height: 40px;
+        display: flex;
+        align-items: center;
+        font-size: 13px;
+      }
+
+      /* La columna de acciones tiene que poder alojar un target de 40px. */
+      #cobTable .w-actions {
+        min-width: 54px;
+        width: 54px;
       }
     }
 

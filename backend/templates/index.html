@@ -65,6 +65,36 @@
     .db-kpi{ padding:.75rem; }
     .db-kpi-value{ font-size:1.45rem; }
     .db-chart-wrap{ height:220px; }
+
+    /* ── H9: piso de legibilidad en mobile ───────────────────────────────
+       Todo el dashboard está en rem y `html{font-size}` cae a 13.25px
+       (<=576px) y 12.75px (<=400px) en app.css, así que el "zoom out" global
+       arrastraba texto real a 7.9-8.8px. Medido a 390px de viewport ANTES
+       del fix: 67 elementos con texto por debajo de 12px, mínimo 7.9px
+       (.badge) — ilegible. Piso: 12px para contenido, 11px para etiquetas
+       auxiliares y chips. En px, no en rem, para que no vuelva a escalar
+       con el html{font-size}. Sólo mobile: en escritorio los rem quedan. */
+    .db-table thead th{ font-size:12px; }
+    .db-table tbody td{ font-size:12px; }
+    .db-link{ font-size:12px; }
+    .db-range .form-control{ font-size:12px; }
+    .db-filter-bar .btn-sm{ font-size:12px; }
+    .db-kpi-title{ font-size:11px; }
+    .db-filter-label{ font-size:11px; }
+    .db-range-state{ font-size:11px; }
+    .db-range-sep{ font-size:11px; }
+    .db-mini-note{ font-size:11px; }
+    .db-chip{ font-size:11px; padding:.3rem .55rem; }
+
+    /* Área táctil: los chips de preset y los links del dashboard son los
+       targets más chicos de la pantalla (9.9px de fuente, ~24px de alto). */
+    .db-chip, .db-filter-bar .btn-sm{ min-height:40px; min-width:40px; }
+    .db-actions .btn{ min-height:40px; }
+    /* Los controles del filtro estaban fijados en 26-30px de alto. min-height
+       gana sobre height, así que alcanza con declararlo acá. */
+    .db-range .form-control{ min-height:40px; }
+    .db-filter-bar .form-select, .db-filter-bar .form-control{ min-height:40px; }
+    .db-link{ display:inline-block; min-height:40px; padding-top:.5rem; padding-bottom:.5rem; }
   }
 </style>
 

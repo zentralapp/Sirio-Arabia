@@ -239,8 +239,12 @@ h1,h2{letter-spacing:.2px}
   body[data-active="status"] .table thead th,
   body[data-active="deudas"] .table thead th{font-size:12px; white-space:nowrap !important}
   body[data-active="deudas"] .table-cobranzas thead th{white-space:nowrap !important}
-  body[data-active="status"] .btn,
-  body[data-active="deudas"] .btn{min-height:0}
+  /* H9: la compactación de altura vale sólo DENTRO de la tabla. Antes era
+     `.btn{min-height:0}` a secas y mataba el piso táctil de 44px de
+     layout.html en toda la pantalla: medido a 390px en /deudas había
+     botones de filtro y paginación de 26.9px de alto. */
+  body[data-active="status"] .table .btn,
+  body[data-active="deudas"] .table .btn{min-height:0}
 
   /* Deudas/Status: Monto compacto (override de reglas globales touch 44px) */
   body[data-active="deudas"] .js-cob-price-group,
@@ -422,8 +426,12 @@ h1,h2{letter-spacing:.2px}
   body[data-active="status"] .table thead th,
   body[data-active="deudas"] .table thead th{font-size:12px; white-space:nowrap !important}
   body[data-active="deudas"] .table-cobranzas thead th{white-space:nowrap !important}
-  body[data-active="status"] .btn,
-  body[data-active="deudas"] .btn{min-height:0}
+  /* H9: la compactación de altura vale sólo DENTRO de la tabla. Antes era
+     `.btn{min-height:0}` a secas y mataba el piso táctil de 44px de
+     layout.html en toda la pantalla: medido a 390px en /deudas había
+     botones de filtro y paginación de 26.9px de alto. */
+  body[data-active="status"] .table .btn,
+  body[data-active="deudas"] .table .btn{min-height:0}
 
   /* Deudas/Status: Monto compacto (override de reglas globales touch 44px) */
   body[data-active="deudas"] .js-cob-price-group,
@@ -608,34 +616,40 @@ h1,h2{letter-spacing:.2px}
   }
 }
 
-/* XS aún más compacto */
+/* XS aún más compacto.
+   H9: los tamaños de texto de este bloque pasaron de rem a px a propósito.
+   `html{font-size}` baja a 13.25px acá y a 12.75px en el bloque de abajo, y
+   como casi todo estaba en rem ese "zoom out" global arrastraba texto real a
+   7.9px (medido: SPAN.badge en dashboard y /clientes a 390px de viewport).
+   Piso adoptado: 12px para contenido, 11px para .badge. En px porque el piso
+   NO debe volver a escalar con el html{font-size}. */
 @media (max-width: 575.98px){
   html{font-size:13.25px}
   .row.g-3{ --bs-gutter-x:.6rem; --bs-gutter-y:.6rem }
-  .input-group-sm .input-group-text{font-size:.85rem}
-  .form-label{font-size:.88rem}
+  .input-group-sm .input-group-text{font-size:12px}
+  .form-label{font-size:12px}
   .form-control,.form-select{font-size:.92rem}
-  .btn{padding:.42rem .64rem; font-size:.88rem}
-  .btn.btn-sm{padding:.36rem .5rem; font-size:.82rem}
-  .table{font-size:11px}
+  .btn{padding:.42rem .64rem; font-size:12px}
+  .btn.btn-sm{padding:.36rem .5rem; font-size:12px}
+  .table{font-size:12px}
   .table th,.table td{padding:.3rem .4rem}
   .table .input-group,.table select.form-select,.table input.form-control{min-width:0; width:100%}
-  .table .form-control.form-control-sm,.table .form-select.form-select-sm{padding:.22rem .45rem;height:auto;font-size:.85rem}
-  .table .btn-group .btn{padding:.26rem .4rem;font-size:.8rem}
-  .badge{font-size:.68rem; padding:.28em .42em}
+  .table .form-control.form-control-sm,.table .form-select.form-select-sm{padding:.22rem .45rem;height:auto;font-size:12px}
+  .table .btn-group .btn{padding:.26rem .4rem;font-size:12px}
+  .badge{font-size:11px; padding:.28em .42em}
   .w-actions{min-width:90px}
   .col-actions .btn-group{flex-wrap:wrap}
-  .alert{padding:.45rem .65rem; font-size:.85rem}
+  .alert{padding:.45rem .65rem; font-size:12px}
 }
 
-/* Muy pequeñas (ej. 360px) */
+/* Muy pequeñas (ej. 360px). Ver nota H9 del bloque anterior: tamaños en px. */
 @media (max-width: 399.98px){
   html{font-size:12.75px}
-  .table{font-size:10.5px}
+  .table{font-size:12px}
   .table th,.table td{padding:.26rem .35rem}
-  .table .btn-group .btn{padding:.24rem .36rem;font-size:.78rem}
-  .badge{font-size:.62rem}
-  .alert{font-size:.8rem}
+  .table .btn-group .btn{padding:.24rem .36rem;font-size:12px}
+  .badge{font-size:11px}
+  .alert{font-size:12px}
 }
 
 /* Control responsivo para campos de precio/forma pago en tablas */
@@ -762,4 +776,48 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
   body[data-active="historial"] .table-mobile-cards .col-actions,
   body[data-active="comisiones"] .table-mobile-cards .col-actions,
   body[data-active="crm"] .table-mobile-cards .col-actions{width:1% !important; text-align:right !important; white-space:nowrap}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   H10 — la banda 768–991.98px no tenía dueño
+   ───────────────────────────────────────────────────────────────────────────
+   Toda la compactación de tabla de esta hoja está en `max-width:767.98px`, y
+   arriba de 768px no había NINGUNA regla de tabla: la tabla volvía a fuente
+   heredada de 16px y padding de celda de ~10.4px por lado. Medido en /deudas a
+   900px de viewport: `#cobTable` = 1361px de ancho natural dentro de un
+   contenedor de 846px => 515px de scroll horizontal, el peor de la app (a
+   1512px la misma tabla entra sin scroll, y abajo de 768px ya está compactada).
+
+   Fix conservador y H2-SAFE: NO cambia de estrategia (sigue siendo tabla real
+   con scroll horizontal, no pasa a tarjetas ni toca `table-mobile-cards`).
+   Sólo reduce el ancho que la tabla NECESITA en esta banda, para que el scroll
+   sea corto en vez de brutal. La compactación es la misma que ya se usa abajo
+   de 768px, un punto menos agresiva.                                          */
+@media (min-width: 768px) and (max-width: 991.98px){
+  .table{font-size:13px}
+  .table th, .table td{padding:.35rem .45rem}
+  .table thead th{font-size:12px}
+
+  /* Texto largo: que parta en dos líneas en vez de estirar la columna */
+  #cobTable td.col-client, #cobTable td.col-company,
+  #status-table td.col-client, #status-table td.col-company,
+  #clientes-table td.col-client, #clientes-table td.col-company{
+    max-width:150px; white-space:normal; overflow-wrap:anywhere; word-break:break-word;
+  }
+  /* Encabezados: no reservar ancho por una sola palabra larga */
+  .table thead th{white-space:normal}
+
+  /* Controles dentro de tablas: sólo tipografía y padding.
+     NO se clampea el ancho de `.js-price-group` / `.js-cob-price-group` acá a
+     propósito: probado con 104px y recortaba el input de monto de /status
+     (medido a 900px: input 79px de ancho contra 82-83px de scrollWidth) y
+     /status en esta banda YA entra sin scroll (846px de tabla en 846px de
+     contenedor). El ancho de columna de /deudas — la única tabla que
+     desbordaba fuerte — se ajusta en su propio template (cobranzas.html). */
+  .js-forma, .js-cob-forma, .js-cob-estimado{max-width:118px}
+  .table .form-control.form-control-sm,
+  .table .form-select.form-select-sm{font-size:12px; padding:.24rem .4rem}
+  .table .input-group .input-group-text{padding:.2rem .35rem; font-size:12px}
+  .table .btn-group .btn{padding:.28rem .42rem; font-size:12px}
+  .table .badge{font-size:12px; padding:.3em .48em}
 }
