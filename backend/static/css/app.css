@@ -159,8 +159,13 @@ h1,h2{letter-spacing:.2px}
   body[data-active="status"] .table .d-none.d-md-table-cell{display:table-cell !important}
   body[data-active="status"] .table-responsive,
   body[data-active="deudas"] .table-responsive{overflow-x:auto !important; -webkit-overflow-scrolling:touch}
-  body[data-active="status"] .table-responsive > .table,
-  body[data-active="deudas"] .table-responsive > .table{min-width:1200px !important}
+  /* H8: aquí vivía `min-width:1200px !important` para status/deudas. Estaba
+     MUERTA: el <style> inline de los templates gana por especificidad de id
+     (#cobResults .table-responsive > .table = 920px en cobranzas.html,
+      #statusResults ... = 690px en status.html). Medido a 390px: el
+     min-width computado de #cobTable era 920px, no 1200px. Se borró para que
+     nadie pierda media hora ajustando un valor sin efecto: el ancho mínimo
+     de esas dos tablas se cambia EN EL TEMPLATE. */
   body[data-active="status"] .table-mobile-cards .table,
   body[data-active="deudas"] .table-mobile-cards .table{display:table !important; width:100% !important}
 
@@ -337,8 +342,13 @@ h1,h2{letter-spacing:.2px}
   body[data-active="status"] .table .d-none.d-md-table-cell{display:table-cell !important}
   body[data-active="status"] .table-responsive,
   body[data-active="deudas"] .table-responsive{overflow-x:auto !important; -webkit-overflow-scrolling:touch}
-  body[data-active="status"] .table-responsive > .table,
-  body[data-active="deudas"] .table-responsive > .table{min-width:1200px !important}
+  /* H8: aquí vivía `min-width:1200px !important` para status/deudas. Estaba
+     MUERTA: el <style> inline de los templates gana por especificidad de id
+     (#cobResults .table-responsive > .table = 920px en cobranzas.html,
+      #statusResults ... = 690px en status.html). Medido a 390px: el
+     min-width computado de #cobTable era 920px, no 1200px. Se borró para que
+     nadie pierda media hora ajustando un valor sin efecto: el ancho mínimo
+     de esas dos tablas se cambia EN EL TEMPLATE. */
   body[data-active="status"] .table-mobile-cards .table,
   body[data-active="deudas"] .table-mobile-cards .table{display:table !important; width:100% !important}
 
