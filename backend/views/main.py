@@ -44,16 +44,18 @@ from ..models import Client, Company, ClientCompanyLink, ClientCompanyBalance, R
 # cobranza. Está definida en backend/models.py (bloque del final del
 # archivo). NO reimplementes nada de esto acá: consumila.
 from ..models import (
+    PLAZO_PAGO_DIAS_DEFAULT,
     condiciones_estado_cobranza,
     estado_cobranza_de,
+    hoy_negocio,
     vencimiento_efectivo_expr,
 )
 
-from sqlalchemy import func, text, or_, and_
+from sqlalchemy import func, text, or_, and_, case
 
 from sqlalchemy.exc import OperationalError
 
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from flask_login import current_user
 
@@ -5175,9 +5177,17 @@ def notificaciones():
 
 def calendario():
 
-    today = date.today().isoformat()
+    # "Hoy" del NEGOCIO (Argentina) por la FUENTE ÚNICA DE VERDAD, no
+    # date.today() del server. Se le pasa tambien al template para que el JS
+    # NO use el reloj del navegador (mismo patron que cobranzas.html).
+    hoy = hoy_negocio()
 
-    return render_template("calendar.html", active="calendario", today=today)
+    return render_template(
+        "calendar.html",
+        active="calendario",
+        today=hoy.isoformat(),
+        now_date=hoy,
+    )
 
 
 
@@ -5805,258 +5815,304 @@ def comisiones_marcar():
 
 
 
+# ---------------------------------------------------------------------------
+#  Calendario: colores por TIPO y severidad DERIVADA de la fuente única
+# ---------------------------------------------------------------------------
+#  Doble codificación visual (dos canales independientes):
+#
+#    * fondo/borde del evento  -> TIPO   (entrega / cobranza / cumpleaños)
+#    * punto de color          -> SEVERIDAD
+#
+#  La SEVERIDAD se DERIVA del estado de la FUENTE ÚNICA DE VERDAD
+#  (backend/models.py: condiciones_estado_cobranza / estado_cobranza_de) más
+#  los días de atraso. NO se persiste, no hay modelo ni migración detrás.
+#
+#  OJO: no tiene NADA que ver con ClientAlertState. Ese modelo guarda el
+#  estado de las alertas POR USUARIO (descartada / postergada) y responde
+#  "¿qué está mal AHORA?". El calendario responde otra pregunta: "¿qué pasa
+#  el día X?". Son dos conceptos distintos y no se cruzan acá.
+# ---------------------------------------------------------------------------
+
+CALENDARIO_COLOR_TIPO = {
+    "entrega": "#0ea5a3",
+    "cobranza": "#f59e0b",
+    "cumpleanos": "#ec4899",
+}
+
+# Umbral entre "atrasado hace mucho" y "atrasado recién". Se elige el plazo de
+# pago por defecto de la fuente única (PLAZO_PAGO_DIAS_DEFAULT = 30 días): si
+# pasó un ciclo completo de plazo desde el vencimiento, la deuda ya consumió
+# otra ventana entera de cobro sin cobrarse. Es el mismo número que usa la
+# regla 3, así que el umbral no introduce una constante nueva de negocio.
+CALENDARIO_SEVERIDAD_CRITICA_DIAS = PLAZO_PAGO_DIAS_DEFAULT
+
+
+def _severidad_calendario(estado: str, dias_atraso: int = 0) -> str:
+    """Estado (fuente única) + días de atraso -> severidad visual.
+
+    critica  ATRASADO hace >= 30 días (un ciclo de plazo completo vencido)
+    alta     ATRASADO hace 1..29 días
+    media    A_COBRAR (ya entregado, todavía no vencido: hay que accionar)
+    baja     EN_CAMINO (ni entregado ni vencido: nada que hacer hoy)
+    ninguna  COBRADO (cerrado)
+    """
+    if estado == "COBRADO":
+        return "ninguna"
+    if estado == "ATRASADO":
+        if (dias_atraso or 0) >= CALENDARIO_SEVERIDAD_CRITICA_DIAS:
+            return "critica"
+        return "alta"
+    if estado == "A_COBRAR":
+        return "media"
+    return "baja"
+
+
+def _fecha_de(value):
+    """datetime | date | None -> date | None. Sin conversión de huso.
+
+    Las columnas de fecha del proyecto son DateTime NAIVE (fechas de negocio
+    guardadas a medianoche). El código anterior les hacía .astimezone(), que
+    en un datetime naive Python interpreta como hora LOCAL DEL SERVER y
+    convierte: eso puede correr el día. La fuente única (_as_date) y el filtro
+    fecha_iso hacen .date() pelado; acá se hace lo mismo para que el
+    calendario no muestre un día distinto al de /deudas.
+    """
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return None
+
+
 @bp.get("/api/calendario/events")
-
 def api_calendario_events():
-
     # Rango opcional
-
     start_raw = request.args.get("start")
-
     end_raw = request.args.get("end")
-
     start = _parse_datetime_like(start_raw) if start_raw else None
-
     end = _parse_datetime_like(end_raw) if end_raw else None
+    start_d = _fecha_de(start)
+    end_d = _fecha_de(end)
 
+    # UN SOLO "hoy": el del negocio, por la fuente única. Antes el endpoint
+    # calculaba el suyo (date.today() del server) y podía discrepar con
+    # /deudas cruzando la medianoche.
+    hoy = hoy_negocio()
 
+    # Estado por la MISMA expresión SQL que filtra /deudas. Se usa la
+    # expresión (y no la property Python) porque el vencimiento efectivo
+    # también hay que FILTRARLO en SQL por el rango del calendario, y porque
+    # así el estado que pinta el calendario es bit a bit el mismo booleano que
+    # evalúa el filtro de /deudas: no hay dos caminos que puedan divergir.
+    cond = condiciones_estado_cobranza(hoy)
+    estado_cob_expr = case(
+        (Collection.id.is_(None), "SIN_COBRANZA"),
+        (cond.cobrado, "COBRADO"),
+        (cond.atrasado, "ATRASADO"),
+        (cond.a_cobrar, "A_COBRAR"),
+        else_="EN_CAMINO",
+    )
+
+    uid = None if _has_global_access() else _effective_user_id()
 
     events = []
 
-    # Entregas estimadas (pendientes)
+    def _dias_atraso(venc):
+        v = _fecha_de(venc)
+        if v is None or v >= hoy:
+            return 0
+        return (hoy - v).days
 
+    # -----------------------------------------------------------------
+    #  Entregas estimadas (pendientes)
+    # -----------------------------------------------------------------
+    #  joinedload de order->client/company: antes cada evento disparaba
+    #  o.client y o.company (N+1).
     q_ent = (
-
-        LogisticsStatus.query
-
+        db.session.query(LogisticsStatus, estado_cob_expr, cond.vencimiento)
         .join(Order, LogisticsStatus.order_id == Order.id)
-
+        .outerjoin(Collection, Collection.order_id == Order.id)
+        .options(
+            joinedload(LogisticsStatus.order).joinedload(Order.client),
+            joinedload(LogisticsStatus.order).joinedload(Order.company),
+        )
+        # Pedidos borrados (soft delete). deleted_at existe SOLO en Order.
+        .filter(Order.deleted_at.is_(None))
         .filter(LogisticsStatus.fecha_entrega_efectiva.is_(None))
-
+        .filter(LogisticsStatus.fecha_entrega_estimada.isnot(None))
     )
 
-    if not _has_global_access():
-
-        uid = _effective_user_id()
-
-        if uid is not None:
-
-            q_ent = q_ent.filter(Order.owner_user_id == uid)
+    if uid is not None:
+        q_ent = q_ent.filter(Order.owner_user_id == uid)
 
     if start:
-
         q_ent = q_ent.filter(LogisticsStatus.fecha_entrega_estimada >= start)
 
     if end:
-
         q_ent = q_ent.filter(LogisticsStatus.fecha_entrega_estimada <= end)
 
-    for lg in q_ent.filter(LogisticsStatus.fecha_entrega_estimada.isnot(None)).all():
-
+    for lg, estado, venc in q_ent.all():
         o = lg.order
+        d = _fecha_de(lg.fecha_entrega_estimada)
+        if d is None:
+            continue
 
-        # Convertir a fecha local si es posible
+        if o is not None and o.client is not None and o.company is not None:
+            title = f"Entrega: {o.client.apellido} {o.client.nombre} - {o.company.nombre}"
+        else:
+            title = "Entrega"
 
-        dt = lg.fecha_entrega_estimada
-
-        if ZoneInfo:
-
-            try:
-
-                dt = dt.astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
-
-            except Exception:
-
-                pass
-
-        title = f"Entrega: {o.client.apellido} {o.client.nombre} - {o.company.nombre}" if o and o.client and o.company else "Entrega"
-
+        dias = _dias_atraso(venc)
         events.append({
-
-            "id": f"E-{o.id}",
-
+            "id": f"E-{o.id}" if o is not None else f"E-L{lg.id}",
             "title": title,
-
-            "start": dt.date().isoformat(),
-
+            "start": d.isoformat(),
             "allDay": True,
-
-            "color": "#0ea5a3"
-
+            # Fondo/borde = TIPO
+            "color": CALENDARIO_COLOR_TIPO["entrega"],
+            "extendedProps": {
+                "tipo": "entrega",
+                "estado": estado,
+                "severidad": _severidad_calendario(estado, dias),
+                "diasAtraso": dias,
+                "vencimiento": (_fecha_de(venc).isoformat() if _fecha_de(venc) else None),
+            },
         })
 
-
-
-    # Cobranzas estimadas (pendientes)
-
+    # -----------------------------------------------------------------
+    #  Cobranzas pendientes: el evento cae en el VENCIMIENTO EFECTIVO
+    # -----------------------------------------------------------------
+    #  Antes leía Collection.fecha_pago_estimada DIRECTO. Ese campo está NULL
+    #  en la mayoría de las filas, así que el calendario simplemente no
+    #  mostraba esas deudas (el mismo bug que hacía que el filtro "Atrasado"
+    #  de /deudas escondiera deudas vencidas). Ahora la fecha del evento y el
+    #  filtro por rango salen de vencimiento_efectivo_expr().
     q_cob = (
-
-        Collection.query
-
+        db.session.query(Collection, estado_cob_expr, cond.vencimiento)
         .join(Order, Collection.order_id == Order.id)
-
+        .outerjoin(LogisticsStatus, LogisticsStatus.order_id == Order.id)
+        .options(
+            joinedload(Collection.order).joinedload(Order.client),
+            joinedload(Collection.order).joinedload(Order.company),
+            joinedload(Collection.order).joinedload(Order.logistics),
+        )
+        .filter(Order.deleted_at.is_(None))
         .filter(Collection.fecha_cobro_efectiva.is_(None))
-
+        .filter(cond.vencimiento.isnot(None))
     )
 
-    if not _has_global_access():
+    if uid is not None:
+        q_cob = q_cob.filter(Order.owner_user_id == uid)
 
-        uid = _effective_user_id()
+    if start_d:
+        q_cob = q_cob.filter(cond.vencimiento >= start_d)
 
-        if uid is not None:
+    if end_d:
+        q_cob = q_cob.filter(cond.vencimiento <= end_d)
 
-            q_cob = q_cob.filter(Order.owner_user_id == uid)
-
-    if start:
-
-        q_cob = q_cob.filter(Collection.fecha_pago_estimada >= start)
-
-    if end:
-
-        q_cob = q_cob.filter(Collection.fecha_pago_estimada <= end)
-
-    for c in q_cob.filter(Collection.fecha_pago_estimada.isnot(None)).all():
-
+    for c, estado, venc in q_cob.all():
         o = c.order
+        d = _fecha_de(venc)
+        if d is None:
+            continue
 
-        dt = c.fecha_pago_estimada
+        if o is not None and o.client is not None and o.company is not None:
+            title = f"Cobranza: {o.client.apellido} {o.client.nombre} - {o.company.nombre}"
+        else:
+            title = "Cobranza"
 
-        if ZoneInfo:
-
-            try:
-
-                dt = dt.astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
-
-            except Exception:
-
-                pass
-
-        title = f"Cobranza: {o.client.apellido} {o.client.nombre} - {o.company.nombre}" if o and o.client and o.company else "Cobranza"
-
+        dias = _dias_atraso(venc)
         events.append({
-
-            "id": f"C-{o.id}",
-
+            "id": f"C-{o.id}" if o is not None else f"C-C{c.id}",
             "title": title,
-
-            "start": dt.date().isoformat(),
-
+            "start": d.isoformat(),
             "allDay": True,
-
-            "color": "#f59e0b"
-
+            "color": CALENDARIO_COLOR_TIPO["cobranza"],
+            "extendedProps": {
+                "tipo": "cobranza",
+                "estado": estado,
+                "severidad": _severidad_calendario(estado, dias),
+                "diasAtraso": dias,
+                "vencimiento": d.isoformat(),
+            },
         })
 
-
-
-    # Cumpleaños de contactos de clientes
-
+    # -----------------------------------------------------------------
+    #  Cumpleaños de contactos de clientes
+    # -----------------------------------------------------------------
+    #  No tienen estado de cobranza: severidad "info" (canal neutro). No se
+    #  les aplica deleted_at porque ese campo NO existe en Client ni en
+    #  ClientBirthday: es exclusivo de Order.
     if start or end:
-
-        # Determinar rango de años a considerar
-
-        year_start = (start.date().year if start else date.today().year)
-
+        year_start = (start.date().year if start else hoy.year)
         year_end = (end.date().year if end else year_start)
 
-        bq = ClientBirthday.query.join(Client, ClientBirthday.client_id == Client.id).filter(ClientBirthday.fecha.isnot(None))
+        bq = (
+            ClientBirthday.query
+            .join(Client, ClientBirthday.client_id == Client.id)
+            .options(
+                joinedload(ClientBirthday.client)
+                .selectinload(Client.links)
+                .joinedload(ClientCompanyLink.company)
+            )
+            .filter(ClientBirthday.fecha.isnot(None))
+        )
 
-        if not _has_global_access():
+        if uid is not None:
+            bq = bq.filter(Client.owner_user_id == uid)
 
-            uid = _effective_user_id()
-
-            if uid is not None:
-
-                bq = bq.filter(Client.owner_user_id == uid)
-
-        bdays = bq.all()
-
-        for b in bdays:
-
+        for b in bq.all():
             if not b.fecha:
-
                 continue
 
-            # Para cada año en el rango, crear un evento en ese año
+            # Elegir una empresa representativa: priorizar vínculos TRABAJA
+            empresa = None
+            client = b.client
+            if client is not None:
+                for l in client.links:
+                    if l.company:
+                        empresa = l.company
+                        if getattr(l, "status", None) == RelationStatus.TRABAJA:
+                            break
 
-            for y in range(year_start, year_end + 1):
-
-                try:
-
-                    d = date(y, b.fecha.month, b.fecha.day)
-
-                except ValueError:
-
-                    continue
-
-                # Filtrar por rango start/end
-
-                if start and d < start.date():
-
-                    continue
-
-                if end and d > end.date():
-
-                    continue
-
-                client = b.client
-
-                if client:
-
-                    # Elegir una empresa representativa: priorizar vínculos en estado TRABAJA
-
-                    empresa = None
-
-                    try:
-
-                        for l in client.links:
-
-                            if l.company:
-
-                                empresa = l.company
-
-                                if getattr(l, "status", None) == RelationStatus.TRABAJA:
-
-                                    break
-
-                    except Exception:
-
-                        empresa = None
-
-                    emp_name = empresa.nombre if empresa and getattr(empresa, "nombre", None) else "-"
-
-                    if b.puesto:
-
-                        title = f"Cumpleaños: {emp_name} - {b.nombre} ({b.puesto})"
-
-                    else:
-
-                        title = f"Cumpleaños: {emp_name} - {b.nombre}"
-
+            if client is not None:
+                emp_name = empresa.nombre if empresa and getattr(empresa, "nombre", None) else "-"
+                if b.puesto:
+                    title = f"Cumpleaños: {emp_name} - {b.nombre} ({b.puesto})"
                 else:
+                    title = f"Cumpleaños: {emp_name} - {b.nombre}"
+            else:
+                title = f"Cumpleaños: {b.nombre}"
 
-                    title = f"Cumpleaños: {b.nombre}"
+            # Para cada año en el rango, crear un evento en ese año
+            for y in range(year_start, year_end + 1):
+                try:
+                    d = date(y, b.fecha.month, b.fecha.day)
+                except ValueError:
+                    continue
+
+                if start_d and d < start_d:
+                    continue
+
+                if end_d and d > end_d:
+                    continue
 
                 events.append({
-
                     "id": f"B-{b.id}-{y}",
-
                     "title": title,
-
                     "start": d.isoformat(),
-
                     "allDay": True,
-
-                    "color": "#ec4899"  # rosa para distinguir cumpleaños
-
+                    "color": CALENDARIO_COLOR_TIPO["cumpleanos"],
+                    "extendedProps": {
+                        "tipo": "cumpleanos",
+                        "estado": None,
+                        "severidad": "info",
+                        "diasAtraso": 0,
+                        "vencimiento": None,
+                    },
                 })
 
-
-
     return jsonify(events)
-
-
-
 
 
 @bp.get("/clientes/nuevo")

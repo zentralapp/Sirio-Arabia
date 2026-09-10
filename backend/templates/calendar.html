@@ -27,6 +27,29 @@
   .fc .fc-list-event-title { padding-left: 0; }
   .calendar-card { border-radius:.75rem; box-shadow:0 8px 24px rgba(0,0,0,.08); border:1px solid #e5e7eb; overflow:hidden; }
 
+  /* DOBLE CODIFICACION DE COLOR: dos canales visuales independientes.
+     - fondo/borde del evento -> TIPO (entrega / cobranza / cumpleanos)
+     - este punto             -> SEVERIDAD (derivada de la fuente unica)
+     El punto lleva anillo blanco para que se lea sobre cualquier fondo. */
+  .sirio-ev { display:flex; align-items:center; gap:.35rem; min-width:0; }
+  .sirio-ev-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* El punto va sobre un "plato" BLANCO fijo. Sin el plato, el canal de
+     severidad se pierde cuando su tono coincide con el fondo del tipo
+     (ej: punto ambar "media" sobre el ambar de Cobranza): se leia como un
+     anillo vacio. Con el plato, la severidad siempre se lee contra blanco,
+     independiente del color del tipo. */
+  .sirio-sev-dot {
+    flex: 0 0 auto;
+    width:.85rem; height:.85rem; border-radius:50%;
+    background:#fff;
+    display:inline-flex; align-items:center; justify-content:center;
+    box-shadow:0 0 0 1px rgba(15,23,42,.35);
+  }
+  .sirio-sev-dot > i { display:block; width:.45rem; height:.45rem; border-radius:50%; }
+
+  .sirio-leyenda { font-size:.78rem; color:#475569; }
+  .sirio-leyenda-tipo { display:inline-block; width:.7rem; height:.7rem; border-radius:.2rem; }
+
   @media (max-width: 575.98px) {
     .fc .fc-toolbar { flex-wrap: wrap; gap: .5rem; }
     .fc .fc-toolbar-title { font-size: 1.05rem; }
@@ -38,18 +61,62 @@
     <div id="sirioCalendar"></div>
   </div>
 </div>
+
+<div class="sirio-leyenda d-flex flex-wrap align-items-center gap-3 mt-2">
+  <span class="fw-semibold">Tipo (fondo):</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-leyenda-tipo" style="background:#0ea5a3"></span> Entrega</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-leyenda-tipo" style="background:#f59e0b"></span> Cobranza</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-leyenda-tipo" style="background:#ec4899"></span> Cumpleaños</span>
+  <span class="fw-semibold ms-sm-3">Severidad (punto):</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-sev-dot"><i style="background:#7f1d1d"></i></span> Crítica (atraso &ge; 30 d)</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-sev-dot"><i style="background:#dc2626"></i></span> Alta (atrasado)</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-sev-dot"><i style="background:#d97706"></i></span> Media (a cobrar)</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-sev-dot"><i style="background:#0284c7"></i></span> Baja (en camino)</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-sev-dot"><i style="background:#94a3b8"></i></span> Sin acción</span>
+</div>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/main.min.css" />
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
 <script>
 (function(){
   var calendarEl = document.getElementById('sirioCalendar');
   if (!calendarEl || !window.FullCalendar) return;
-  var initialDate = '{{ today }}';
+  // "Hoy" del NEGOCIO (hora de Argentina), calculado por el backend con la
+  // FUENTE UNICA DE VERDAD (backend/models.py -> hoy_negocio()). El JS NUNCA
+  // usa new Date() para decidir estado ni para saber que dia es hoy: si el
+  // navegador esta en otro huso veria un dia distinto al del servidor.
+  var HOY_NEGOCIO_ISO = '{{ now_date|fecha_iso }}';
+  if (window.SirioFechas && HOY_NEGOCIO_ISO) {
+    window.SirioFechas.setHoyNegocio(HOY_NEGOCIO_ISO);
+  }
+  var initialDate = HOY_NEGOCIO_ISO || '{{ today }}';
+
+  // Color del punto por SEVERIDAD. La severidad la calcula el backend con la
+  // fuente unica; el JS solo la pinta (no la deriva).
+  var SEVERIDAD_COLOR = {
+    critica: '#7f1d1d',
+    alta:    '#dc2626',
+    media:   '#d97706',
+    baja:    '#0284c7',
+    ninguna: '#94a3b8',
+    info:    '#a855f7'
+  };
+  var SEVERIDAD_LABEL = {
+    critica: 'Critica',
+    alta:    'Alta',
+    media:   'Media',
+    baja:    'Baja',
+    ninguna: 'Sin accion',
+    info:    'Informativo'
+  };
+
   var isMobile = false;
   try { isMobile = window.innerWidth <= 575; } catch(e) { isMobile = false; }
   var cal = new FullCalendar.Calendar(calendarEl, {
     initialView: 'dayGridMonth',
     initialDate: initialDate,
+    // 'now' manda en el resaltado del dia de hoy y en el boton "Hoy".
+    // Sin esto FullCalendar usa el reloj del navegador.
+    now: initialDate || undefined,
     locale: 'es',
     firstDay: 1,
     buttonText: { today: '↻ Hoy', month: 'Mes', list: 'Lista' },
@@ -100,10 +167,49 @@
         .then(function(data){ success(data || []); })
         .catch(function(err){ failure(err); });
     },
+    // DOBLE CODIFICACION: el fondo/borde ya viene del backend por TIPO
+    // (event.color). Aca se agrega el segundo canal: un punto cuyo color es la
+    // SEVERIDAD. Son dos ejes independientes, no se mezclan.
+    eventContent: function(arg){
+      var props = arg.event.extendedProps || {};
+      var sev = props.severidad || 'ninguna';
+      var wrap = document.createElement('div');
+      wrap.className = 'sirio-ev';
+
+      var dot = document.createElement('span');
+      dot.className = 'sirio-sev-dot';
+      dot.setAttribute('aria-hidden', 'true');
+      var nucleo = document.createElement('i');
+      nucleo.style.backgroundColor = SEVERIDAD_COLOR[sev] || SEVERIDAD_COLOR.ninguna;
+      dot.appendChild(nucleo);
+      wrap.appendChild(dot);
+
+      // El color no puede ser el UNICO canal: texto solo para lectores de
+      // pantalla con tipo + severidad + estado.
+      var sr = document.createElement('span');
+      sr.className = 'visually-hidden';
+      sr.textContent = (props.tipo || '') + ', severidad ' +
+        (SEVERIDAD_LABEL[sev] || sev) +
+        (props.estado ? ', estado ' + props.estado : '') + '. ';
+      wrap.appendChild(sr);
+
+      var txt = document.createElement('span');
+      txt.className = 'sirio-ev-title';
+      txt.textContent = arg.event.title || '';
+      wrap.appendChild(txt);
+
+      return { domNodes: [wrap] };
+    },
     eventDidMount: function(info){
-      // Tooltip simple
-      var t = info.event.title || '';
-      info.el.setAttribute('title', t);
+      // Tooltip: titulo + estado/severidad/atraso derivados de la fuente unica
+      var props = info.event.extendedProps || {};
+      var partes = [info.event.title || ''];
+      if (props.estado) partes.push('Estado: ' + props.estado);
+      var sev = props.severidad;
+      if (sev) partes.push('Severidad: ' + (SEVERIDAD_LABEL[sev] || sev));
+      if (props.diasAtraso) partes.push('Atraso: ' + props.diasAtraso + ' dias');
+      if (props.vencimiento) partes.push('Vence: ' + (window.SirioFechas ? window.SirioFechas.format(props.vencimiento, props.vencimiento) : props.vencimiento));
+      info.el.setAttribute('title', partes.join(' | '));
     }
   });
   cal.render();
