@@ -93,23 +93,10 @@
       @media (max-width: 767.98px) and (orientation: portrait) {
         .table-responsive > .table{ min-width: 0; }
       }
-      /* Bloqueo de orientación: overlay controlado por clase require-rotate */
-      #orientationLock { display: none; position: fixed; inset: 0; z-index: 2000; background: #0b1721; color: #fff; align-items: center; justify-content: center; text-align: center; padding: 2rem; }
-      #orientationLock .inner { max-width: 520px; margin: 0 auto; }
-      #orientationLock .icon { font-size: 64px; line-height: 1; opacity: .9; margin-bottom: 1rem; }
-      #orientationLock h2 { font-size: 1.25rem; margin-bottom: .5rem; }
-      #orientationLock p { color: #cbd5e1; margin: 0; }
-      @media (max-width: 767.98px) and (orientation: portrait) {
-        body.require-rotate-disabled #orientationLock { display: flex; }
-        body.require-rotate-disabled { overflow: hidden; }
-      }
       /* Navbar mobile links hover/focus con acento petróleo/verde */
       .navbar-dark .navbar-nav .nav-link:hover,
       .navbar-dark .navbar-nav .nav-link:focus { background: rgba(15,118,110,.18); border-radius:.5rem; color:#e6fffb!important }
       .navbar-dark .navbar-nav .nav-link.active { background: rgba(25,135,84,.22); border-radius:.5rem }
-      /* Overlay: link a Pedidos más discreto e inline */
-      #orientationLock .orientation-link{ display:inline; padding:0; font-size:.95rem; color:#0ea5a3; text-decoration:underline; background:transparent; border:0 }
-      #orientationLock .orientation-link:hover{ color:#0f766e }
       /* Logout links en navbar y sidebar */
       .logout-link:hover, .logout-link:focus { background: rgba(220,53,69,.18) !important; color: #fff !important; border-radius: .5rem; outline: 2px solid rgba(220,53,69,.35); outline-offset: 2px; }
       /* Ajuste global: margen superior moderado en vista de Clientes */
@@ -239,14 +226,6 @@
           {% endif %}
           {% block content %}{% endblock %}
         </main>
-      </div>
-    </div>
-    <div id="orientationLock" aria-hidden="true" role="dialog">
-      <div class="inner">
-        <div class="icon">🔁</div>
-        <h2>Girá el celular</h2>
-        <p>Para ver las tablas completas, usá el teléfono en posición horizontal.</p>
-        <p class="mt-3">Si preferís, podés usar <a id="orientationPedidosLink" href="{{ url_for('main.pedidos') }}" class="orientation-link">Pedidos</a> sin girar el celular.</p>
       </div>
     </div>
     <!-- Toast container global para alertas estéticas -->
@@ -916,64 +895,6 @@
         enhanceTables();
         var mo = new MutationObserver(enhanceTables);
         mo.observe(document.body, { childList:true, subtree:true });
-        var topMenu = document.getElementById('topMenu');
-        // Requerir girar el celular para todas las secciones excepto Pedidos
-        (function rotateGate(){
-          return;
-          function isMobilePortrait(){ return window.innerWidth < 768 && window.matchMedia('(orientation: portrait)').matches; }
-          // bandera inicial según ruta activa
-          var isPedidos = '{{ active }}' === 'pedidos';
-          var isClientes = '{{ active }}' === 'clientes';
-          // No exigir giro en Clientes ni en Pedidos
-          document.body.classList.toggle('require-rotate', !(isPedidos || isClientes));
-          // Interceptar clicks del menú (mobile) excepto Pedidos y Clientes
-          var menu = document.getElementById('topMenu');
-          var pendingHref = null;
-          function handleClick(ev){
-            var a = ev.currentTarget;
-            // No interceptar logout: lo maneja el modal específico
-            if (a.classList && a.classList.contains('logout-link')) {
-              return; // permitir que el otro handler abra el modal
-            }
-            var href = a.getAttribute('href');
-            var txt = (a.textContent||'').toLowerCase();
-            var isPedidosLink = txt.includes('pedidos');
-            var isClientesLink = txt.includes('clientes');
-            if (!(isPedidosLink || isClientesLink) && isMobilePortrait()){
-              ev.preventDefault();
-              pendingHref = href;
-              document.body.classList.add('require-rotate');
-              // Navegar automáticamente cuando pase a landscape
-              var mm = window.matchMedia('(orientation: landscape)');
-              var go = function(){ if (pendingHref){ window.location.href = pendingHref; pendingHref=null; mm.removeEventListener('change', go);} };
-              mm.addEventListener('change', go);
-            } else {
-              document.body.classList.remove('require-rotate');
-              // Cerrar el menú hamburguesa si está abierto
-              var el = document.getElementById('topMenu');
-              if (el && el.classList.contains('show') && window.bootstrap && window.bootstrap.Collapse) {
-                var c = window.bootstrap.Collapse.getOrCreateInstance(el);
-                c.hide();
-              }
-            }
-          }
-          if (menu){
-            menu.querySelectorAll('.nav-link').forEach(function(a){ a.addEventListener('click', handleClick); });
-          }
-          // CTA del overlay: ir a Pedidos sin girar
-          var cta = document.getElementById('orientationPedidosLink');
-          if (cta){
-            cta.addEventListener('click', function(ev){
-              document.body.classList.remove('require-rotate');
-              // cerrar menú si estuviera abierto
-              var el = document.getElementById('topMenu');
-              if (el && el.classList.contains('show') && window.bootstrap && window.bootstrap.Collapse) {
-                var c = window.bootstrap.Collapse.getOrCreateInstance(el);
-                c.hide();
-              }
-            });
-          }
-        })();
         // Logout links: modal de confirmación estético (Bootstrap)
         (function setupLogoutModal(){
           var pendingLogoutHref = null;
