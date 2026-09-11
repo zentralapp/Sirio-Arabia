@@ -138,6 +138,45 @@
 
     .table-cobranzas td.col-date .form-control { width: 120px; }
 
+    /* Vencimiento + botón de tilde (copia la fecha a "Cobro efectivo").
+       La columna NO se ensancha: el input cede el espacio del botón.
+
+       OJO: `width: auto` acá NO sirve. En un <input> resuelve al ancho
+       INTRÍNSECO (~137px), y como la tabla es `table-layout: auto` el min-content
+       de la celda es lo que manda: el `width:104px/120px` de .col-date pasa a ser
+       una sugerencia y la celda crece igual. Medido en /deudas con `auto`:
+       #cobTable pasó de 969.3px a 1030.9px en la banda 768–1199 (+61.6px) y de
+       1360.8px a 1429.6px en ≥1200 (+68.8px), o sea el doble del scroll que
+       arregló H10. Con el input en ancho FIJO la celda vuelve a entrar en el
+       presupuesto: 969.3px en 768–1199 (idéntico al baseline) y 1354.8px en ≥1200.
+
+       Los 90px/80px son el mínimo medido para que "07/09/2026" NO se corte
+       (clientWidth necesario: 88px en ≥1200 con fuente 13px, 78px en 768–1199 con
+       fuente 12px). Si bajás de ahí el input scrollea y la fecha queda tapada.
+       El padding lateral va a .2rem por lo mismo: cada 1px que le sacás al
+       padding es 1px de fecha visible. */
+    .table-cobranzas td.col-venc .cob-venc-wrap {
+      display: flex;
+      align-items: center;
+      gap: .2rem;
+      flex-wrap: nowrap;
+    }
+
+    .table-cobranzas td.col-venc .form-control {
+      flex: 1 1 auto;
+      width: 90px;
+      min-width: 0;
+      max-width: 90px;
+      padding-left: .2rem;
+      padding-right: .2rem;
+    }
+
+    .table-cobranzas td.col-venc .js-copy-venc {
+      flex: 0 0 auto;
+      padding: .12rem .15rem;
+      line-height: 1;
+    }
+
     .table-cobranzas th.col-forma,
 
     .table-cobranzas td.col-forma { width: 110px; min-width: 110px; }
@@ -206,6 +245,12 @@
 
       .table-cobranzas td.col-date .form-control,
       .table-cobranzas td.col-entrega .form-control { width: 104px; max-width: 104px; }
+
+      /* El input de vencimiento comparte celda con el botón de tilde, así que
+         no puede llevarse los 104px de .col-date: 80 + gap .2rem + botón 20.8
+         = 104. Medido: td.col-venc queda en 113.6px, igual que las otras
+         .col-date (112.8px), y #cobTable en 969.3px = el baseline de H10. */
+      .table-cobranzas td.col-venc .form-control { width: 80px; max-width: 80px; }
 
       .table-cobranzas th.col-forma,
       .table-cobranzas td.col-forma { width: 98px; min-width: 98px; }
@@ -322,6 +367,32 @@
       #cobTable td.col-date .form-control,
       #cobTable td.col-entrega .form-control {
         width: 104px;
+      }
+
+      /* Acá el botón va DEBAJO del input, no al lado. El piso táctil de 40px
+         (H9, abajo) más los 104px del input no entran en el ancho de la celda:
+         medido con los dos en fila, `flex-shrink` le comía el input hasta 62px
+         (clientWidth 60 contra 99 que necesita la fecha) y "07/09/2026" salía
+         cortado. Apilados, el input recupera sus ~105px, el botón mantiene los
+         40x40 y la columna NO crece: td.col-venc = 120px y #cobTable = 1195.1px
+         a 576px de viewport, los mismos números que antes del botón. */
+      #cobTable td.col-venc .cob-venc-wrap {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      #cobTable td.col-venc .form-control {
+        width: 104px;
+        max-width: 104px;
+      }
+
+      /* Mismo piso táctil de 40px que el resto de los controles de la tabla
+         (H9). El ícono no cambia de tamaño, sólo el área. */
+      #cobTable td.col-venc .js-copy-venc {
+        min-width: 40px;
+        min-height: 40px;
+        padding: .35rem;
+        line-height: 1;
       }
 
 
@@ -553,7 +624,7 @@
 
             <th class="col-forma">Forma de pago</th>
 
-            <th class="col-date">
+            <th class="col-date col-venc">
               <a class="cob-sort-link {{ 'active' if _venc_active else '' }}" href="{{ sort_vencimiento_url }}" aria-label="Ordenar por vencimiento">
                 <span>Vencimiento</span>
                 <span class="cob-sort-arrow" aria-hidden="true">
@@ -596,7 +667,18 @@
 
           {% set estado = estado_cobranza(c) %}
 
-          <tr data-cliente="{{ ((c.order.client.apellido or '') ~ ' ' ~ (c.order.client.nombre or ''))|lower }}" data-empresa="{{ (c.order.company.nombre or '')|lower }}">
+          {#
+            OJO con la semántica INVERTIDA de las columnas (backend/models.py):
+              Client.apellido = RAZÓN SOCIAL  (Client.nombre = nombre de fantasía)
+              Company.nombre  = RAZÓN SOCIAL  (Company.marca  = marca)
+            El texto que se copia al portapapeles es "Dep {razón social del
+            cliente} - {razón social de la empresa}", o sea apellido - nombre.
+            Si acá alguien "arregla" esto a c.order.client.nombre no explota:
+            copia el nombre de fantasía en silencio. NO lo toques.
+            Tampoco va client.display_name: eso devuelve "Apellido (Nombre)".
+          #}
+          {% set dep_text = 'Dep ' ~ (c.order.client.apellido or '') ~ ' - ' ~ (c.order.company.nombre or '') %}
+          <tr data-cliente="{{ ((c.order.client.apellido or '') ~ ' ' ~ (c.order.client.nombre or ''))|lower }}" data-empresa="{{ (c.order.company.nombre or '')|lower }}" data-dep="{{ dep_text }}">
 
             <td class="col-client">{{ c.order.client.apellido }}
 
@@ -679,10 +761,22 @@
 
             </td>
 
-            <td class="col-date">
+            <td class="col-date col-venc">
 
                 {# venc_value ya viene de c.vencimiento_efectivo (fuente única). #}
-                <input name="pago_estimado" type="text" data-datepicker class="form-control form-control-sm js-cob-estimado" placeholder="Vencimiento" value="{{ venc_value|fecha_iso }}" form="upd{{ c.order.id }}">
+                {#
+                  El botón de tilde NO va dentro de un .input-group a propósito:
+                  flatpickr (altInput:true) inserta su input visible DESPUÉS del
+                  original y deja el original en type=hidden, así que el
+                  :first-child de Bootstrap caería sobre el input oculto y
+                  rompería los bordes. Un flex a mano no tiene ese problema.
+                #}
+                <div class="cob-venc-wrap">
+                  <input name="pago_estimado" type="text" data-datepicker class="form-control form-control-sm js-cob-estimado" placeholder="Vencimiento" value="{{ venc_value|fecha_iso }}" form="upd{{ c.order.id }}">
+                  <button type="button" class="btn btn-sm btn-outline-success js-copy-venc" title="Copiar el vencimiento a cobro efectivo" aria-label="Copiar el vencimiento a cobro efectivo">
+                    <i class="bi bi-check-lg" aria-hidden="true"></i>
+                  </button>
+                </div>
 
             </td>
 
@@ -853,6 +947,15 @@
                     </form>
 
                   {% endif %}
+
+                  <div class="dropdown-divider"></div>
+
+                  {# El texto que se copia sale de data-dep en el <tr> (fuente
+                     única); acá sólo se muestra el FORMATO, y el valor real va
+                     en el title para no romper el ancho del menú. #}
+                  <button type="button" class="dropdown-item js-copy-dep" title="{{ dep_text }}">
+                    <i class="bi bi-clipboard me-1" aria-hidden="true"></i>Copiar “Dep cliente - empresa”
+                  </button>
 
                   <div class="dropdown-divider"></div>
 
@@ -2993,6 +3096,164 @@
 
 
 
+  /* ══════════════════════════════════════════════════════════════════════
+     Portapapeles: "Dep {razón social del cliente} - {razón social de la empresa}"
+
+     El texto NO se arma acá: viene ya resuelto en data-dep del <tr>, que lo
+     renderiza Jinja desde Client.apellido y Company.nombre. La semántica de
+     esas columnas está INVERTIDA respecto de los labels de la UI (ver el
+     comentario del <tr> y backend/models.py): armarlo en JS leyendo las celdas
+     sería una segunda fuente de verdad que puede divergir en silencio.
+
+     OJO con el orden de scripts de layout.html (el bloque `content` se resuelve
+     ANTES de bootstrap.bundle.js): acá no se resuelve ninguna global de
+     librería a nivel de IIFE, todo se lee adentro de los handlers.
+     ══════════════════════════════════════════════════════════════════════ */
+
+  function depTextFromRow(tr){
+    if (!tr || !tr.getAttribute) return '';
+    return (tr.getAttribute('data-dep') || '').trim();
+  }
+
+  /* Copia legacy: textarea fuera de pantalla + execCommand('copy').
+     Necesita gesto de usuario vigente, así que puede fallar; devuelve boolean
+     y el caller avisa. */
+  function legacyCopy(value){
+    var ta = null;
+    try {
+      ta = document.createElement('textarea');
+      ta.value = value;
+      ta.setAttribute('readonly', 'readonly');
+      ta.setAttribute('aria-hidden', 'true');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { ta.setSelectionRange(0, value.length); } catch(e_sel) {}
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch(e_cmd) { ok = false; }
+      return !!ok;
+    } catch(e) {
+      return false;
+    } finally {
+      try { if (ta && ta.parentNode) ta.parentNode.removeChild(ta); } catch(e_rm) {}
+    }
+  }
+
+  /* Promise<boolean>. navigator.clipboard SOLO existe en secure context
+     (https, localhost y 127.0.0.1); fuera de ahí, o con el permiso denegado,
+     cae a execCommand. Si tampoco se puede, resuelve false: nunca se le miente
+     al usuario diciendo que copió. */
+  function copyToClipboard(text){
+    var value = String(text == null ? '' : text);
+    if (!value) return Promise.resolve(false);
+
+    try {
+      var nav = window.navigator;
+      if (nav && nav.clipboard && nav.clipboard.writeText && window.isSecureContext) {
+        return nav.clipboard.writeText(value).then(function(){
+          return true;
+        }).catch(function(){
+          return legacyCopy(value);
+        });
+      }
+    } catch(e) {}
+
+    return Promise.resolve(legacyCopy(value));
+  }
+
+  /* Feedback SIEMPRE. Si falla, el toast muestra el texto completo para que se
+     pueda copiar a mano: un fallo silencioso deja al usuario pegando lo que
+     tenía antes en el portapapeles sin enterarse. */
+  function copyDepFromRow(tr){
+    var text = depTextFromRow(tr);
+    if (!text) {
+      if (window.showToast) window.showToast('No se pudo armar el texto para copiar', 'danger');
+      return Promise.resolve(false);
+    }
+    return copyToClipboard(text).then(function(ok){
+      if (window.showToast) {
+        if (ok) window.showToast('Copiado: ' + text, 'success');
+        else window.showToast('No se pudo copiar. Copialo a mano: ' + text, 'danger');
+      }
+      return ok;
+    });
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Botón de tilde: copia el Vencimiento de la fila a Cobro efectivo.
+
+     Atajo para el caso normal (se cobró el día que vencía). NO abre una
+     segunda ruta de persistencia: setea la fecha igual que el AJAX de
+     /cobrar (flatpickr.setDate con triggerChange=false) y después llama UNA
+     vez a syncAndSubmit. Si se disparara el evento 'change' saldrían dos
+     submits, porque los inputs de fecha tienen el listener bindeado dos veces
+     (cobMountAll y el bloque suelto de más arriba).
+     ══════════════════════════════════════════════════════════════════════ */
+
+  function formOfInput(el){
+    if (!el) return null;
+    if (el.form) return el.form;
+    try {
+      var fid = el.getAttribute && el.getAttribute('form');
+      return fid ? document.getElementById(fid) : null;
+    } catch(e) { return null; }
+  }
+
+  function copyVencToCobro(tr){
+    if (!tr) return;
+    /* querySelector devuelve el input ORIGINAL, no el altInput de flatpickr:
+       flatpickr copia el className al altInput pero lo inserta DESPUÉS, y el
+       original (type=hidden) es el que tiene el valor en formato Y-m-d. */
+    var venc = tr.querySelector('input.js-cob-estimado');
+    var cobro = tr.querySelector('input.js-cob-cobro');
+    if (!venc || !cobro) return;
+
+    var val = (venc.value || '').trim();
+    if (!val) {
+      if (window.showToast) window.showToast('Esta deuda no tiene vencimiento cargado', 'warning');
+      return;
+    }
+    if ((cobro.value || '').trim() === val) {
+      if (window.showToast) window.showToast('El cobro efectivo ya es el vencimiento', 'secondary');
+      return;
+    }
+
+    if (cobro._flatpickr) {
+      try { cobro._flatpickr.setDate(val, false, 'Y-m-d'); } catch(e_fp) {}
+    }
+    cobro.value = val;
+
+    var f = formOfInput(cobro);
+    if (f && typeof window.syncAndSubmit === 'function') {
+      window.syncAndSubmit(f);
+    } else if (f) {
+      (f.requestSubmit ? f.requestSubmit() : f.submit());
+    }
+  }
+
+  /* Delegado en document a propósito: el tbody se reemplaza entero por AJAX
+     (cobFetchAndReplace) y un listener por botón habría que re-montarlo. */
+  document.addEventListener('click', function(e){
+    var t = e.target;
+    if (!t || !t.closest) return;
+
+    var btnVenc = t.closest('.js-copy-venc');
+    if (btnVenc) {
+      e.preventDefault();
+      copyVencToCobro(btnVenc.closest('tr'));
+      return;
+    }
+
+    var btnDep = t.closest('.js-copy-dep');
+    if (btnDep) {
+      e.preventDefault();
+      copyDepFromRow(btnDep.closest('tr'));
+      return;
+    }
+  });
+
   document.addEventListener('submit', function(e){
 
     var form = e.target;
@@ -3302,6 +3563,14 @@
         }
 
         hideContainingModal(form);
+
+        // Pedido del cliente (11/09/2026): al marcar COBRADO se copia solo al
+        // portapapeles "Dep {razón social cliente} - {razón social empresa}".
+        // Va DESPUÉS de confirmar que el backend guardó: copiar algo que no se
+        // guardó es peor que no copiar. El feedback (verde/rojo) lo da
+        // copyDepFromRow; el toast 'Actualizado' de más abajo no alcanza para
+        // saber si el portapapeles quedó cargado.
+        try { copyDepFromRow(tr); } catch(e_dep) {}
 
       } else if (action.indexOf('/desmarcar') !== -1) {
 
