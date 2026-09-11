@@ -16119,6 +16119,23 @@ def cobranzas_update(order_id: int):
 
         prev_entrega = None
 
+    # Estado ANTES de tocar nada, con la FUENTE ÚNICA de verdad
+    # (models.estado_cobranza_de). Se lee acá arriba a propósito: más abajo se
+    # mutan monto/entrega/vencimiento/cobro y el estado es DERIVADO, así que
+    # después de mutar ya no se puede saber de dónde venía.
+    # El mismo `hoy` se usa para el antes y el después: si se llamara dos veces
+    # sin fijarlo, un request que cruza la medianoche de Buenos Aires podría
+    # comparar dos estados calculados con días distintos.
+    hoy_local = hoy_negocio()
+
+    try:
+
+        prev_estado = estado_cobranza_de(coll, hoy_local)
+
+    except Exception:
+
+        prev_estado = None
+
     if monto_present:
 
         # Si el input se vacía, el hidden llega como "" y request.form.get(..., type=float) devuelve None.
@@ -16325,6 +16342,25 @@ def cobranzas_update(order_id: int):
 
             cobro_iso = ""
 
+        # Estado DESPUÉS del commit, otra vez con la fuente única y con el
+        # mismo `hoy` que el de arriba. El front NO re-deriva el estado: sólo
+        # lee estos campos. Así la regla de "pasó a COBRADO" vive en un solo
+        # lugar (models.estado_cobranza_de) y no hay una implementación #12.
+        try:
+
+            new_estado = estado_cobranza_de(coll, hoy_local)
+
+        except Exception:
+
+            new_estado = None
+
+        # TRANSICIÓN, no estado: sólo el cruce NO-COBRADO -> COBRADO dispara el
+        # copiado en el front. Editar el monto de algo que YA estaba cobrado no
+        # es una transición y no debe pisarle el portapapeles al usuario.
+        paso_a_cobrado = bool(
+            new_estado == "COBRADO" and prev_estado is not None and prev_estado != "COBRADO"
+        )
+
         return jsonify({
 
             "ok": True,
@@ -16334,6 +16370,12 @@ def cobranzas_update(order_id: int):
             "fecha_pago_estimada": pago_iso,
 
             "fecha_cobro_efectiva": cobro_iso,
+
+            "estado_previo": prev_estado,
+
+            "estado": new_estado,
+
+            "paso_a_cobrado": paso_a_cobrado,
 
         })
 

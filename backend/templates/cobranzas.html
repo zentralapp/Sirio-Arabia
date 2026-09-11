@@ -3722,6 +3722,29 @@
 
         updateDiasBadge(tr);
 
+        /* Pedido del cliente (11/09/2026): el copiado de "Dep cliente -
+           empresa" lo dispara la TRANSICIÓN a COBRADO, no el mecanismo que la
+           causa. Este branch cubre el botón de tilde (.js-copy-venc), que
+           escribe fecha_cobro_efectiva por /cobranzas/{id}/update y con eso la
+           cobranza pasa a COBRADO.
+
+           Quién decide: el BACKEND. `paso_a_cobrado` lo calcula
+           /cobranzas/{id}/update comparando estado_cobranza_de() antes y
+           después del commit (models.py, fuente única). Acá NO se mira
+           fecha_cobro_efectiva ni se compara nada: si el front derivara el
+           estado por su cuenta sería la implementación #12 de una regla que
+           b5a5434 unificó justamente para que dejara de divergir.
+
+           Por eso NO alcanza con `resp.fecha_cobro_efectiva`: ese campo viene
+           lleno también cuando ya estaba cobrado y sólo se editó el monto, y
+           copiar ahí le pisaría el portapapeles al usuario en cada edición. */
+        if (resp && resp.paso_a_cobrado) {
+          /* Mismo helper que usa /cobrar (navigator.clipboard con fallback a
+             legacyCopy + toast verde/rojo). No hay un segundo mecanismo de
+             copiado. */
+          try { copyDepFromRow(tr); } catch(e_dep2) {}
+        }
+
       }
 
 
