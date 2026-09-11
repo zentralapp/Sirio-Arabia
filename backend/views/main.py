@@ -4350,7 +4350,12 @@ def clientes():
 
         alertas = ""
 
-    show_all = request.args.get("all") == "1"
+    # Pedido del cliente (reunion 11/09/2026): el legajo tiene que abrir con
+    # "Ver todos" puesto, no paginado. Por eso el default de `all` es "1" y no
+    # la ausencia del parametro. Para volver al paginado hay que pedirlo
+    # explicito con ?all=0 (lo hace el boton "Paginar" del pie de la tabla).
+
+    show_all = request.args.get("all", "1") == "1"
 
 
 

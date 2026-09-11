@@ -116,6 +116,10 @@
       <input type="text" id="clienteSearch" name="q" value="{{ q or '' }}" class="form-control form-control-sm cliente-search-input" placeholder="Buscar por razón social o nombre">
       <input type="hidden" name="page" value="1">
       <input type="hidden" name="per_page" value="{{ per_page or 10 }}">
+      {# El backend arranca en all=1 ("Ver todos"). Este hidden viaja en cada
+         filtro para no perder el modo elegido: sin el, buildUrl borraba `all` y
+         cualquier busqueda pateaba al usuario de vuelta al default. #}
+      <input type="hidden" id="clientesAllInput" name="all" value="{{ '1' if show_all else '0' }}">
     </form>
   </div>
   <div class="clientes-toolbar-actions d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center gap-2 flex-wrap justify-content-end">
@@ -471,10 +475,20 @@
           </div>
           <div class="d-flex gap-2">
             <a class="btn btn-sm btn-outline-secondary {{ 'disabled' if not has_prev else '' }}"
-               href="{{ url_for('main.clientes', q=q, prov=prov, alertas=alertas, page=(page-1), per_page=per_page) }}">Anterior</a>
+               href="{{ url_for('main.clientes', q=q, prov=prov, alertas=alertas, page=(page-1), per_page=per_page, all=0) }}">Anterior</a>
             <a class="btn btn-sm btn-outline-secondary {{ 'disabled' if not has_next else '' }}"
-               href="{{ url_for('main.clientes', q=q, prov=prov, alertas=alertas, page=(page+1), per_page=per_page) }}">Siguiente</a>
+               href="{{ url_for('main.clientes', q=q, prov=prov, alertas=alertas, page=(page+1), per_page=per_page, all=0) }}">Siguiente</a>
             <a class="btn btn-sm btn-outline-dark" href="{{ url_for('main.clientes', q=q, prov=prov, alertas=alertas, all=1) }}">Ver todos</a>
+          </div>
+        </div>
+        {% else %}
+        {# "Ver todos" es el modo por defecto; esta es la unica salida hacia el
+           paginado, asi que el id tiene que seguir siendo clientesPagination
+           para que el JS de filtros lo reemplace igual que al otro pie. #}
+        <div id="clientesPagination" class="d-flex justify-content-between align-items-center px-3 py-2 border-top">
+          <div class="text-muted small">Mostrando todos los clientes</div>
+          <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-dark" href="{{ url_for('main.clientes', q=q, prov=prov, alertas=alertas, all=0) }}">Paginar</a>
           </div>
         </div>
         {% endif %}
@@ -868,6 +882,7 @@
   var provSelect = document.getElementById('provSelect');
   var alertasSelect = document.getElementById('alertasSelect');
   var pageInput = form ? form.querySelector('input[name="page"]') : null;
+  var allInput = form ? form.querySelector('input[name="all"]') : null;
   var table = document.getElementById('clientes-table');
   var tbody = table ? table.querySelector('tbody') : null;
   var pagination = document.getElementById('clientesPagination');
@@ -880,6 +895,8 @@
       var parsed = new URL(url, window.location.origin);
       var params = parsed.searchParams;
       if (pageInput) pageInput.value = params.get('page') || '1';
+      // El default del backend es all=1; si la URL no lo trae, es "Ver todos".
+      if (allInput) allInput.value = params.get('all') || '1';
       if (searchInput) searchInput.value = params.get('q') || '';
       if (provSelect) provSelect.value = params.get('prov') || '';
       if (alertasSelect) alertasSelect.value = (params.get('alertas') || '').toUpperCase();
@@ -891,7 +908,9 @@
     var params = new URLSearchParams(new FormData(form));
     if (resetPage) params.set('page', '1');
     if (!params.get('per_page')) params.set('per_page', '10');
-    params.delete('all');
+    // NO BORRAR `all`: antes se hacia params.delete('all') y cada tecla en el
+    // buscador devolvia al usuario al modo por defecto, pisando el "Paginar"
+    // que acababa de elegir. Ahora viaja como hidden del form.
     var q = (params.get('q') || '').trim();
     if (!q) params.delete('q');
     if (!params.get('prov')) params.delete('prov');
