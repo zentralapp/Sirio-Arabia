@@ -3115,7 +3115,27 @@
 
     e.preventDefault();
 
+    /* OJO: form.closest('tr') NO alcanza. moveActionModalsToBody() (más
+       arriba en este mismo template) mueve los modales markPaid, delOrder y
+       editOrder a <body> para sacarlos del contexto de scroll de
+       .table-responsive, así que el form de "Confirmar cobro" YA NO cuelga de
+       la fila y closest('tr') devuelve null. Medido en /deudas: marcar COBRADO
+       hacía el POST bien, pero todo el bloque de abajo que refresca la fila
+       (badge, fecha de cobro, "Desmarcar") corría con tr = null y no hacía
+       nada; la fila quedaba en ATRASADO hasta recargar.
+       Fallback: resolver la fila por el id de pedido de la URL de la acción,
+       que es el mismo id del form `upd{id}` que vive DENTRO del <tr>. */
     var tr = form.closest ? form.closest('tr') : null;
+
+    if (!tr) {
+      try {
+        var mOid = String(action).match(/\/cobranzas\/(\d+)\//);
+        if (mOid) {
+          var updForm = document.getElementById('upd' + mOid[1]);
+          if (updForm && updForm.closest) tr = updForm.closest('tr');
+        }
+      } catch(e_tr) { tr = null; }
+    }
 
     var btn = null;
 
