@@ -3143,7 +3143,9 @@ def inject_notification_count():
 
 
 
-        # Conteo consistente con /notificaciones (respeta ClientAlertState).
+        # Campana = SOLO cobranzas atrasadas (defaults del helper), a proposito:
+        # es un semaforo de urgencia. La pagina /notificaciones muestra ademas
+        # entregas e inactividad, asi que su total es mayor. Respeta ClientAlertState.
 
         notif_count = 0
 
@@ -5140,10 +5142,22 @@ def notificaciones():
 
     try:
 
-        # Notificaciones muestra SOLO cobranzas atrasadas, igual que el contador de la campana.
-        # Se usan los defaults (include_delivery_alerts=False, include_inactivity_alerts=False)
-        # para que el numero de la campana y el listado de esta pagina coincidan siempre.
-        active_alerts = _compute_alerts_for_all_clients(now_dt)
+        # La PAGINA /notificaciones muestra los TRES tipos de alerta (cobranzas,
+        # entregas e inactividad), separados por tabs y con el acordeon de
+        # "Empresas sin compras desde:". Es la pantalla de trabajo diaria.
+        #
+        # La CAMPANA del navbar (inject_notification_count) sigue usando los
+        # defaults, o sea SOLO cobranzas atrasadas: es un semaforo de urgencia a
+        # proposito. La diferencia entre el numero de la campana y el total de
+        # esta pagina es INTENCIONAL, no un bug.
+        #
+        # La firma y los defaults de _compute_alerts_for_all_clients quedan
+        # intactos: los otros consumidores dependen de ellos.
+        active_alerts = _compute_alerts_for_all_clients(
+            now_dt,
+            include_delivery_alerts=True,
+            include_inactivity_alerts=True,
+        )
 
     except Exception:
 
