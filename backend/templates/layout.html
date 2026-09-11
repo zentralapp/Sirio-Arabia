@@ -80,9 +80,42 @@
         .table-mobile-cards .table tbody tr > td::before, .table-mobile-cards .table tbody tr > th::before { content: attr(data-label); font-weight: 600; color: #6b7280; display: block; margin-bottom: .15rem; }
         .table-mobile-cards .col-actions { width: 100% !important; text-align: left !important; }
         .table-mobile-cards .col-actions .btn-group { display: flex; flex-wrap: wrap; gap: .5rem; }
-        /* Modales fullscreen en móvil */
-        .modal-dialog { width: 100% !important; max-width: none !important; margin: 0 !important; }
-        .modal-content { min-height: 100vh; border-radius: 0; }
+        /* Modales fullscreen en móvil.
+           NO BORRAR el layout flex. Antes esto era solo
+           `.modal-content{min-height:100vh}`, y con eso el UNICO elemento que
+           scrolleaba era el propio `.modal` (el overlay position:fixed, que trae
+           overflow-y:auto de bootstrap). Dos consecuencias medidas a 390px:
+             1) el contenido que no entra queda fuera del pliegue y el header se
+                va de pantalla al scrollear (no hay header fijo);
+             2) en iOS scrollear un overlay fixed sin
+                -webkit-overflow-scrolling anda pesimo: hay que mantener el dedo
+                apretado para que arranque. Es el sintoma que reporto el cliente.
+           Ademas 100vh en iOS Safari es el viewport GRANDE (sin barra de URL),
+           asi que el .modal-content siempre quedaba mas alto que el area
+           visible y el footer (Guardar/Cancelar) caia debajo del pliegue.
+           Con 100dvh + flex column el que scrollea es `.modal-body`, header y
+           footer quedan fijos, y el scroll tactil es el nativo del navegador.
+           `height:100vh` va primero como fallback para navegadores sin dvh. */
+        .modal-dialog {
+          width: 100% !important; max-width: none !important; margin: 0 !important;
+          height: 100vh; height: 100dvh;
+        }
+        .modal-dialog-centered { align-items: stretch; }
+        .modal-content {
+          border-radius: 0;
+          height: 100vh; height: 100dvh;
+          max-height: 100vh; max-height: 100dvh;
+          display: flex; flex-direction: column;
+        }
+        .modal-header, .modal-footer { flex: 0 0 auto; }
+        .modal-body {
+          flex: 1 1 auto;
+          min-height: 0;           /* sin esto el flex item no encoge y no scrollea */
+          overflow-y: auto;
+          overflow-x: hidden;
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior: contain;
+        }
 
         /* Scroll horizontal suave para tablas en landscape (y cuando haga falta) */
         .table-responsive{ -webkit-overflow-scrolling: touch; }
