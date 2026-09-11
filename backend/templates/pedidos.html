@@ -122,7 +122,7 @@
         <select class="form-select" id="pedido_cliente" name="client_id" required onchange="window.__onSelChange && window.__onSelChange()">
           <option value="">Cliente...</option>
           {% for c in clientes %}
-            <option value="{{ c.id }}" data-razon="{{ c.apellido }}" data-nombre="{{ c.nombre }}" data-forma-pago="{{ (c.forma_pago_habitual or '') }}">{{ c.apellido }}</option>
+            <option value="{{ c.id }}" data-razon="{{ c.apellido }}" data-nombre="{{ c.nombre }}" data-forma-pago="{{ (c.forma_pago_habitual or '') }}">{{ c.display_name }}</option>
           {% endfor %}
         </select>
       </div>

@@ -136,6 +136,23 @@ class Client(db.Model):
     documents = db.relationship("ClientDocument", backref="client", cascade="all, delete-orphan")
 
     @property
+    def display_name(self):
+        """Como se muestra el cliente en selects y listados: "Ferreyra (Marcelo)".
+
+        OJO con la semantica invertida de las columnas:
+          apellido = RAZON SOCIAL (label "Razon social" en la UI)
+          nombre   = nombre de FANTASIA (label "Nombre" en la UI)
+
+        Si no hay nombre de fantasia devuelve solo la razon social, sin dejar
+        los parentesis colgando.
+        """
+        razon_social = (self.apellido or "").strip()
+        fantasia = (self.nombre or "").strip()
+        if not fantasia:
+            return razon_social
+        return f"{razon_social} ({fantasia})"
+
+    @property
     def empresas_trabaja(self):
         return [l for l in self.links if l.status == RelationStatus.TRABAJA]
 

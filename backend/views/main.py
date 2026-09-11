@@ -63,6 +63,8 @@ from flask_login import current_user
 
 from ..utils.company_products import parse_dynamic_table, read_dataframe_from_bytes, validate_filename
 
+from ..utils.search import client_search_filter, company_search_filter
+
 
 
 bp = Blueprint("main", __name__)
@@ -4407,17 +4409,13 @@ def clientes():
 
     if q:
 
-        ilike = f"%{q}%"
+        # Los filtros de archived y de owner ya se aplicaron arriba y se conservan:
+        # unificar la busqueda no debe unificar los permisos.
+        client_filter = client_search_filter(q)
 
-        base = base.filter(
+        if client_filter is not None:
 
-            (Client.apellido.ilike(ilike))
-
-            | (Client.nombre.ilike(ilike))
-
-            | ((Client.apellido + " " + Client.nombre).ilike(ilike))
-
-        )
+            base = base.filter(client_filter)
 
     active_alerts_cache = None
 
@@ -8517,9 +8515,13 @@ def api_clientes():
 
     if q:
 
-        base = base.filter((Client.apellido + " " + Client.nombre).ilike(f"%{q}%"))
+        client_filter = client_search_filter(q)
 
-    res = [{"id": c.id, "label": f"{c.apellido} {c.nombre}"} for c in base.order_by(Client.apellido).limit(20)]
+        if client_filter is not None:
+
+            base = base.filter(client_filter)
+
+    res = [{"id": c.id, "label": c.display_name} for c in base.order_by(Client.apellido).limit(20)]
 
     return jsonify(res)
 
@@ -9167,9 +9169,12 @@ def empresas():
 
     if q:
 
-        ilike = f"%{q}%"
+        # El filtro de archived ya se aplico arriba y se conserva.
+        company_filter = company_search_filter(q)
 
-        base = base.filter((Company.marca.ilike(ilike)) | (Company.nombre.ilike(ilike)))
+        if company_filter is not None:
+
+            base = base.filter(company_filter)
 
     base = base.order_by(Company.marca.nullslast(), Company.nombre)
 
@@ -10441,7 +10446,11 @@ def api_empresas():
 
     if q:
 
-        base = base.filter(Company.nombre.ilike(f"%{q}%"))
+        company_filter = company_search_filter(q)
+
+        if company_filter is not None:
+
+            base = base.filter(company_filter)
 
     res = [{"id": e.id, "label": e.nombre} for e in base.order_by(Company.nombre).limit(20)]
 
@@ -11371,17 +11380,21 @@ def status():
 
         q = q.join(Client, Order.client_id == Client.id)
 
-        pat = f"%{client_q}%"
+        client_filter = client_search_filter(client_q)
 
-        q = q.filter(or_(Client.apellido.ilike(pat), Client.nombre.ilike(pat)))
+        if client_filter is not None:
+
+            q = q.filter(client_filter)
 
     if company_q:
 
         q = q.join(Company, Order.company_id == Company.id)
 
-        pat = f"%{company_q}%"
+        company_filter = company_search_filter(company_q)
 
-        q = q.filter(Company.nombre.ilike(pat))
+        if company_filter is not None:
+
+            q = q.filter(company_filter)
 
     if desde:
 
@@ -12311,17 +12324,21 @@ def deudas_pendientes():
 
         q = q.join(Client, Order.client_id == Client.id)
 
-        pat = f"%{client_q}%"
+        client_filter = client_search_filter(client_q)
 
-        q = q.filter(or_(Client.apellido.ilike(pat), Client.nombre.ilike(pat)))
+        if client_filter is not None:
+
+            q = q.filter(client_filter)
 
     if company_q:
 
         q = q.join(Company, Order.company_id == Company.id)
 
-        pat = f"%{company_q}%"
+        company_filter = company_search_filter(company_q)
 
-        q = q.filter(Company.nombre.ilike(pat))
+        if company_filter is not None:
+
+            q = q.filter(company_filter)
 
     if desde:
 

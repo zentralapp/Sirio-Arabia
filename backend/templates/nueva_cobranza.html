@@ -19,7 +19,7 @@
           <select class="form-select" name="client_id" id="clientSelect" required>
             <option value="">Seleccionar...</option>
             {% for c in clientes %}
-              <option value="{{ c.id }}">{{ c.apellido }}</option>
+              <option value="{{ c.id }}">{{ c.display_name }}</option>
             {% endfor %}
           </select>
         </div>
