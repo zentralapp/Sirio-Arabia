@@ -829,18 +829,121 @@
     </script>
     <script>
       (function(){
+        // NO BORRAR: `.modal.show` NO alcanza para decir "hay un modal a la
+        // vista". Un modal puede quedar con la clase `show` pero con
+        // display:none o con el _isShown de bootstrap en false (pasa cuando algo
+        // lo abrio a mano y despues bootstrap intenta cerrarlo: hide() sale por
+        // el early-return y la clase queda pegada). Con el chequeo viejo eso
+        // bloqueaba la limpieza para siempre y el velo se quedaba tapando la
+        // pantalla, sin forma de cerrarlo desde el celular.
+        function isReallyVisible(el){
+          try {
+            if (!el || !el.classList.contains('show')) return false;
+            var cs = window.getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+            var r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0;
+          } catch(e) { return false; }
+        }
+
+        function hasVisibleModal(){
+          var modals = document.querySelectorAll('.modal.show');
+          for (var i = 0; i < modals.length; i++){
+            if (isReallyVisible(modals[i])) return true;
+          }
+          return false;
+        }
+
         function cleanupOrphanModalState(){
           try {
-            var hasVisibleModal = !!document.querySelector('.modal.show');
-            if (hasVisibleModal) return;
+            if (hasVisibleModal()) return;
             document.querySelectorAll('.modal-backdrop').forEach(function(bd){
               try { bd.remove(); } catch(e0) {}
+            });
+            // Modales "pegados": limpiar el estado que quedo a medias.
+            document.querySelectorAll('.modal.show').forEach(function(m){
+              try {
+                m.classList.remove('show');
+                m.style.display = 'none';
+                m.setAttribute('aria-hidden', 'true');
+                m.removeAttribute('aria-modal');
+              } catch(e1) {}
             });
             document.body.classList.remove('modal-open');
             document.body.style.removeProperty('overflow');
             document.body.style.removeProperty('padding-right');
           } catch(e) {}
         }
+
+        // Un modal esta "pegado" cuando se ve en pantalla pero bootstrap no lo
+        // tiene por abierto: o nunca tuvo instancia (lo abrio codigo a mano) o
+        // su _isShown quedo en false. En ese estado hide() sale por el
+        // early-return y el modal NO se puede cerrar con Cancelar ni con la X.
+        function isStuckModal(el){
+          try {
+            if (!isReallyVisible(el)) return false;
+            var Ctor = window.bootstrap && window.bootstrap.Modal;
+            if (!Ctor) return false;
+            var inst = Ctor.getInstance(el);
+            if (!inst) return true;              // visible sin instancia = abierto a mano
+            return inst._isShown === false;      // bootstrap lo cree cerrado
+          } catch(e) { return false; }
+        }
+
+        function forceHide(el){
+          try {
+            el.classList.remove('show');
+            el.style.display = 'none';
+            el.setAttribute('aria-hidden', 'true');
+            el.removeAttribute('aria-modal');
+          } catch(e) {}
+        }
+
+        // Escotilla de emergencia: en mobile no hay ESC. Si el usuario toca el
+        // velo y (a) no hay ningun modal visible, o (b) los que se ven estan
+        // pegados, hay que devolverle la pantalla si o si.
+        function onBackdropTap(e){
+          try {
+            var t = e.target;
+            if (!t || !t.classList || !t.classList.contains('modal-backdrop')) return;
+            if (hasVisibleModal()) {
+              var stuck = [];
+              document.querySelectorAll('.modal.show').forEach(function(m){
+                if (isStuckModal(m)) stuck.push(m);
+                });
+              // Si algun modal visible NO esta pegado, bootstrap se encarga.
+              var visibles = 0;
+              document.querySelectorAll('.modal.show').forEach(function(m){
+                if (isReallyVisible(m)) visibles++;
+              });
+              if (!stuck.length || stuck.length !== visibles) return;
+              stuck.forEach(forceHide);
+            }
+            cleanupOrphanModalState();
+          } catch(err) {}
+        }
+        document.addEventListener('click', onBackdropTap, true);
+        document.addEventListener('touchend', onBackdropTap, true);
+
+        // En mobile el modal es fullscreen: NO hay velo visible para tocar, asi
+        // que la escotilla de arriba no alcanza. El unico camino de salida son
+        // "Cancelar" / la X. Si despues de que bootstrap atendio el click el
+        // modal SIGUE visible y pegado, lo cerramos a mano. Esto corre en
+        // bubble + setTimeout a proposito: primero que intente bootstrap.
+        document.addEventListener('click', function(e){
+          try {
+            var btn = e.target && e.target.closest ? e.target.closest('[data-bs-dismiss="modal"]') : null;
+            if (!btn) return;
+            var modalEl = btn.closest('.modal');
+            if (!modalEl) return;
+            setTimeout(function(){
+              if (isStuckModal(modalEl)) {
+                forceHide(modalEl);
+                cleanupOrphanModalState();
+              }
+            }, 200);
+          } catch(err) {}
+        });
 
         document.addEventListener('hidden.bs.modal', function(){
           setTimeout(cleanupOrphanModalState, 0);

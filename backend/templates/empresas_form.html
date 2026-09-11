@@ -867,7 +867,14 @@
   var toolbar = document.getElementById('recomNotasToolbar');
   var saveBtn = document.getElementById('recomNotasGuardarBtn');
   var titleEl = document.getElementById('recomNotasTitle');
-  var modal = (modalEl && window.bootstrap && window.bootstrap.Modal) ? window.bootstrap.Modal.getOrCreateInstance(modalEl) : null;
+  // NO BORRAR: bootstrap.bundle.min.js se carga DESPUES de este bloque (va al
+  // final de layout.html, despues del bloque "content"), asi que en tiempo de
+  // parseo window.bootstrap es undefined. Resolverlo aca dejaba el modal en el
+  // fallback manual, que inyecta un .modal-backdrop propio. Resolver al usar.
+  function getModal(){
+    var Ctor = window.bootstrap && window.bootstrap.Modal;
+    return (modalEl && Ctor) ? Ctor.getOrCreateInstance(modalEl) : null;
+  }
   var cancelBtn = modalEl ? modalEl.querySelector('[data-bs-dismiss="modal"]') : null;
 
   var currentField = null; // 'pedido' | 'nota_pedido' | 'desc'
@@ -886,6 +893,7 @@
       editor.innerHTML = val || '';
       try { editor.focus(); } catch(e) {}
     }
+    var modal = getModal();
     if (modal) modal.show();
     else if (modalEl){
       modalEl.classList.add('show');
@@ -900,6 +908,7 @@
     }
   }
   function closeModal(){
+    var modal = getModal();
     if (modal) {
       modal.hide();
     } else if (modalEl){
@@ -925,14 +934,14 @@
     });
     if (cancelBtn) {
       cancelBtn.addEventListener('click', function(ev){
-        if (!modal) { ev.preventDefault(); closeModal(); }
+        if (!getModal()) { ev.preventDefault(); closeModal(); }
       });
     }
     if (modalEl) {
       var xBtn = modalEl.querySelector('.btn-close');
       if (xBtn) {
         xBtn.addEventListener('click', function(ev){
-          if (!modal) { ev.preventDefault(); closeModal(); }
+          if (!getModal()) { ev.preventDefault(); closeModal(); }
         });
       }
     }

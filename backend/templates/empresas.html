@@ -995,11 +995,21 @@
     var modalEl = document.getElementById('confirmRemoveModal');
     var msgEl = document.getElementById('confirmRemoveMsg');
     var confirmBtn = document.getElementById('confirmRemoveBtn');
-    var ModalCtor = window.bootstrap && window.bootstrap.Modal;
-    var modal = (modalEl && ModalCtor) ? ModalCtor.getOrCreateInstance(modalEl) : null;
+
+    // NO BORRAR: bootstrap.bundle.min.js se carga DESPUES de este bloque
+    // (layout.html: el bloque "content" esta en la linea 227 y el <script> de
+    // bootstrap en la 240). Resolver window.bootstrap.Modal aca arriba, en tiempo
+    // de parseo, daba SIEMPRE undefined y mandaba todo al fallback manual, que
+    // pinta un .modal-backdrop a mano: sin scroll-lock, sin ESC y sin foco.
+    // Resolver el constructor SIEMPRE al momento de usarlo.
+    function getModal(){
+      var ModalCtor = window.bootstrap && window.bootstrap.Modal;
+      return (modalEl && ModalCtor) ? ModalCtor.getOrCreateInstance(modalEl) : null;
+    }
 
     function closeModal(){
       try {
+        var modal = getModal();
         if (modal) {
           modal.hide();
         } else if (modalEl) {
@@ -1018,6 +1028,7 @@
         pendingForm = form;
         var text = form.getAttribute('data-confirm') || '¿Confirmar acción?';
         if (msgEl) msgEl.textContent = text;
+        var modal = getModal();
         if (modal) {
           modal.show();
         } else if (modalEl) {

@@ -1069,8 +1069,21 @@
     var modalEl = document.getElementById('confirmRemoveModal');
     var msgEl = document.getElementById('confirmRemoveMsg');
     var confirmBtn = document.getElementById('confirmRemoveBtn');
-    var ModalCtor = window.bootstrap && window.bootstrap.Modal;
-    var modal = (modalEl && ModalCtor) ? ModalCtor.getOrCreateInstance(modalEl) : null;
+
+    // NO BORRAR: bootstrap.bundle.min.js se carga DESPUES de este bloque
+    // (layout.html: el bloque "content" esta en la linea 227 y el <script> de
+    // bootstrap en la 240). Resolver window.bootstrap.Modal aca arriba, en tiempo de
+    // parseo, daba SIEMPRE undefined: `modal` quedaba null para toda la vida de
+    // la pagina y cada confirmacion caia en el fallback manual, que inyecta un
+    // .modal-backdrop#confirmRemoveBackdrop que nadie remueve (el boton
+    // "Cancelar" tiene data-bs-dismiss y lo atiende bootstrap, que para ese
+    // momento SI esta cargado pero tiene _isShown=false, asi que hide() sale por
+    // el early-return y no hace nada). Resultado en mobile: pantalla tapada por
+    // el velo, imposible de cerrar. Resolver el constructor SIEMPRE al usarlo.
+    function getModal(){
+      var ModalCtor = window.bootstrap && window.bootstrap.Modal;
+      return (modalEl && ModalCtor) ? ModalCtor.getOrCreateInstance(modalEl) : null;
+    }
 
     document.addEventListener('submit', function(e){
       var form = e.target;
@@ -1079,6 +1092,7 @@
         pendingForm = form;
         var text = form.getAttribute('data-confirm') || '¿Confirmar acción?';
         if (msgEl) msgEl.textContent = text;
+        var modal = getModal();
         if (modal) {
           modal.show();
         } else if (modalEl) {
@@ -1092,10 +1106,29 @@
       }
     });
 
+    // Cancelar / cerrar: cerrar tambien si se abrio por el fallback manual, y
+    // limpiar pendingForm para no reenviar un form viejo.
+    if (modalEl){
+      modalEl.addEventListener('click', function(e){
+        var t = e.target;
+        var dismissBtn = (t && t.getAttribute && t.getAttribute('data-bs-dismiss') === 'modal') ? t : (t && t.closest ? t.closest('[data-bs-dismiss="modal"]') : null);
+        if (!dismissBtn) return;
+        pendingForm = null;
+        var modal = getModal();
+        if (modal) { modal.hide(); return; }
+        modalEl.classList.remove('show');
+        modalEl.style.display = 'none';
+        var bd = document.getElementById('confirmRemoveBackdrop');
+        if (bd) bd.remove();
+      });
+      modalEl.addEventListener('hidden.bs.modal', function(){ pendingForm = null; });
+    }
+
     if (confirmBtn){
       confirmBtn.addEventListener('click', function(){
         if (pendingForm){
           // Cerrar modal antes de enviar
+          var modal = getModal();
           if (modal) modal.hide();
           else {
             modalEl.classList.remove('show'); modalEl.style.display='none';

@@ -1492,8 +1492,16 @@ document.addEventListener('DOMContentLoaded', function(){
   var notesEditor = document.getElementById('personaNotasEditor');
   var notesToolbar = document.getElementById('personaNotasToolbar');
   var notesSaveBtn = document.getElementById('personaNotasGuardarBtn');
-  var notesModal = (notesModalEl && window.bootstrap && window.bootstrap.Modal) ? window.bootstrap.Modal.getOrCreateInstance(notesModalEl) : null;
+  // NO BORRAR: bootstrap.bundle.min.js se carga DESPUES de este bloque (va al
+  // final de layout.html, despues del bloque "content"), asi que en tiempo de
+  // parseo window.bootstrap es undefined. Resolverlo aca dejaba el modal en el
+  // fallback manual, que inyecta un .modal-backdrop propio. Resolver al usar.
+  function getNotesModal(){
+    var Ctor = window.bootstrap && window.bootstrap.Modal;
+    return (notesModalEl && Ctor) ? Ctor.getOrCreateInstance(notesModalEl) : null;
+  }
   function showNotesModal(){
+    var notesModal = getNotesModal();
     if (notesModal) {
       notesModal.show();
       return;
@@ -1511,6 +1519,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }
   function hideNotesModal(){
+    var notesModal = getNotesModal();
     if (notesModal) {
       notesModal.hide();
       return;
