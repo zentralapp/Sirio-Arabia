@@ -14,7 +14,7 @@
 
       <div class="col-12 col-md-4">
         <label class="form-label">Empresa</label>
-        <select class="form-select" name="company_id" id="mpCompany">
+        <select class="form-select" name="company_id" id="mpCompany" data-searchable>
           <option value="">Todas</option>
           {% for c in companies %}
             <option value="{{ c.id }}" {{ 'selected' if company_id and (company_id|int)==(c.id|int) else '' }}>{{ c.nombre }}</option>

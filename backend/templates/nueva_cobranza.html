@@ -16,7 +16,7 @@
       <div class="row g-3">
         <div class="col-12 col-lg-4">
           <label class="form-label">Cliente</label>
-          <select class="form-select" name="client_id" id="clientSelect" required>
+          <select class="form-select" name="client_id" id="clientSelect" required data-searchable>
             <option value="">Seleccionar...</option>
             {% for c in clientes %}
               <option value="{{ c.id }}">{{ c.display_name }}</option>
@@ -26,7 +26,7 @@
 
         <div class="col-12 col-lg-4">
           <label class="form-label">Empresa</label>
-          <select class="form-select" name="company_id" id="companySelect" required>
+          <select class="form-select" name="company_id" id="companySelect" required data-searchable>
             <option value="">Seleccionar...</option>
           </select>
         </div>

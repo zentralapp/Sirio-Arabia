@@ -119,7 +119,7 @@
       </div>
       <div class="col-md-3">
         <label class="form-label">Cliente</label>
-        <select class="form-select" id="pedido_cliente" name="client_id" required onchange="window.__onSelChange && window.__onSelChange()">
+        <select class="form-select" id="pedido_cliente" name="client_id" required data-searchable onchange="window.__onSelChange && window.__onSelChange()">
           <option value="">Cliente...</option>
           {% for c in clientes %}
             <option value="{{ c.id }}" data-razon="{{ c.apellido }}" data-nombre="{{ c.nombre }}" data-forma-pago="{{ (c.forma_pago_habitual or '') }}">{{ c.display_name }}</option>
@@ -134,7 +134,7 @@
       </div>
       <div class="col-md-3">
         <label class="form-label">Empresa</label>
-        <select class="form-select" id="pedido_empresa" name="company_id" required onchange="window.__onSelChange && window.__onSelChange()">
+        <select class="form-select" id="pedido_empresa" name="company_id" required data-searchable onchange="window.__onSelChange && window.__onSelChange()">
           <option value="">Empresa...</option>
         </select>
       </div>

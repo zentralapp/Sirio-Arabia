@@ -12,7 +12,7 @@
       <input type="hidden" name="to" id="commTo" value="{{ to_val }}">
       <div class="col-12 col-md-4">
         <label class="form-label">Empresa</label>
-        <select class="form-select" name="company_id" id="commCompany">
+        <select class="form-select" name="company_id" id="commCompany" data-searchable>
           <option value="">Todas</option>
           {% for c in companies or [] %}
             <option value="{{ c.id }}" {{ 'selected' if company_id and (company_id|int)==(c.id|int) else '' }}>{{ c.nombre }}</option>

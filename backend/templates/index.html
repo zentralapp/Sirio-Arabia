@@ -139,13 +139,13 @@
             </div>
             <div class="db-scope-field">
             <label class="form-label db-filter-label" id="dashboardScopeLabel">{{ 'Cliente' if (f.view_mode or 'company') == 'client' else 'Empresa' }}</label>
-            <select class="form-select form-select-sm" name="company_id" id="dashboardCompany" {{ 'disabled' if (f.view_mode or 'company') == 'client' else '' }}>
+            <select class="form-select form-select-sm" name="company_id" id="dashboardCompany" data-searchable {{ 'disabled' if (f.view_mode or 'company') == 'client' else '' }}>
               <option value="">Todas</option>
               {% for c in f.company_options or [] %}
                 <option value="{{ c.id }}" {{ 'selected' if (f.company_id and c.id == f.company_id) else '' }} title="{{ c.name }}">{{ c.name }}</option>
               {% endfor %}
             </select>
-            <select class="form-select form-select-sm {{ '' if (f.view_mode or 'company') == 'client' else 'd-none' }}" name="client_id" id="dashboardClient" {{ '' if (f.view_mode or 'company') == 'client' else 'disabled' }}>
+            <select class="form-select form-select-sm {{ '' if (f.view_mode or 'company') == 'client' else 'd-none' }}" name="client_id" id="dashboardClient" data-searchable {{ '' if (f.view_mode or 'company') == 'client' else 'disabled' }}>
               <option value="">Todos</option>
               {% for c in f.client_options or [] %}
                 <option value="{{ c.id }}" {{ 'selected' if (f.client_id and c.id == f.client_id) else '' }} title="{{ c.name }}">{{ c.name }}</option>

@@ -330,7 +330,7 @@
                       </div>
                       <form class="row g-2 mb-2" method="post" action="{{ url_for('main.empresas_link_add', company_id=e.id) }}">
                         <div class="col-md-5">
-                          <select class="form-select" name="client_id" required>
+                          <select class="form-select" name="client_id" required data-searchable>
                             <option value="">Seleccionar razón social...</option>
                             {% for c in clients %}
                               <option value="{{ c.id }}">{{ c.apellido }}</option>

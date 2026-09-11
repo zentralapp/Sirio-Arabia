@@ -346,7 +346,7 @@
                     <div class="modal-body">
                       <form class="row g-2 mb-2" method="post" action="{{ url_for('main.clientes_link_add', client_id=c.id) }}">
                         <div class="col-md-5">
-                          <select class="form-select js-company-select" name="company_id" required>
+                          <select class="form-select js-company-select" name="company_id" required data-searchable>
                             <option value="">Seleccionar empresa...</option>
                           </select>
                         </div>
