@@ -6132,7 +6132,15 @@ def _fecha_de(value):
 
 @bp.get("/api/calendario/events")
 def api_calendario_events():
-    # Rango opcional
+    # Rango opcional. OJO: FullCalendar pide SEMIABIERTO -> [start, end).
+    # El `end` es EXCLUSIVO: para septiembre manda end=2026-10-01 y espera que
+    # el 1 de octubre NO entre. Como las fechas del proyecto se guardan a
+    # medianoche, un `<= end` mete el primer dia del rango SIGUIENTE y el mismo
+    # evento aparece en DOS meses (se vio con una cobranza del 2026-10-01 y con
+    # un cumpleaños del 1 de enero duplicado en dos años).
+    # Por eso los tres filtros de abajo (entregas, cobranzas y cumpleaños)
+    # comparan el inicio con >= y el fin con < (estricto). Si tocás uno,
+    # tocá los tres.
     start_raw = request.args.get("start")
     end_raw = request.args.get("end")
     start = _parse_datetime_like(start_raw) if start_raw else None
@@ -6240,8 +6248,9 @@ def api_calendario_events():
     if start:
         q_ent = q_ent.filter(LogisticsStatus.fecha_entrega_estimada >= start)
 
+    # `<` estricto: el rango es [start, end). Ver el comentario del parseo.
     if end:
-        q_ent = q_ent.filter(LogisticsStatus.fecha_entrega_estimada <= end)
+        q_ent = q_ent.filter(LogisticsStatus.fecha_entrega_estimada < end)
 
     q_ent = _filtrar_por_estado(_filtrar_por_cliente_empresa(q_ent))
 
@@ -6303,8 +6312,9 @@ def api_calendario_events():
     if start_d:
         q_cob = q_cob.filter(cond.vencimiento >= start_d)
 
+    # `<` estricto: el rango es [start, end). Ver el comentario del parseo.
     if end_d:
-        q_cob = q_cob.filter(cond.vencimiento <= end_d)
+        q_cob = q_cob.filter(cond.vencimiento < end_d)
 
     q_cob = _filtrar_por_estado(_filtrar_por_cliente_empresa(q_cob))
 
@@ -6424,7 +6434,12 @@ def api_calendario_events():
                 if start_d and d < start_d:
                     continue
 
-                if end_d and d > end_d:
+                # `>=` (no `>`): el rango es [start, end). Acá `d` ya es una
+                # fecha COMPLETA del año `y` (no un mes/día suelto), así que
+                # la comparación es la misma que la de cobranzas/entregas.
+                # Sin esto, un cumpleaños del 1 de enero salía duplicado en el
+                # año `year_start` y otra vez en `year_end`.
+                if end_d and d >= end_d:
                     continue
 
                 events.append({
