@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlsplit
 
 _HELP_DATABASE_URL = (
     "DATABASE_URL no esta definida.\n"
@@ -28,13 +29,55 @@ _HELP_SQLITE = (
 )
 
 
+_MOTORES_POSTGRES = frozenset({"postgres", "postgresql"})
+
+
+def _help_motor_no_soportado(motor: str) -> str:
+    return (
+        f"DATABASE_URL apunta a `{motor}` y ese motor no esta soportado.\n"
+        "\n"
+        "Este proyecto requiere PostgreSQL: el modelo usa aritmetica de fechas de\n"
+        "Postgres (ver vencimiento_efectivo_expr() en backend/models.py), que en otros\n"
+        "motores devuelve resultados silenciosamente incorrectos.\n"
+        "\n"
+        "Esquemas aceptados: postgres://, postgresql:// y postgresql+<driver>://\n"
+        "(por ejemplo postgresql+psycopg:// o postgresql+psycopg2://).\n"
+        "\n"
+        "Usar PostgreSQL, por ejemplo:\n"
+        "  DATABASE_URL=postgresql://usuario@localhost:5432/sirioarabia"
+    )
+
+
+def _dialecto_de(uri: str) -> str:
+    """Devuelve el dialecto de la URI (el esquema sin el `+driver`), en minusculas.
+
+    Se parsea el esquema en lugar de usar `startswith` para que `postgresqlfoo://`
+    no cuele como Postgres y para que `postgresql+psycopg2://` (driver viejo) si lo
+    haga.
+    """
+    return urlsplit(uri).scheme.lower().split("+", 1)[0]
+
+
+def _validar_motor(uri: str) -> None:
+    """Acepta solo Postgres. Cualquier otro motor (o ninguno) es error."""
+    dialecto = _dialecto_de(uri)
+    if dialecto in _MOTORES_POSTGRES:
+        return
+    if dialecto == "sqlite":
+        raise RuntimeError(_HELP_SQLITE)
+    raise RuntimeError(_help_motor_no_soportado(dialecto or "(sin esquema)"))
+
+
 def _normalizar_uri_postgres(uri: str) -> str:
-    """Normaliza el esquema para que SQLAlchemy use el driver psycopg3."""
-    if uri.startswith("postgres://"):
-        return uri.replace("postgres://", "postgresql+psycopg://", 1)
-    if uri.startswith("postgresql://"):
-        return uri.replace("postgresql://", "postgresql+psycopg://", 1)
-    return uri
+    """Normaliza el esquema para que SQLAlchemy use el driver psycopg3.
+
+    Solo se toca cuando la URI no trae `+driver` explicito: si el usuario pidio
+    `postgresql+psycopg2://` se respeta su eleccion.
+    """
+    esquema = urlsplit(uri).scheme
+    if "+" in esquema:
+        return uri
+    return uri.replace(f"{esquema}://", "postgresql+psycopg://", 1)
 
 
 class Config:
@@ -53,8 +96,7 @@ class Config:
         database_url = (os.getenv("DATABASE_URL") or "").strip()
         if not database_url:
             raise RuntimeError(_HELP_DATABASE_URL)
-        if database_url.startswith("sqlite"):
-            raise RuntimeError(_HELP_SQLITE)
+        _validar_motor(database_url)
 
         self.SQLALCHEMY_DATABASE_URI = _normalizar_uri_postgres(database_url)
         self.SQLALCHEMY_TRACK_MODIFICATIONS = False
