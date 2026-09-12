@@ -9,6 +9,97 @@
     </div>
   </div>
 </div>
+
+{#
+  FILTROS DEL CALENDARIO
+  ----------------------
+  Es un <form method="get"> de verdad, no un widget de JS. Sin JS, tildar y
+  apretar "Aplicar" recarga la pagina con la querystring y el server ya filtra:
+  el filtro FUNCIONA igual. El JS es una mejora encima (actualiza sin recargar),
+  no el mecanismo.
+
+  El estado vive en la QUERYSTRING. Por eso sobrevive al refresh, el
+  back/forward del browser anda solo, y el link copiado reproduce la vista.
+
+  Los <input type="hidden" name="tipo" value=""> NO son un adorno: si no
+  quedara ningun checkbox tildado, el browser no mandaria la clave `tipo` y el
+  server lo leeria como "sin filtro" = TODOS (ver _lista_filtrada). Con el
+  hidden la clave viaja siempre, no pasa la whitelist, y "ningun tipo tildado"
+  significa efectivamente NINGUNO.
+#}
+{% set ESTADO_LABEL = {
+     'EN_CAMINO': 'En camino',
+     'A_COBRAR': 'A cobrar',
+     'ATRASADO': 'Atrasado',
+     'COBRADO': 'Cobrado',
+     'SIN_COBRANZA': 'Sin cobranza'
+   } %}
+{% set TIPO_LABEL = {
+     'entrega': 'Entregas (estimadas)',
+     'cobranza': 'Cobranzas',
+     'cumpleanos': 'Cumpleaños'
+   } %}
+<form id="calFiltro" method="get" action="{{ url_for('main.calendario') }}" class="card calendar-card mb-3">
+  <div class="card-body py-2 px-3">
+    <div class="d-flex flex-wrap align-items-start gap-3">
+
+      <fieldset class="border-0 p-0 m-0">
+        <legend class="cal-filtro-legend">Tipo</legend>
+        <input type="hidden" name="tipo" value="">
+        <div class="d-flex flex-wrap gap-3">
+          {% for t in calendario_tipos %}
+          <div class="form-check m-0">
+            <input class="form-check-input" type="checkbox" name="tipo" value="{{ t }}"
+                   id="calTipo-{{ t }}" {% if t in filtro_tipos %}checked{% endif %}>
+            <label class="form-check-label" for="calTipo-{{ t }}">
+              <span class="sirio-leyenda-tipo align-middle me-1" style="background:{{ {'entrega':'#0ea5a3','cobranza':'#f59e0b','cumpleanos':'#ec4899'}[t] }}"></span>{{ TIPO_LABEL[t] }}
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <fieldset class="border-0 p-0 m-0">
+        <legend class="cal-filtro-legend">
+          Estado
+          <span class="cal-filtro-nota">(no aplica a cumpleaños)</span>
+        </legend>
+        <input type="hidden" name="estado" value="">
+        <div class="d-flex flex-wrap gap-3">
+          {% for e in calendario_estados %}
+          <div class="form-check m-0">
+            <input class="form-check-input" type="checkbox" name="estado" value="{{ e }}"
+                   id="calEstado-{{ e }}" {% if e in filtro_estados %}checked{% endif %}>
+            <label class="form-check-label" for="calEstado-{{ e }}">{{ ESTADO_LABEL.get(e, e) }}</label>
+          </div>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <fieldset class="border-0 p-0 m-0">
+        <legend class="cal-filtro-legend">Cliente / Empresa</legend>
+        <div class="d-flex flex-wrap gap-2">
+          <input type="search" class="form-control form-control-sm cal-filtro-q" name="client_q"
+                 value="{{ filtro_client_q }}" placeholder="Cliente" aria-label="Filtrar por cliente">
+          <input type="search" class="form-control form-control-sm cal-filtro-q" name="company_q"
+                 value="{{ filtro_company_q }}" placeholder="Empresa" aria-label="Filtrar por empresa">
+        </div>
+      </fieldset>
+
+      <div class="d-flex align-items-end gap-2 ms-auto">
+        <button type="submit" class="btn btn-sm btn-primary" data-js="cal-aplicar">Aplicar</button>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.calendario') }}">Limpiar</a>
+      </div>
+    </div>
+
+    {# El motivo de fondo del pedido: estas fechas son ESTIMACIONES. #}
+    <p class="cal-filtro-aviso mb-0 mt-2" {% if 'entrega' not in filtro_tipos %}hidden{% endif %} data-js="cal-aviso-entregas">
+      <i class="bi bi-exclamation-triangle me-1"></i>
+      Las <strong>entregas son estimadas</strong>: salen del plazo usual y de la demora de despacho, no de una confirmación del transporte. No son fechas comprometidas.
+    </p>
+  </div>
+</form>
+
 <style>
   .fc .fc-toolbar-title { font-size: 1.2rem; color:#0f766e; font-weight:600; text-transform: capitalize; }
   .fc .fc-button-primary { background:#0f766e; border-color:#0f766e; }
@@ -50,6 +141,25 @@
   .sirio-leyenda { font-size:.78rem; color:#475569; }
   .sirio-leyenda-tipo { display:inline-block; width:.7rem; height:.7rem; border-radius:.2rem; }
 
+  /* Filtros */
+  .cal-filtro-legend {
+    float:none; width:auto; font-size:.72rem; font-weight:700;
+    text-transform:uppercase; letter-spacing:.03em; color:#0f766e; margin-bottom:.25rem;
+  }
+  .cal-filtro-nota { font-weight:400; text-transform:none; letter-spacing:0; color:#64748b; }
+  /* 16px reales: abajo de eso iOS hace zoom solo al enfocar el input. */
+  .cal-filtro-q { width:11rem; font-size:1rem; }
+  #calFiltro .form-check-label { font-size:.85rem; }
+  .cal-filtro-aviso { font-size:.78rem; color:#92400e; background:#fffbeb; border:1px solid #fde68a; border-radius:.375rem; padding:.4rem .6rem; }
+
+  @media (max-width: 575.98px) {
+    /* Area tactil: los checkbox por defecto quedan en 1rem. */
+    #calFiltro .form-check-input { width:1.15rem; height:1.15rem; }
+    #calFiltro .form-check-label { padding-left:.15rem; }
+    .cal-filtro-q { width:100%; }
+    #calFiltro fieldset { width:100%; }
+  }
+
   @media (max-width: 575.98px) {
     .fc .fc-toolbar { flex-wrap: wrap; gap: .5rem; }
     .fc .fc-toolbar-title { font-size: 1.05rem; }
@@ -80,6 +190,80 @@
 (function(){
   var calendarEl = document.getElementById('sirioCalendar');
   if (!calendarEl || !window.FullCalendar) return;
+
+  // -------------------------------------------------------------------
+  //  FILTROS: la querystring es la UNICA fuente de verdad del estado
+  // -------------------------------------------------------------------
+  //  Nada de sessionStorage ni de estado en la sesion del server. La URL:
+  //    * sobrevive al refresh (el server ya pinta los checks)
+  //    * hace que el back/forward del browser funcione (pushState + popstate)
+  //    * se puede copiar y pegar para reproducir la vista exacta
+  //  El <form> anda sin JS (GET + recarga). Esto de aca es la mejora encima.
+  var form = document.getElementById('calFiltro');
+  var LISTAS = ['tipo', 'estado'];
+  var TEXTOS = ['client_q', 'company_q'];
+
+  function cajas(name){
+    return form ? form.querySelectorAll('input[type=checkbox][name="' + name + '"]') : [];
+  }
+
+  function paramsDeFiltro(){
+    var p = new URLSearchParams();
+    if (!form) return p;
+    LISTAS.forEach(function(name){
+      var todas = cajas(name);
+      var tildadas = [];
+      Array.prototype.forEach.call(todas, function(cb){ if (cb.checked) tildadas.push(cb.value); });
+      // Todo tildado = sin filtro: se OMITE la clave para que la URL por
+      // defecto quede limpia (/calendario a secas). El server lee "clave
+      // ausente" como TODOS, asi que es equivalente.
+      if (todas.length && tildadas.length === todas.length) return;
+      // Ninguno tildado: la clave igual tiene que viajar (con valor vacio), o
+      // el server lo leeria como "sin filtro" = todos. Mismo motivo que el
+      // <input type="hidden"> del form.
+      if (!tildadas.length) { p.append(name, ''); return; }
+      tildadas.forEach(function(v){ p.append(name, v); });
+    });
+    TEXTOS.forEach(function(name){
+      var el = form.querySelector('[name="' + name + '"]');
+      var v = el ? (el.value || '').trim() : '';
+      if (v) p.append(name, v);
+    });
+    return p;
+  }
+
+  function urlDeFiltro(){
+    var qs = paramsDeFiltro().toString();
+    return window.location.pathname + (qs ? '?' + qs : '');
+  }
+
+  // Espejo EXACTO de _lista_filtrada() del backend: clave ausente = TODOS.
+  // Si esta regla se desincroniza, el back/forward mostraria checkboxes que
+  // no se corresponden con los eventos que devuelve el endpoint.
+  function sincronizarFormDesdeUrl(){
+    if (!form) return;
+    var sp = new URLSearchParams(window.location.search);
+    LISTAS.forEach(function(name){
+      var ausente = !sp.has(name);
+      var vals = sp.getAll(name);
+      Array.prototype.forEach.call(cajas(name), function(cb){
+        cb.checked = ausente ? true : (vals.indexOf(cb.value) !== -1);
+      });
+    });
+    TEXTOS.forEach(function(name){
+      var el = form.querySelector('[name="' + name + '"]');
+      if (el) el.value = sp.get(name) || '';
+    });
+  }
+
+  // El aviso de "las entregas son estimadas" solo tiene sentido si las
+  // entregas se estan mostrando.
+  function actualizarAviso(){
+    if (!form) return;
+    var aviso = form.querySelector('[data-js="cal-aviso-entregas"]');
+    var cb = form.querySelector('input[name="tipo"][value="entrega"]');
+    if (aviso && cb) aviso.hidden = !cb.checked;
+  }
   // "Hoy" del NEGOCIO (hora de Argentina), calculado por el backend con la
   // FUENTE UNICA DE VERDAD (backend/models.py -> hoy_negocio()). El JS NUNCA
   // usa new Date() para decidir estado ni para saber que dia es hoy: si el
@@ -171,7 +355,12 @@
       el.addEventListener('keydown', function(ev){ if(ev.key==='Enter' || ev.key===' '){ ev.preventDefault(); if (cal) cal.changeView('listDay', window.SirioFechas.toIso(arg.date)); }});
     },
     events: function(info, success, failure){
-      var url = "{{ url_for('main.api_calendario_events') }}" + '?start=' + encodeURIComponent(info.startStr) + '&end=' + encodeURIComponent(info.endStr);
+      // Los filtros viajan al endpoint: el filtrado lo hace el SERVER, con la
+      // fuente unica de estado. El JS no decide que evento se ve.
+      var p = paramsDeFiltro();
+      p.set('start', info.startStr);
+      p.set('end', info.endStr);
+      var url = "{{ url_for('main.api_calendario_events') }}" + '?' + p.toString();
       fetch(url, { credentials: 'same-origin' })
         .then(function(r){ return r.json(); })
         .then(function(data){ success(data || []); })
@@ -238,6 +427,47 @@
       // Safari < 14
       mqMobile.addListener(function(ev){ aplicarModo(!!ev.matches); });
     }
+  }
+
+  // -------------------------------------------------------------------
+  //  Filtros: cambio -> pushState + refetch (sin recargar la pagina)
+  // -------------------------------------------------------------------
+  function aplicarFiltro(){
+    var url = urlDeFiltro();
+    var actual = window.location.pathname + window.location.search;
+    // pushState (no replaceState): cada cambio de filtro es un paso de
+    // historial, que es justamente lo que hace andar el back/forward.
+    if (url !== actual) history.pushState({ sirioCalFiltro: 1 }, '', url);
+    actualizarAviso();
+    cal.refetchEvents();
+  }
+
+  if (form){
+    form.addEventListener('change', function(ev){
+      var t = ev.target;
+      if (!t || !t.name) return;
+      if (LISTAS.indexOf(t.name) === -1 && TEXTOS.indexOf(t.name) === -1) return;
+      aplicarFiltro();
+    });
+
+    // Con JS no hace falta recargar: el submit (boton "Aplicar" o Enter en un
+    // input) hace lo mismo que un change. Sin JS el submit recarga y el server
+    // filtra igual.
+    form.addEventListener('submit', function(ev){
+      ev.preventDefault();
+      aplicarFiltro();
+    });
+
+    // Back/forward del browser: el navegador cambia la URL pero NO recarga.
+    // Hay que re-sincronizar los checkboxes desde la URL y volver a pedir los
+    // eventos, o la vista quedaria mostrando lo de antes.
+    window.addEventListener('popstate', function(){
+      sincronizarFormDesdeUrl();
+      actualizarAviso();
+      cal.refetchEvents();
+    });
+
+    actualizarAviso();
   }
 
   // Vista switcher

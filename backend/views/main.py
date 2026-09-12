@@ -44,6 +44,7 @@ from ..models import Client, Company, ClientCompanyLink, ClientCompanyBalance, R
 # cobranza. Está definida en backend/models.py (bloque del final del
 # archivo). NO reimplementes nada de esto acá: consumila.
 from ..models import (
+    ESTADOS_COBRANZA,
     PLAZO_PAGO_DIAS_DEFAULT,
     condiciones_estado_cobranza,
     estado_cobranza_de,
@@ -5194,6 +5195,63 @@ def notificaciones():
 
 
 
+# ---------------------------------------------------------------------------
+#  Calendario: filtros (tipo / estado / cliente / empresa)
+# ---------------------------------------------------------------------------
+#  UN SOLO parser, consumido por las DOS puntas:
+#    * /calendario            -> pinta el estado inicial de los checkboxes
+#    * /api/calendario/events -> filtra los eventos
+#  Si cada punta parseara por su cuenta, la UI podria mostrar un check
+#  prendido mientras el endpoint filtra por otra cosa. Con un solo parser eso
+#  no puede pasar.
+#
+#  El estado de los filtros vive en la QUERYSTRING (no en sessionStorage ni en
+#  la sesion del server): sobrevive al refresh, el back/forward del browser
+#  funciona solo, y el link se puede pasar tal cual para reproducir la vista.
+# ---------------------------------------------------------------------------
+
+CALENDARIO_TIPOS = ("entrega", "cobranza", "cumpleanos")
+
+#  Los estados NO se redefinen aca: salen de la FUENTE UNICA DE VERDAD
+#  (models.ESTADOS_COBRANZA). SIN_COBRANZA no es un quinto estado de negocio,
+#  es el pseudo-estado que este endpoint YA emitia para las entregas cuyo
+#  pedido todavia no tiene fila en Collection (ver estado_cob_expr).
+#
+#  OJO: PARCIAL NO va aca. PARCIAL es un flag ORTOGONAL a los 4 estados (ver
+#  el comentario de la regla 5 en backend/models.py): una deuda parcial puede
+#  estar en cualquiera de los cuatro. Tratarlo como un quinto estado rompe la
+#  logica.
+CALENDARIO_ESTADOS = ESTADOS_COBRANZA + ("SIN_COBRANZA",)
+
+
+def _lista_filtrada(args, key, permitidos):
+    """Lee una lista de la querystring distinguiendo "sin filtro" de "nada".
+
+    - la clave NO viene            -> sin filtro, se devuelven TODOS los
+                                      valores permitidos (vista por defecto y
+                                      compatible con los links viejos)
+    - la clave viene               -> exactamente los valores validos que
+                                      trajo, que pueden ser NINGUNO
+
+    La distincion importa: si "vacio" significara siempre "todos", destildar
+    el ultimo checkbox mostraria TODO en vez de nada. Por eso el JS manda
+    `key=` (valor vacio) cuando no queda ninguno tildado: la clave esta
+    presente, no pasa el filtro de `permitidos`, y la lista queda vacia.
+    """
+    if key not in args:
+        return list(permitidos)
+    return [v for v in args.getlist(key) if v in permitidos]
+
+
+def _calendario_filtros(args):
+    return {
+        "tipos": _lista_filtrada(args, "tipo", CALENDARIO_TIPOS),
+        "estados": _lista_filtrada(args, "estado", CALENDARIO_ESTADOS),
+        "client_q": (args.get("client_q") or "").strip(),
+        "company_q": (args.get("company_q") or "").strip(),
+    }
+
+
 # Calendario general (entregas y cobranzas)
 
 @bp.get("/calendario")
@@ -5205,11 +5263,22 @@ def calendario():
     # NO use el reloj del navegador (mismo patron que cobranzas.html).
     hoy = hoy_negocio()
 
+    filtros = _calendario_filtros(request.args)
+
     return render_template(
         "calendar.html",
         active="calendario",
         today=hoy.isoformat(),
         now_date=hoy,
+        # El server pinta el estado inicial de los checkboxes. Asi el refresh
+        # y el link copiado reproducen la vista SIN depender de que el JS
+        # llegue a correr.
+        filtro_tipos=filtros["tipos"],
+        filtro_estados=filtros["estados"],
+        filtro_client_q=filtros["client_q"],
+        filtro_company_q=filtros["company_q"],
+        calendario_tipos=CALENDARIO_TIPOS,
+        calendario_estados=CALENDARIO_ESTADOS,
     )
 
 
@@ -5938,6 +6007,46 @@ def api_calendario_events():
 
     uid = None if _has_global_access() else _effective_user_id()
 
+    # Filtros de la querystring, por el MISMO parser que usa /calendario para
+    # pintar los checkboxes (_calendario_filtros). No se re-parsea nada aca.
+    filtros = _calendario_filtros(request.args)
+    tipos = filtros["tipos"]
+    estados = filtros["estados"]
+    client_q = filtros["client_q"]
+    company_q = filtros["company_q"]
+
+    def _filtrar_por_estado(q):
+        """Filtra por estado usando la MISMA expresion que produce la etiqueta.
+
+        Se reusa `estado_cob_expr`, que ya esta construida sobre
+        condiciones_estado_cobranza(). NO se deriva el estado de nuevo (nada de
+        comparar vencimientos contra hoy a mano): el booleano que filtra es
+        literalmente el mismo objeto que genera el valor mostrado, asi que no
+        hay forma de que filtro y etiqueta diverjan.
+        """
+        if len(estados) == len(CALENDARIO_ESTADOS):
+            return q
+        return q.filter(estado_cob_expr.in_(estados))
+
+    def _filtrar_por_cliente_empresa(q):
+        """Cliente/empresa por los helpers unificados (backend/utils/search.py).
+
+        Mismo patron que /status y /deudas: join sobre Order + el filtro
+        compartido, que ya ignora mayusculas y acentos.
+        """
+        nonlocal_q = q
+        if client_q:
+            nonlocal_q = nonlocal_q.join(Client, Order.client_id == Client.id)
+            f = client_search_filter(client_q)
+            if f is not None:
+                nonlocal_q = nonlocal_q.filter(f)
+        if company_q:
+            nonlocal_q = nonlocal_q.join(Company, Order.company_id == Company.id)
+            f = company_search_filter(company_q)
+            if f is not None:
+                nonlocal_q = nonlocal_q.filter(f)
+        return nonlocal_q
+
     events = []
 
     def _dias_atraso(venc):
@@ -5949,6 +6058,12 @@ def api_calendario_events():
     # -----------------------------------------------------------------
     #  Entregas estimadas (pendientes)
     # -----------------------------------------------------------------
+    #  Son ESTIMACIONES, no compromisos: la fecha sale de
+    #  LogisticsStatus.fecha_entrega_estimada (o del plazo promedio), y el
+    #  negocio no tiene contacto directo con el transporte. Por eso el tipo
+    #  "entrega" se puede apagar desde el filtro y los eventos se rotulan
+    #  como estimados en la UI.
+    #
     #  joinedload de order->client/company: antes cada evento disparaba
     #  o.client y o.company (N+1).
     q_ent = (
@@ -5974,7 +6089,11 @@ def api_calendario_events():
     if end:
         q_ent = q_ent.filter(LogisticsStatus.fecha_entrega_estimada <= end)
 
-    for lg, estado, venc in q_ent.all():
+    q_ent = _filtrar_por_estado(_filtrar_por_cliente_empresa(q_ent))
+
+    # El tipo apagado no se consulta: se evita la query entera, no se filtra
+    # despues en Python.
+    for lg, estado, venc in (q_ent.all() if "entrega" in tipos else []):
         o = lg.order
         d = _fecha_de(lg.fecha_entrega_estimada)
         if d is None:
@@ -6033,7 +6152,9 @@ def api_calendario_events():
     if end_d:
         q_cob = q_cob.filter(cond.vencimiento <= end_d)
 
-    for c, estado, venc in q_cob.all():
+    q_cob = _filtrar_por_estado(_filtrar_por_cliente_empresa(q_cob))
+
+    for c, estado, venc in (q_cob.all() if "cobranza" in tipos else []):
         o = c.order
         d = _fecha_de(venc)
         if d is None:
@@ -6066,7 +6187,17 @@ def api_calendario_events():
     #  No tienen estado de cobranza: severidad "info" (canal neutro). No se
     #  les aplica deleted_at porque ese campo NO existe en Client ni en
     #  ClientBirthday: es exclusivo de Order.
-    if start or end:
+    #
+    #  A PROPOSITO no se les aplica el filtro de ESTADO: un cumpleaños no
+    #  tiene estado de cobranza (`estado: None`), asi que filtrarlo por
+    #  ATRASADO/A_COBRAR/etc. no significa nada y solo lograria esconderlo sin
+    #  motivo. Los cumpleaños se gobiernan por el filtro de TIPO (y por
+    #  cliente/empresa, que si les aplica).
+    #  Los parentesis de (start or end) NO son decorativos: `and` liga mas
+    #  fuerte que `or`, asi que sin ellos esto seria
+    #  `start or (end and "cumpleanos" in tipos)` y los cumpleaños seguirian
+    #  apareciendo con el tipo apagado.
+    if (start or end) and "cumpleanos" in tipos:
         year_start = (start.date().year if start else hoy.year)
         year_end = (end.date().year if end else year_start)
 
@@ -6083,6 +6214,28 @@ def api_calendario_events():
 
         if uid is not None:
             bq = bq.filter(Client.owner_user_id == uid)
+
+        # Cliente/empresa: los cumpleaños NO cuelgan de Order, asi que no se
+        # puede usar _filtrar_por_cliente_empresa (que joinea por Order).
+        # Client ya esta joineado, asi que el filtro de cliente entra directo.
+        if client_q:
+            f = client_search_filter(client_q)
+            if f is not None:
+                bq = bq.filter(f)
+
+        # Empresa: un contacto no tiene "una" empresa, tiene VINCULOS. Se filtra
+        # por existencia de un vinculo a una empresa que matchee, que es la
+        # misma relacion de la que sale la "empresa representativa" del titulo.
+        if company_q:
+            f = company_search_filter(company_q)
+            if f is not None:
+                bq = bq.filter(
+                    ClientCompanyLink.query
+                    .join(Company, ClientCompanyLink.company_id == Company.id)
+                    .filter(ClientCompanyLink.client_id == Client.id)
+                    .filter(f)
+                    .exists()
+                )
 
         for b in bq.all():
             if not b.fecha:
