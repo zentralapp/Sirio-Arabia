@@ -63,7 +63,7 @@ from flask_login import current_user
 
 from ..utils.company_products import parse_dynamic_table, read_dataframe_from_bytes, validate_filename
 
-from ..utils.search import client_search_filter, company_search_filter
+from ..utils.search import client_search_filter, company_search_filter, normalize_term, unaccent_lower
 
 
 
@@ -4401,7 +4401,13 @@ def clientes():
 
         try:
 
-            base = base.filter(Client.provincia.ilike(f"%{prov}%"))
+            # ilike() NO ignora acentos: buscar "Neuquen" no encontraba
+            # "Neuquén". Es el mismo bug que el cliente reporto en los
+            # buscadores de cliente/empresa, y se resuelve con el MISMO helper
+            # (backend/utils/search.py, translate() en SQL). Se normalizan los
+            # DOS lados: la columna y el termino buscado. No hay una segunda
+            # implementacion de normalizacion de acentos en el proyecto.
+            base = base.filter(unaccent_lower(Client.provincia).like(f"%{normalize_term(prov)}%"))
 
         except Exception:
 
