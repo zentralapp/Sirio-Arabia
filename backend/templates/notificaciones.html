@@ -1,7 +1,16 @@
 {% extends 'layout.html' %}
 {% block content %}
 <style>
-  .notif-table{ border:1px solid rgba(15,118,110,.18); border-radius:.6rem; overflow:hidden; background:#fff; }
+  /* overflow-x:auto y NO overflow:hidden. Los minimos de columna de la grilla
+     suman ~899px; el contenedor mide 676-880px en toda la banda 768-1180px
+     (main.col tiene min-width:0, y a partir de 992px encima aparece el sidebar).
+     Con overflow:hidden el contenido excedente quedaba RECORTADO y sin scroll de
+     ningun tipo: el boton de accion era fisicamente inalcanzable. El fix es
+     relativo al CONTENEDOR (no al viewport) a proposito: un breakpoint tendria
+     que adivinar donde entra la tabla, y ese numero depende del ancho del
+     sidebar y de la suma de minimos. Es el mismo patron que app.css ya usa en
+     .table-responsive para el resto de las tablas anchas. */
+  .notif-table{ border:1px solid rgba(15,118,110,.18); border-radius:.6rem; overflow-x:auto; -webkit-overflow-scrolling:touch; background:#fff; }
   .notif-head,
   .notif-row{ display:grid; align-items:center; column-gap:.75rem; }
   .notif-table--main .notif-head,
@@ -280,10 +289,12 @@
       return { empty: isNaN(oid), v: isNaN(oid) ? null : oid };
     }
     if (key === 'ultima_compra') {
+      // Parseo unificado: SirioFechas (static/js/fechas.js). Date.parse()
+      // sobre una fecha ISO sin hora la toma como UTC.
       var iso = String(row.getAttribute('data-last-order-date') || '').trim();
       if (!iso) return { empty: true, v: null };
-      var t = Date.parse(iso);
-      return { empty: isNaN(t), v: isNaN(t) ? null : t };
+      var t = window.SirioFechas.time(iso);
+      return { empty: (t == null), v: t };
     }
     var txt = getRowTextAttr(row, key);
     var empty = (!txt || txt === '-');

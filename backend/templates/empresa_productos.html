@@ -40,7 +40,7 @@
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
           <div class="text-muted small">
             Archivo: <strong>{{ filename or sheet.filename }}</strong>
-            {% if sheet.uploaded_at %} | Subido: {{ sheet.uploaded_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
+            {% if sheet.uploaded_at %} | Subido: {{ sheet.uploaded_at|fecha_hora }}{% endif %}
           </div>
         </div>
       </div>

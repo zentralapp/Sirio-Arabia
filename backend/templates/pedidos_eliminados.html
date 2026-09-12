@@ -33,7 +33,7 @@
         {% for o in orders %}
           <tr>
             <td>{{ o.id }}</td>
-            <td>{{ o.created_at.strftime('%d/%m/%Y') if o.created_at else '-' }}</td>
+            <td>{{ o.created_at|fecha('-') }}</td>
             <td>{{ (o.client.apellido ~ ' ' ~ o.client.nombre) if o.client else '-' }}</td>
             <td>{{ o.company.nombre if o.company else '-' }}</td>
             <td>{{ o.tipo_comprobante or '-' }}</td>
@@ -41,13 +41,13 @@
               {% set amt = (o.precio_final if o.precio_final is not none else (o.logistics.precio if o.logistics and o.logistics.precio is not none else (o.collection.monto if o.collection and o.collection.monto is not none else none))) %}
               {{ amt if amt is not none else '-' }}
             </td>
-            <td>{{ o.logistics.fecha_entrega_efectiva.strftime('%d/%m/%Y') if o.logistics and o.logistics.fecha_entrega_efectiva else '-' }}</td>
-            <td>{{ o.collection.fecha_cobro_efectiva.strftime('%d/%m/%Y') if o.collection and o.collection.fecha_cobro_efectiva else '-' }}</td>
+            <td>{{ (o.logistics.fecha_entrega_efectiva if o.logistics else None)|fecha('-') }}</td>
+            <td>{{ (o.collection.fecha_cobro_efectiva if o.collection else None)|fecha('-') }}</td>
             <td style="max-width: 420px;">
               {% set nd = ((o.nota or '') ~ ' ' ~ (o.descripcion or ''))|trim %}
               {{ (nd[:140] ~ ('…' if nd|length > 140 else '')) if nd else '-' }}
             </td>
-            <td>{{ o.deleted_at.strftime('%d/%m/%Y %H:%M') if o.deleted_at else '-' }}</td>
+            <td>{{ o.deleted_at|fecha_hora('-') }}</td>
             <td class="text-end">
               <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#deletedOrderDetails{{ o.id }}">Ver</button>
 
@@ -62,7 +62,7 @@
                       <div class="row g-3">
                         <div class="col-12 col-md-4">
                           <label class="form-label">Fecha pedido</label>
-                          <input type="text" class="form-control" value="{{ o.created_at.strftime('%d/%m/%Y') if o.created_at else '-' }}" disabled>
+                          <input type="text" class="form-control" value="{{ o.created_at|fecha('-') }}" disabled>
                         </div>
                         <div class="col-12 col-md-4">
                           <label class="form-label">Cliente</label>
@@ -88,15 +88,15 @@
 
                         <div class="col-12 col-md-4">
                           <label class="form-label">Entrega efectiva</label>
-                          <input type="text" class="form-control" value="{{ o.logistics.fecha_entrega_efectiva.strftime('%d/%m/%Y') if o.logistics and o.logistics.fecha_entrega_efectiva else '-' }}" disabled>
+                          <input type="text" class="form-control" value="{{ (o.logistics.fecha_entrega_efectiva if o.logistics else None)|fecha('-') }}" disabled>
                         </div>
                         <div class="col-12 col-md-4">
                           <label class="form-label">Cobro efectivo</label>
-                          <input type="text" class="form-control" value="{{ o.collection.fecha_cobro_efectiva.strftime('%d/%m/%Y') if o.collection and o.collection.fecha_cobro_efectiva else '-' }}" disabled>
+                          <input type="text" class="form-control" value="{{ (o.collection.fecha_cobro_efectiva if o.collection else None)|fecha('-') }}" disabled>
                         </div>
                         <div class="col-12 col-md-4">
                           <label class="form-label">Eliminado</label>
-                          <input type="text" class="form-control" value="{{ o.deleted_at.strftime('%d/%m/%Y %H:%M') if o.deleted_at else '-' }}" disabled>
+                          <input type="text" class="form-control" value="{{ o.deleted_at|fecha_hora('-') }}" disabled>
                         </div>
 
                         <div class="col-12">
@@ -109,15 +109,15 @@
                         </div>
                       </div>
                       <textarea class="d-none" id="deletedOrderCopy{{ o.id }}">Pedido eliminado #{{ o.id }}
-Fecha pedido: {{ o.created_at.strftime('%d/%m/%Y') if o.created_at else '-' }}
+Fecha pedido: {{ o.created_at|fecha('-') }}
 Cliente: {{ (o.client.apellido ~ ' ' ~ o.client.nombre) if o.client else '-' }}
 Empresa: {{ o.company.nombre if o.company else '-' }}
 Sucursal: {{ o.sucursal or '-' }}
 Tipo: {{ o.tipo_comprobante or '-' }}
 Monto: {{ amt if amt is not none else '-' }}
-Entrega efectiva: {{ o.logistics.fecha_entrega_efectiva.strftime('%d/%m/%Y') if o.logistics and o.logistics.fecha_entrega_efectiva else '-' }}
-Cobro efectivo: {{ o.collection.fecha_cobro_efectiva.strftime('%d/%m/%Y') if o.collection and o.collection.fecha_cobro_efectiva else '-' }}
-Eliminado: {{ o.deleted_at.strftime('%d/%m/%Y %H:%M') if o.deleted_at else '-' }}
+Entrega efectiva: {{ (o.logistics.fecha_entrega_efectiva if o.logistics else None)|fecha('-') }}
+Cobro efectivo: {{ (o.collection.fecha_cobro_efectiva if o.collection else None)|fecha('-') }}
+Eliminado: {{ o.deleted_at|fecha_hora('-') }}
 Nota: {{ o.nota or '' }}
 Descripción: {{ o.descripcion or '' }}</textarea>
                     </div>

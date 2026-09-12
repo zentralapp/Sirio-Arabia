@@ -159,8 +159,13 @@ h1,h2{letter-spacing:.2px}
   body[data-active="status"] .table .d-none.d-md-table-cell{display:table-cell !important}
   body[data-active="status"] .table-responsive,
   body[data-active="deudas"] .table-responsive{overflow-x:auto !important; -webkit-overflow-scrolling:touch}
-  body[data-active="status"] .table-responsive > .table,
-  body[data-active="deudas"] .table-responsive > .table{min-width:1200px !important}
+  /* H8: aquí vivía `min-width:1200px !important` para status/deudas. Estaba
+     MUERTA: el <style> inline de los templates gana por especificidad de id
+     (#cobResults .table-responsive > .table = 920px en cobranzas.html,
+      #statusResults ... = 690px en status.html). Medido a 390px: el
+     min-width computado de #cobTable era 920px, no 1200px. Se borró para que
+     nadie pierda media hora ajustando un valor sin efecto: el ancho mínimo
+     de esas dos tablas se cambia EN EL TEMPLATE. */
   body[data-active="status"] .table-mobile-cards .table,
   body[data-active="deudas"] .table-mobile-cards .table{display:table !important; width:100% !important}
 
@@ -234,8 +239,12 @@ h1,h2{letter-spacing:.2px}
   body[data-active="status"] .table thead th,
   body[data-active="deudas"] .table thead th{font-size:12px; white-space:nowrap !important}
   body[data-active="deudas"] .table-cobranzas thead th{white-space:nowrap !important}
-  body[data-active="status"] .btn,
-  body[data-active="deudas"] .btn{min-height:0}
+  /* H9: la compactación de altura vale sólo DENTRO de la tabla. Antes era
+     `.btn{min-height:0}` a secas y mataba el piso táctil de 44px de
+     layout.html en toda la pantalla: medido a 390px en /deudas había
+     botones de filtro y paginación de 26.9px de alto. */
+  body[data-active="status"] .table .btn,
+  body[data-active="deudas"] .table .btn{min-height:0}
 
   /* Deudas/Status: Monto compacto (override de reglas globales touch 44px) */
   body[data-active="deudas"] .js-cob-price-group,
@@ -337,8 +346,13 @@ h1,h2{letter-spacing:.2px}
   body[data-active="status"] .table .d-none.d-md-table-cell{display:table-cell !important}
   body[data-active="status"] .table-responsive,
   body[data-active="deudas"] .table-responsive{overflow-x:auto !important; -webkit-overflow-scrolling:touch}
-  body[data-active="status"] .table-responsive > .table,
-  body[data-active="deudas"] .table-responsive > .table{min-width:1200px !important}
+  /* H8: aquí vivía `min-width:1200px !important` para status/deudas. Estaba
+     MUERTA: el <style> inline de los templates gana por especificidad de id
+     (#cobResults .table-responsive > .table = 920px en cobranzas.html,
+      #statusResults ... = 690px en status.html). Medido a 390px: el
+     min-width computado de #cobTable era 920px, no 1200px. Se borró para que
+     nadie pierda media hora ajustando un valor sin efecto: el ancho mínimo
+     de esas dos tablas se cambia EN EL TEMPLATE. */
   body[data-active="status"] .table-mobile-cards .table,
   body[data-active="deudas"] .table-mobile-cards .table{display:table !important; width:100% !important}
 
@@ -412,8 +426,12 @@ h1,h2{letter-spacing:.2px}
   body[data-active="status"] .table thead th,
   body[data-active="deudas"] .table thead th{font-size:12px; white-space:nowrap !important}
   body[data-active="deudas"] .table-cobranzas thead th{white-space:nowrap !important}
-  body[data-active="status"] .btn,
-  body[data-active="deudas"] .btn{min-height:0}
+  /* H9: la compactación de altura vale sólo DENTRO de la tabla. Antes era
+     `.btn{min-height:0}` a secas y mataba el piso táctil de 44px de
+     layout.html en toda la pantalla: medido a 390px en /deudas había
+     botones de filtro y paginación de 26.9px de alto. */
+  body[data-active="status"] .table .btn,
+  body[data-active="deudas"] .table .btn{min-height:0}
 
   /* Deudas/Status: Monto compacto (override de reglas globales touch 44px) */
   body[data-active="deudas"] .js-cob-price-group,
@@ -598,34 +616,40 @@ h1,h2{letter-spacing:.2px}
   }
 }
 
-/* XS aún más compacto */
+/* XS aún más compacto.
+   H9: los tamaños de texto de este bloque pasaron de rem a px a propósito.
+   `html{font-size}` baja a 13.25px acá y a 12.75px en el bloque de abajo, y
+   como casi todo estaba en rem ese "zoom out" global arrastraba texto real a
+   7.9px (medido: SPAN.badge en dashboard y /clientes a 390px de viewport).
+   Piso adoptado: 12px para contenido, 11px para .badge. En px porque el piso
+   NO debe volver a escalar con el html{font-size}. */
 @media (max-width: 575.98px){
   html{font-size:13.25px}
   .row.g-3{ --bs-gutter-x:.6rem; --bs-gutter-y:.6rem }
-  .input-group-sm .input-group-text{font-size:.85rem}
-  .form-label{font-size:.88rem}
+  .input-group-sm .input-group-text{font-size:12px}
+  .form-label{font-size:12px}
   .form-control,.form-select{font-size:.92rem}
-  .btn{padding:.42rem .64rem; font-size:.88rem}
-  .btn.btn-sm{padding:.36rem .5rem; font-size:.82rem}
-  .table{font-size:11px}
+  .btn{padding:.42rem .64rem; font-size:12px}
+  .btn.btn-sm{padding:.36rem .5rem; font-size:12px}
+  .table{font-size:12px}
   .table th,.table td{padding:.3rem .4rem}
   .table .input-group,.table select.form-select,.table input.form-control{min-width:0; width:100%}
-  .table .form-control.form-control-sm,.table .form-select.form-select-sm{padding:.22rem .45rem;height:auto;font-size:.85rem}
-  .table .btn-group .btn{padding:.26rem .4rem;font-size:.8rem}
-  .badge{font-size:.68rem; padding:.28em .42em}
+  .table .form-control.form-control-sm,.table .form-select.form-select-sm{padding:.22rem .45rem;height:auto;font-size:12px}
+  .table .btn-group .btn{padding:.26rem .4rem;font-size:12px}
+  .badge{font-size:11px; padding:.28em .42em}
   .w-actions{min-width:90px}
   .col-actions .btn-group{flex-wrap:wrap}
-  .alert{padding:.45rem .65rem; font-size:.85rem}
+  .alert{padding:.45rem .65rem; font-size:12px}
 }
 
-/* Muy pequeñas (ej. 360px) */
+/* Muy pequeñas (ej. 360px). Ver nota H9 del bloque anterior: tamaños en px. */
 @media (max-width: 399.98px){
   html{font-size:12.75px}
-  .table{font-size:10.5px}
+  .table{font-size:12px}
   .table th,.table td{padding:.26rem .35rem}
-  .table .btn-group .btn{padding:.24rem .36rem;font-size:.78rem}
-  .badge{font-size:.62rem}
-  .alert{font-size:.8rem}
+  .table .btn-group .btn{padding:.24rem .36rem;font-size:12px}
+  .badge{font-size:11px}
+  .alert{font-size:12px}
 }
 
 /* Control responsivo para campos de precio/forma pago en tablas */
@@ -639,4 +663,173 @@ h1,h2{letter-spacing:.2px}
   /* Forzar ancho mínimo de columna de dinero para evitar clipping del input */
   .table-tight td.col-money, .table-tight th.col-money,
   .table-cobranzas td.col-money, .table-cobranzas th.col-money{min-width: 140px}
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   H4 — /estado-clientes no debe heredar el min-width de la lista de /clientes
+   ───────────────────────────────────────────────────────────────────────────
+   `/estado-clientes` se renderiza con active="clientes" (backend/views/main.py),
+   así que comparte body[data-active="clientes"] con la lista de clientes y
+   heredaba `min-width:720px` para una tabla de 4 columnas. Medido a 390px:
+   tabla 720px dentro de un contenedor de 371px => 349px de scroll horizontal
+   inútil (/usuarios, con las mismas 4 columnas, entra sin scroll).
+
+   Por qué opt-out por clase y no un data-active propio: `active` lo fija
+   main.py (que está fuera de alcance) y además layout.html usa `{{ active }}`
+   para marcar el ítem del sidebar y en JS (`var active0 = '{{ active }}'`),
+   así que cambiar el valor rompería el resaltado del menú. Por qué no acotar
+   `body[data-active="clientes"] .table-responsive > .table`: ese selector
+   también cubre las tablas de los modales de /clientes, y recortarlo cambiaría
+   el ancho mínimo de esas tablas (efecto colateral no pedido).
+   Sin media query a propósito: neutraliza tanto el 720px de esta hoja
+   (portrait) como el de layout.html (que aplica en landscape). min-width:0 es
+   el valor por defecto, así que en escritorio no cambia nada.
+   Se aplica sólo donde el template pone `.table-fit` (estado_clientes.html).  */
+/* `body[data-active]` está a propósito: la regla que hay que vencer es
+   `body[data-active="clientes"] .table-responsive > .table` (0,3,2) y sin el
+   `body` este selector quedaba en (0,3,1) y PERDÍA aunque tuviera !important
+   (verificado: min-width computado seguía en 720px). */
+body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   H3 — fuga de orientación en los kill-switches de `table-mobile-cards`
+   ───────────────────────────────────────────────────────────────────────────
+   `.table-mobile-cards` se define en layout.html (línea ~74) dentro de
+   `@media (max-width:767.98px)` SIN condición de orientación, pero todos los
+   kill-switches que la apagan viven en el bloque
+   `@media (max-width:767.98px) and (orientation:portrait)` de este archivo.
+   Consecuencia medida a 736x414 (teléfono horizontal): en /deudas el
+   `#cobTable` computaba `display:block` y su `thead` `display:none`, o sea
+   caía en modo tarjeta, mientras que en vertical es tabla real.
+
+   Esto NO decide estrategia de tabla: replica en landscape el kill-switch que
+   ya rige en portrait, o sea PRESERVA el comportamiento efectivo actual.
+   Cubre exactamente las vistas que ya lo tenían (clientes, empresas, status,
+   deudas, historial, comisiones, crm). /pedidos y /nueva-cobranza NO se tocan:
+   hoy muestran tarjetas en las dos orientaciones y así quedan.
+
+   Se usa un bloque hermano con `orientation:landscape` en vez de quitarle la
+   condición al bloque portrait porque ahí hay reglas que SÍ deben ser
+   sólo-portrait — p.ej. `.desktop-table{display:none}` y
+   `.mobile-cards{display:flex}` de las líneas iniciales del bloque.          */
+@media (max-width: 767.98px) and (orientation: landscape){
+  body[data-active="clientes"] .table-mobile-cards .table,
+  body[data-active="empresas"] .table-mobile-cards .table,
+  body[data-active="status"] .table-mobile-cards .table,
+  body[data-active="deudas"] .table-mobile-cards .table,
+  body[data-active="historial"] .table-mobile-cards .table,
+  body[data-active="comisiones"] .table-mobile-cards .table,
+  body[data-active="crm"] .table-mobile-cards .table{display:table !important; width:100% !important}
+
+  body[data-active="clientes"] .table-mobile-cards .table thead,
+  body[data-active="empresas"] .table-mobile-cards .table thead,
+  body[data-active="status"] .table-mobile-cards .table thead,
+  body[data-active="deudas"] .table-mobile-cards .table thead,
+  body[data-active="historial"] .table-mobile-cards .table thead,
+  body[data-active="comisiones"] .table-mobile-cards .table thead,
+  body[data-active="crm"] .table-mobile-cards .table thead{display:table-header-group !important}
+
+  body[data-active="clientes"] .table-mobile-cards .table tbody,
+  body[data-active="empresas"] .table-mobile-cards .table tbody,
+  body[data-active="status"] .table-mobile-cards .table tbody,
+  body[data-active="deudas"] .table-mobile-cards .table tbody,
+  body[data-active="historial"] .table-mobile-cards .table tbody,
+  body[data-active="comisiones"] .table-mobile-cards .table tbody,
+  body[data-active="crm"] .table-mobile-cards .table tbody{display:table-row-group !important}
+
+  body[data-active="clientes"] .table-mobile-cards .table tbody tr,
+  body[data-active="empresas"] .table-mobile-cards .table tbody tr,
+  body[data-active="status"] .table-mobile-cards .table tbody tr,
+  body[data-active="deudas"] .table-mobile-cards .table tbody tr,
+  body[data-active="historial"] .table-mobile-cards .table tbody tr,
+  body[data-active="comisiones"] .table-mobile-cards .table tbody tr,
+  body[data-active="crm"] .table-mobile-cards .table tbody tr{display:table-row !important; background:transparent !important; border:0 !important; border-radius:0 !important; margin:0 !important; overflow:visible !important}
+
+  body[data-active="clientes"] .table-mobile-cards .table tbody tr > *,
+  body[data-active="empresas"] .table-mobile-cards .table tbody tr > *,
+  body[data-active="status"] .table-mobile-cards .table tbody tr > *,
+  body[data-active="deudas"] .table-mobile-cards .table tbody tr > *,
+  body[data-active="historial"] .table-mobile-cards .table tbody tr > *,
+  body[data-active="comisiones"] .table-mobile-cards .table tbody tr > *,
+  body[data-active="crm"] .table-mobile-cards .table tbody tr > *{display:table-cell !important; width:auto !important; border-bottom:inherit !important; padding:.35rem .5rem !important}
+
+  body[data-active="clientes"] .table-mobile-cards .table tbody tr > td::before,
+  body[data-active="empresas"] .table-mobile-cards .table tbody tr > td::before,
+  body[data-active="status"] .table-mobile-cards .table tbody tr > td::before,
+  body[data-active="deudas"] .table-mobile-cards .table tbody tr > td::before,
+  body[data-active="historial"] .table-mobile-cards .table tbody tr > td::before,
+  body[data-active="comisiones"] .table-mobile-cards .table tbody tr > td::before,
+  body[data-active="crm"] .table-mobile-cards .table tbody tr > td::before,
+  body[data-active="clientes"] .table-mobile-cards .table tbody tr > th::before,
+  body[data-active="empresas"] .table-mobile-cards .table tbody tr > th::before,
+  body[data-active="status"] .table-mobile-cards .table tbody tr > th::before,
+  body[data-active="deudas"] .table-mobile-cards .table tbody tr > th::before,
+  body[data-active="historial"] .table-mobile-cards .table tbody tr > th::before,
+  body[data-active="comisiones"] .table-mobile-cards .table tbody tr > th::before,
+  body[data-active="crm"] .table-mobile-cards .table tbody tr > th::before{content:none !important; display:none !important}
+
+  body[data-active="clientes"] .table-mobile-cards .col-actions,
+  body[data-active="empresas"] .table-mobile-cards .col-actions,
+  body[data-active="status"] .table-mobile-cards .col-actions,
+  body[data-active="deudas"] .table-mobile-cards .col-actions,
+  body[data-active="historial"] .table-mobile-cards .col-actions,
+  body[data-active="comisiones"] .table-mobile-cards .col-actions,
+  body[data-active="crm"] .table-mobile-cards .col-actions{width:1% !important; text-align:right !important; white-space:nowrap}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   H10 — la banda 768–1199.98px no tenía dueño
+   ───────────────────────────────────────────────────────────────────────────
+   Toda la compactación de tabla de esta hoja está en `max-width:767.98px`, y
+   arriba de 768px no había NINGUNA regla de tabla: la tabla volvía a fuente
+   heredada de 16px y padding de celda de ~10.4px por lado. Medido en /deudas a
+   900px de viewport: `#cobTable` = 1361px de ancho natural dentro de un
+   contenedor de 850px => 519px de scroll horizontal (abajo de 768px ya está
+   compactada).
+
+   H10b — el techo se subió de 991.98px a 1199.98px.
+   1361px NO era "el ancho en el viewport más chico sin ser móvil": es
+   simplemente el ancho natural SIN compactar, y aparece igual en toda la banda
+   de arriba. Y a partir de 992px entra el sidebar (`@media (min-width:992px)`,
+   ~200px), así que el contenedor NO crece de forma monótona con el viewport:
+   hay un salto HACIA ABAJO en 992. Medido en /deudas con el techo en 991.98:
+     991 -> tabla  969px / contenedor 941px / scroll  28px   (compactada)
+     992 -> tabla 1361px / contenedor 777px / scroll 584px   (SIN compactar)
+   O sea la peor banda de la app pasó a ser 992–1199, peor que la que se
+   arregló. Con el techo en 1199.98 la compactación cubre también esa banda.
+   A partir de 1200px no cambia NADA (escritorio intacto).
+
+   Fix conservador y H2-SAFE: NO cambia de estrategia (sigue siendo tabla real
+   con scroll horizontal, no pasa a tarjetas ni toca `table-mobile-cards`).
+   Sólo reduce el ancho que la tabla NECESITA en esta banda, para que el scroll
+   sea corto en vez de brutal. La compactación es la misma que ya se usa abajo
+   de 768px, un punto menos agresiva.                                          */
+@media (min-width: 768px) and (max-width: 1199.98px){
+  .table{font-size:13px}
+  .table th, .table td{padding:.35rem .45rem}
+  .table thead th{font-size:12px}
+
+  /* Texto largo: que parta en dos líneas en vez de estirar la columna */
+  #cobTable td.col-client, #cobTable td.col-company,
+  #status-table td.col-client, #status-table td.col-company,
+  #clientes-table td.col-client, #clientes-table td.col-company{
+    max-width:150px; white-space:normal; overflow-wrap:anywhere; word-break:break-word;
+  }
+  /* Encabezados: no reservar ancho por una sola palabra larga */
+  .table thead th{white-space:normal}
+
+  /* Controles dentro de tablas: sólo tipografía y padding.
+     NO se clampea el ancho de `.js-price-group` / `.js-cob-price-group` acá a
+     propósito: probado con 104px y recortaba el input de monto de /status
+     (medido a 900px: input 79px de ancho contra 82-83px de scrollWidth) y
+     /status en esta banda YA entra sin scroll (846px de tabla en 846px de
+     contenedor). El ancho de columna de /deudas — la única tabla que
+     desbordaba fuerte — se ajusta en su propio template (cobranzas.html). */
+  .js-forma, .js-cob-forma, .js-cob-estimado{max-width:118px}
+  .table .form-control.form-control-sm,
+  .table .form-select.form-select-sm{font-size:12px; padding:.24rem .4rem}
+  .table .input-group .input-group-text{padding:.2rem .35rem; font-size:12px}
+  .table .btn-group .btn{padding:.28rem .42rem; font-size:12px}
+  .table .badge{font-size:12px; padding:.3em .48em}
 }

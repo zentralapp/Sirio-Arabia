@@ -40,17 +40,31 @@ from ..extensions import db
 
 from ..models import Client, Company, ClientCompanyLink, ClientCompanyBalance, RelationStatus, Order, LogisticsStatus, Collection, CollectionPayment, PaymentMethod, ClientBranch, ClientDeliveryPlace, ClientBirthday, OrderAttachment, ClientDocument, CompanyDocument, CompanyProductSheet, ClientAlertState, CommissionState, AppUser, CollectionDraft, OrderDraft
 
-from sqlalchemy import func, text, or_, and_
+# FUENTE ÚNICA DE VERDAD del vencimiento efectivo y del estado de una
+# cobranza. Está definida en backend/models.py (bloque del final del
+# archivo). NO reimplementes nada de esto acá: consumila.
+from ..models import (
+    ESTADOS_COBRANZA,
+    PLAZO_PAGO_DIAS_DEFAULT,
+    condiciones_estado_cobranza,
+    estado_cobranza_de,
+    hoy_negocio,
+    vencimiento_efectivo_expr,
+)
+
+from sqlalchemy import func, text, or_, and_, case
 
 from sqlalchemy.exc import OperationalError
 
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from flask_login import current_user
 
 
 
 from ..utils.company_products import parse_dynamic_table, read_dataframe_from_bytes, validate_filename
+
+from ..utils.search import client_search_filter, company_search_filter, normalize_term, unaccent_lower
 
 
 
@@ -100,6 +114,81 @@ _MODULES = [
 
 
 
+# ---------------------------------------------------------------------------
+#  Filtros que sobreviven al cambio de pantalla
+# ---------------------------------------------------------------------------
+#  El estado de los filtros vive en la QUERYSTRING. Sobrevive al refresh, el
+#  back/forward del browser anda solo, y el link se puede pasar tal cual para
+#  que el otro vea EXACTAMENTE la misma vista.
+#
+#  Lo que faltaba NO era guardar el estado: cada pantalla ya leia sus filtros
+#  de request.args y todos los formularios de filtro ya son method="get", asi
+#  que la querystring ya se armaba sola. El agujero estaba en los links del
+#  menu: eran url_for(...) pelado, sin parametros, asi que cambiar de pantalla
+#  tiraba los filtros a la basura.
+#
+#  OJO, la trampa: el MISMO filtro se llama distinto en cada pantalla, y "q"
+#  significa cosas OPUESTAS segun donde estes.
+#
+#      Pantalla     parametro    que significa
+#      -----------  -----------  ---------------------
+#      /deudas      client_q     termino de CLIENTE
+#      /deudas      company_q    termino de EMPRESA
+#      /status      client_q     termino de CLIENTE
+#      /status      company_q    termino de EMPRESA
+#      /calendario  client_q     termino de CLIENTE
+#      /calendario  company_q    termino de EMPRESA
+#      /clientes    q            termino de CLIENTE
+#      /empresas    q            termino de EMPRESA
+#
+#  Por eso NO se puede copiar la querystring tal cual: el `q` de /clientes es
+#  un cliente y el de /empresas es una empresa. Copiarlo derecho mandaria un
+#  apellido al buscador de empresas. Se traduce por un par de nombres
+#  CANONICOS (client_q / company_q) y cada pantalla declara como llama a los
+#  suyos.
+#
+#  (Es el mismo tipo de trampa que documenta backend/utils/search.py: ahi
+#  `nombre` es fantasia en Client y razon social en Company.)
+# ---------------------------------------------------------------------------
+
+#  endpoint -> { nombre canonico : nombre del parametro EN esa pantalla }
+FILTROS_POR_PANTALLA = {
+    "main.deudas_pendientes": {"client_q": "client_q", "company_q": "company_q"},
+    "main.status": {"client_q": "client_q", "company_q": "company_q"},
+    "main.calendario": {"client_q": "client_q", "company_q": "company_q"},
+    "main.clientes": {"client_q": "q"},
+    "main.empresas": {"company_q": "q"},
+}
+
+
+def _filtros_comunes_actuales():
+    """Filtros comunes de la request actual, traducidos a nombres CANONICOS."""
+    origen = FILTROS_POR_PANTALLA.get(request.endpoint or "", {})
+    valores = {}
+    for canonico, param in origen.items():
+        v = (request.args.get(param) or "").strip()
+        if v:
+            valores[canonico] = v
+    return valores
+
+
+def nav_url(endpoint, **kwargs):
+    """url_for() que ademas se lleva los filtros comunes de la pantalla actual.
+
+    Si la pantalla destino no entiende un filtro, ese filtro NO viaja: es
+    preferible perderlo a colar un parametro que nadie lee (o, peor, que la
+    otra pantalla interprete como otra cosa).
+
+    Lo que se pase explicito en kwargs manda y no se pisa.
+    """
+    destino = FILTROS_POR_PANTALLA.get(endpoint, {})
+    for canonico, valor in _filtros_comunes_actuales().items():
+        param = destino.get(canonico)
+        if param and param not in kwargs:
+            kwargs[param] = valor
+    return url_for(endpoint, **kwargs)
+
+
 @bp.app_context_processor
 
 def inject_permission_helpers():
@@ -107,6 +196,8 @@ def inject_permission_helpers():
     return {
 
         "can_view": _can_view_module,
+
+        "nav_url": nav_url,
 
     }
 
@@ -1567,7 +1658,71 @@ def _parse_amount_like(s: str):
 
 
 
-def _parse_date_like(raw: str):
+# ---------------------------------------------------------------------------
+
+# FUENTE UNICA DE VERDAD del PARSEO de fechas de entrada.
+
+#
+
+# Formatos aceptados, en este orden de prioridad:
+
+#   1. ISO, via datetime.fromisoformat: "AAAA-MM-DD", "AAAAMMDD",
+
+#      "AAAA-MM-DDTHH:MM[:SS[.ffffff]]", "AAAA-MM-DD HH:MM", con offset o "Z".
+
+#   2. DD/MM/AAAA y D/M/AAAA -- lo que escribe el usuario (mascara de Fase 2).
+
+#   3. DD-MM-AAAA y D-M-AAAA.
+
+#   4. AAAA-M-D (ISO sin cero a la izquierda; fromisoformat lo rechaza).
+
+#   5. 8 digitos con cualquier separador ("10 09 2026", "10.09.2026") -> DDMMAAAA.
+
+#
+
+# Son DOS funciones publicas A PROPOSITO, no una: tienen tipo de retorno
+
+# distinto y ~40 call sites que dependen de ese tipo.
+
+#   - _parse_datetime_like -> datetime | None. La usan los call sites que
+
+#     escriben columnas DateTime (fecha_compra, fecha_cobro_efectiva, ...).
+
+#   - _parse_date_like     -> date | None. La usan los call sites de columnas
+
+#     Date (fecha_incorporacion, fechas de comisiones) y los filtros de busqueda.
+
+# NO se fusionan: se comparten los formatos. _parse_date_like delega en
+
+# _parse_datetime_like y trunca la hora, asi nunca se separan.
+
+#
+
+# _RE_DMY_DASH / _RE_ISO_LOOSE son mutuamente excluyentes: una exige 1-2
+
+# digitos al principio y la otra exige 4, asi que no hay ambiguedad entre
+
+# "10-09-2026" (DD-MM-AAAA) y "2026-9-10" (ISO flojo).
+
+# ---------------------------------------------------------------------------
+
+
+
+_RE_DMY_DASH = re.compile(r"^(\d{1,2})-(\d{1,2})-(\d{4})$")
+
+_RE_ISO_LOOSE = re.compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")
+
+
+
+def _parse_date_flexible(raw: str):
+
+    """Formatos NO-ISO (2 a 5 de la lista de arriba) -> date | None.
+
+
+
+    Interno: los callers usan _parse_date_like / _parse_datetime_like.
+
+    """
 
     raw = (raw or "").strip()
 
@@ -1575,99 +1730,227 @@ def _parse_date_like(raw: str):
 
         return None
 
-    # ISO date
+    # DD/MM/AAAA -- se acepta cualquier largo de anio para no perder datos que
 
-    try:
+    # el parser viejo si aceptaba (ver "10/09/26" en el reporte de Fase 5).
 
-        if "-" in raw:
+    if "/" in raw:
 
-            return date.fromisoformat(raw)
+        parts = [p.strip() for p in raw.split("/")]
 
-    except Exception:
+        if len(parts) == 3:
 
-        pass
+            try:
 
-    # DD/MM/YYYY
+                return date(int(parts[2]), int(parts[1]), int(parts[0]))
 
-    try:
+            except (ValueError, TypeError):
 
-        if "/" in raw:
+                pass
 
-            parts = [p.strip() for p in raw.split("/")]
+    m = _RE_DMY_DASH.match(raw)
 
-            if len(parts) == 3:
+    if m:
 
-                dd = int(parts[0])
+        try:
 
-                mm = int(parts[1])
+            return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
 
-                yyyy = int(parts[2])
+        except (ValueError, TypeError):
 
-                return date(yyyy, mm, dd)
+            pass
 
-    except Exception:
+    m = _RE_ISO_LOOSE.match(raw)
 
-        pass
+    if m:
 
-    # DDMMYYYY
+        try:
 
-    try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
 
-        digits = _only_digits(raw)
+        except (ValueError, TypeError):
 
-        if len(digits) == 8:
+            pass
 
-            dd = int(digits[0:2])
+    digits = _only_digits(raw)
 
-            mm = int(digits[2:4])
+    if len(digits) == 8:
 
-            yyyy = int(digits[4:8])
+        try:
 
-            return date(yyyy, mm, dd)
+            return date(int(digits[4:8]), int(digits[2:4]), int(digits[0:2]))
 
-    except Exception:
+        except (ValueError, TypeError):
 
-        pass
+            pass
 
     return None
-
-
 
 
 
 def _parse_datetime_like(raw: str):
 
+    """Cualquiera de los formatos aceptados -> datetime | None."""
+
     raw = (raw or "").strip()
 
     if not raw:
 
         return None
 
-    # Full ISO datetime or ISO date
+    # ISO completo (fecha o fecha+hora). Va PRIMERO: es lo que mandan los
+
+    # inputs con flatpickr (dateFormat 'Y-m-d') y las APIs internas.
 
     try:
 
         return datetime.fromisoformat(raw)
 
-    except Exception:
+    except (ValueError, TypeError):
 
         pass
 
-    # If it looks like a date-only in other formats, normalize to midnight.
+    d = _parse_date_flexible(raw)
 
-    try:
+    if d is not None:
 
-        d = _parse_date_like(raw)
-
-        if d:
-
-            return datetime(d.year, d.month, d.day)
-
-    except Exception:
-
-        pass
+        return datetime(d.year, d.month, d.day)
 
     return None
+
+
+
+def _parse_date_like(raw: str):
+
+    """Cualquiera de los formatos aceptados -> date | None (trunca la hora)."""
+
+    dt = _parse_datetime_like(raw)
+
+    return dt.date() if dt is not None else None
+
+
+
+# ---------------------------------------------------------------------------
+
+# FUENTE UNICA DE VERDAD de la VISUALIZACION de fechas.
+
+#
+
+# Toda fecha que el usuario VE se muestra como DD/MM/AAAA. Se expone como
+
+# filtro Jinja para no repetir strftime ni, peor, rebanar strings ISO a mano
+
+# en los templates (comisiones.html lo hacia con last_paid_iso[8:10] ~ '/' ...).
+
+#
+
+# Acepta date, datetime, string en cualquiera de los formatos que parsea
+
+# _parse_datetime_like, y None. Si no puede interpretar el valor devuelve
+
+# `default` en lugar de reventar el render.
+
+#
+
+# Uso en templates:
+
+#     {{ o.created_at|fecha }}            -> "10/09/2026"
+
+#     {{ o.created_at|fecha('-') }}        -> "-" si es None/invalido
+
+#     {{ s.uploaded_at|fecha_hora }}       -> "10/09/2026 14:30"
+
+#     {{ d|fecha_iso }}                    -> "2026-09-10" (para value= de inputs)
+
+#
+
+# El formato corto "%d/%m" NO se expone a proposito: la unica excepcion viva
+
+# son las etiquetas del eje X del grafico del dashboard (ver chart_labels).
+
+# ---------------------------------------------------------------------------
+
+
+
+_FMT_FECHA = "%d/%m/%Y"
+
+_FMT_FECHA_HORA = "%d/%m/%Y %H:%M"
+
+
+
+def _coerce_fecha(value):
+
+    """date | datetime | str | None -> date | datetime | None."""
+
+    if value is None:
+
+        return None
+
+    if isinstance(value, datetime):
+
+        return value
+
+    if isinstance(value, date):
+
+        return value
+
+    if isinstance(value, str):
+
+        return _parse_datetime_like(value)
+
+    return None
+
+
+
+def fmt_fecha(value, default: str = "") -> str:
+
+    """DD/MM/AAAA. Fuente unica de verdad de la fecha visible."""
+
+    d = _coerce_fecha(value)
+
+    return d.strftime(_FMT_FECHA) if d is not None else default
+
+
+
+def fmt_fecha_hora(value, default: str = "") -> str:
+
+    """DD/MM/AAAA HH:MM. Solo donde la hora aporta (auditoria, uploads)."""
+
+    d = _coerce_fecha(value)
+
+    if d is None:
+
+        return default
+
+    if not isinstance(d, datetime):
+
+        return d.strftime(_FMT_FECHA)
+
+    return d.strftime(_FMT_FECHA_HORA)
+
+
+
+def fmt_fecha_iso(value, default: str = "") -> str:
+
+    """AAAA-MM-DD. Para los value= de los inputs: es lo que espera el backend
+
+    y el dateFormat de flatpickr. NO es formato de lectura."""
+
+    d = _coerce_fecha(value)
+
+    if d is None:
+
+        return default
+
+    return (d.date() if isinstance(d, datetime) else d).isoformat()
+
+
+
+bp.add_app_template_filter(fmt_fecha, "fecha")
+
+bp.add_app_template_filter(fmt_fecha_hora, "fecha_hora")
+
+bp.add_app_template_filter(fmt_fecha_iso, "fecha_iso")
 
 
 
@@ -1933,12 +2216,11 @@ def _compute_alerts_for_all_clients(
 
             .join(Company, Order.company_id == Company.id)
 
-            .filter(Collection.fecha_cobro_efectiva.is_(None))
-
-            .filter(Collection.fecha_pago_estimada.isnot(None))
-
-            # Alinear exactamente con /deudas (ATRASADO): vencimiento por fecha local.
-            .filter(func.date(Collection.fecha_pago_estimada) < now_date_local)
+            # ATRASADO según la FUENTE ÚNICA DE VERDAD (backend/models.py).
+            # Antes esto era un copy-paste de la condición de /deudas y exigía
+            # fecha_pago_estimada IS NOT NULL, así que las deudas con
+            # vencimiento derivado quedaban invisibles para las notificaciones.
+            .filter(condiciones_estado_cobranza(now_date_local).atrasado)
 
             .filter(Order.deleted_at.is_(None))
 
@@ -2941,7 +3223,9 @@ def inject_notification_count():
 
 
 
-        # Conteo consistente con /notificaciones (respeta ClientAlertState).
+        # Campana = SOLO cobranzas atrasadas (defaults del helper), a proposito:
+        # es un semaforo de urgencia. La pagina /notificaciones muestra ademas
+        # entregas e inactividad, asi que su total es mayor. Respeta ClientAlertState.
 
         notif_count = 0
 
@@ -3015,6 +3299,87 @@ def _invalidate_notif_count_cache():
 
 
 
+def _sync_entrega_desde_cobro(coll, lg=None):
+
+    """Fuente unica de verdad: si la cobranza esta cobrada, la entrega se da por realizada.
+
+    Regla pedida por negocio: "cuando una cobranza se realice, dar por hecho que la
+
+    entrega se realizo tambien" (para sacarla de Status Mercaderia y apagar la alerta).
+
+    Decisiones:
+
+    - Sin cobro (`fecha_cobro_efectiva is None`) no hace nada: no se asumen entregas
+
+      de cobranzas que todavia no se cobraron.
+
+    - Idempotente: si `fecha_entrega_efectiva` ya tiene valor NO se pisa. Un cobro no
+
+      reescribe una fecha de entrega que logistica ya confirmo.
+
+    - No crea el `LogisticsStatus` si no existe: sin fila de logistica no hay status
+
+      ATRASADO que apagar (ver `LogisticsStatus.status` en models.py). El caller que
+
+      necesite crearla lo hace antes y la pasa por parametro.
+
+    - Fecha asumida: la entrega estimada de logistica; si no hay, la entrega efectiva
+
+      ya registrada en la cobranza; como ultimo recurso `datetime.utcnow()`, que es la
+
+      convencion que ya usaba este codigo (unificar husos horarios es otra fase).
+
+    Devuelve True si completo la entrega, False si no toco nada.
+
+    """
+
+    if coll is None:
+
+        return False
+
+    if getattr(coll, "fecha_cobro_efectiva", None) is None:
+
+        return False
+
+    if lg is None:
+
+        order_id = getattr(coll, "order_id", None)
+
+        if order_id is None:
+
+            return False
+
+        lg = LogisticsStatus.query.filter_by(order_id=order_id).first()
+
+    if lg is None:
+
+        return False
+
+    if getattr(lg, "fecha_entrega_efectiva", None) is not None:
+
+        return False
+
+    picked = (
+
+        getattr(lg, "fecha_entrega_estimada", None)
+
+        or getattr(coll, "fecha_entrega_efectiva", None)
+
+        or datetime.utcnow()
+
+    )
+
+    lg.fecha_entrega_efectiva = picked
+
+    if getattr(coll, "fecha_entrega_efectiva", None) is None:
+
+        coll.fecha_entrega_efectiva = picked
+
+    return True
+
+
+
+
 @bp.get("/api/notificaciones/count")
 
 def api_notificaciones_count():
@@ -3083,33 +3448,15 @@ def index():
 
         rank_mode = "pending"
 
-    def _parse_filter_date(s: str):
+    # Antes habia un parser propio aca que solo aceptaba "%Y-%m-%d" y
 
-        s = (s or "").strip()
+    # "%d/%m/%Y". Ahora se usa el parser compartido (superset verificado: no
 
-        if not s:
+    # perdio ningun formato, y suma DD-MM-AAAA, DDMMAAAA e ISO con hora).
 
-            return None
+    d_from = _parse_date_like(raw_from)
 
-        try:
-
-            return datetime.strptime(s, "%Y-%m-%d").date()
-
-        except Exception:
-
-            pass
-
-        try:
-
-            return datetime.strptime(s, "%d/%m/%Y").date()
-
-        except Exception:
-
-            return None
-
-    d_from = _parse_filter_date(raw_from)
-
-    d_to = _parse_filter_date(raw_to)
+    d_to = _parse_date_like(raw_to)
 
     if d_from is None and d_to is None:
 
@@ -3293,6 +3640,12 @@ def index():
 
         chart_days = sorted(set(order_days))
 
+    # EXCEPCION deliberada al formato DD/MM/AAAA: son las etiquetas del eje X
+
+    # del grafico de 30 dias del dashboard. Con el anio completo no entran y el
+
+    # grafico queda ilegible. El anio ya esta implicito en el rango elegido.
+
     chart_labels = [d.strftime("%d/%m") for d in chart_days]
 
     chart_days_iso = [d.isoformat() for d in chart_days]
@@ -3345,7 +3698,7 @@ def index():
 
             "date_iso": day_iso,
 
-            "date_label": compra_date.strftime("%d/%m/%Y"),
+            "date_label": fmt_fecha(compra_date),
 
             "client": client_label,
 
@@ -3499,63 +3852,10 @@ def index():
 
     partial_exists = or_(partial_pay_exists, partial_draft_exists)
 
-    has_due = Collection.fecha_pago_estimada.isnot(None)
-
-    no_due = Collection.fecha_pago_estimada.is_(None)
-
-    entrega_efectiva_expr = func.coalesce(
-
-        LogisticsStatus.fecha_entrega_efectiva,
-
-        Collection.fecha_entrega_efectiva,
-
-        LogisticsStatus.fecha_entrega_estimada,
-
-    )
-
-    due_overdue = and_(
-
-        has_due,
-
-        func.date(Collection.fecha_pago_estimada) < today_local,
-
-    )
-
-    due_not_overdue = or_(
-
-        no_due,
-
-        func.date(Collection.fecha_pago_estimada) >= today_local,
-
-    )
-
-    en_camino_effective = and_(
-
-        Collection.fecha_cobro_efectiva.is_(None),
-
-        due_not_overdue,
-
-        or_(
-
-            entrega_efectiva_expr.is_(None),
-
-            func.date(entrega_efectiva_expr) > today_local,
-
-        ),
-
-    )
-
-    a_cobrar_effective = and_(
-
-        Collection.fecha_cobro_efectiva.is_(None),
-
-        due_not_overdue,
-
-        entrega_efectiva_expr.isnot(None),
-
-        func.date(entrega_efectiva_expr) <= today_local,
-
-    )
+    # Estados de cobranza según la FUENTE ÚNICA DE VERDAD (backend/models.py).
+    # Antes acá había un copy-paste de la condición de /deudas; los KPIs del
+    # dashboard contaban distinto que el listado.
+    cond_cob = condiciones_estado_cobranza(today_local)
 
     def _coll_by_status(status_key: str):
 
@@ -3563,23 +3863,25 @@ def index():
 
         if status_key == "COBRADO":
 
-            return q_st.filter(Collection.fecha_cobro_efectiva.isnot(None))
+            return q_st.filter(cond_cob.cobrado)
 
         if status_key == "EN_CAMINO":
 
-            return q_st.filter(en_camino_effective)
+            return q_st.filter(cond_cob.en_camino)
 
         if status_key == "ATRASADO":
 
-            return q_st.filter(and_(Collection.fecha_cobro_efectiva.is_(None), due_overdue))
+            return q_st.filter(cond_cob.atrasado)
 
         if status_key == "PARCIAL":
 
+            # PARCIAL es ortogonal a los 4 estados (ver models.py): no se
+            # deriva del vencimiento, sino de la existencia de pagos/borradores.
             return q_st.filter(and_(Collection.fecha_cobro_efectiva.is_(None), partial_exists))
 
         if status_key == "A_COBRAR":
 
-            return q_st.filter(and_(a_cobrar_effective, ~partial_exists))
+            return q_st.filter(and_(cond_cob.a_cobrar, ~partial_exists))
 
         return q_st.filter(text("1=0"))
 
@@ -4005,9 +4307,9 @@ def index():
 
                 "to": d_to.isoformat() if d_to else "",
 
-                "from_label": d_from.strftime("%d/%m/%Y") if d_from else "",
+                "from_label": fmt_fecha(d_from),
 
-                "to_label": d_to.strftime("%d/%m/%Y") if d_to else "",
+                "to_label": fmt_fecha(d_to),
 
                 "period_label": "Período completo" if not d_from and not d_to else "",
 
@@ -4128,7 +4430,12 @@ def clientes():
 
         alertas = ""
 
-    show_all = request.args.get("all") == "1"
+    # Pedido del cliente (reunion 11/09/2026): el legajo tiene que abrir con
+    # "Ver todos" puesto, no paginado. Por eso el default de `all` es "1" y no
+    # la ausencia del parametro. Para volver al paginado hay que pedirlo
+    # explicito con ?all=0 (lo hace el boton "Paginar" del pie de la tabla).
+
+    show_all = request.args.get("all", "1") == "1"
 
 
 
@@ -4172,7 +4479,13 @@ def clientes():
 
         try:
 
-            base = base.filter(Client.provincia.ilike(f"%{prov}%"))
+            # ilike() NO ignora acentos: buscar "Neuquen" no encontraba
+            # "Neuquén". Es el mismo bug que el cliente reporto en los
+            # buscadores de cliente/empresa, y se resuelve con el MISMO helper
+            # (backend/utils/search.py, translate() en SQL). Se normalizan los
+            # DOS lados: la columna y el termino buscado. No hay una segunda
+            # implementacion de normalizacion de acentos en el proyecto.
+            base = base.filter(unaccent_lower(Client.provincia).like(f"%{normalize_term(prov)}%"))
 
         except Exception:
 
@@ -4180,17 +4493,13 @@ def clientes():
 
     if q:
 
-        ilike = f"%{q}%"
+        # Los filtros de archived y de owner ya se aplicaron arriba y se conservan:
+        # unificar la busqueda no debe unificar los permisos.
+        client_filter = client_search_filter(q)
 
-        base = base.filter(
+        if client_filter is not None:
 
-            (Client.apellido.ilike(ilike))
-
-            | (Client.nombre.ilike(ilike))
-
-            | ((Client.apellido + " " + Client.nombre).ilike(ilike))
-
-        )
+            base = base.filter(client_filter)
 
     active_alerts_cache = None
 
@@ -4920,14 +5229,21 @@ def notificaciones():
 
     try:
 
+        # La PAGINA /notificaciones muestra los TRES tipos de alerta (cobranzas,
+        # entregas e inactividad), separados por tabs y con el acordeon de
+        # "Empresas sin compras desde:". Es la pantalla de trabajo diaria.
+        #
+        # La CAMPANA del navbar (inject_notification_count) sigue usando los
+        # defaults, o sea SOLO cobranzas atrasadas: es un semaforo de urgencia a
+        # proposito. La diferencia entre el numero de la campana y el total de
+        # esta pagina es INTENCIONAL, no un bug.
+        #
+        # La firma y los defaults de _compute_alerts_for_all_clients quedan
+        # intactos: los otros consumidores dependen de ellos.
         active_alerts = _compute_alerts_for_all_clients(
-
             now_dt,
-
             include_delivery_alerts=True,
-
             include_inactivity_alerts=True,
-
         )
 
     except Exception:
@@ -4956,15 +5272,153 @@ def notificaciones():
 
 
 
+# ---------------------------------------------------------------------------
+#  Calendario: filtros (tipo / estado / cliente / empresa)
+# ---------------------------------------------------------------------------
+#  UN SOLO parser, consumido por las DOS puntas:
+#    * /calendario            -> pinta el estado inicial de los checkboxes
+#    * /api/calendario/events -> filtra los eventos
+#  Si cada punta parseara por su cuenta, la UI podria mostrar un check
+#  prendido mientras el endpoint filtra por otra cosa. Con un solo parser eso
+#  no puede pasar.
+#
+#  El estado de los filtros vive en la QUERYSTRING (no en sessionStorage ni en
+#  la sesion del server): sobrevive al refresh, el back/forward del browser
+#  funciona solo, y el link se puede pasar tal cual para reproducir la vista.
+# ---------------------------------------------------------------------------
+
+CALENDARIO_TIPOS = ("entrega", "cobranza", "cumpleanos")
+
+#  Los estados NO se redefinen aca: salen de la FUENTE UNICA DE VERDAD
+#  (models.ESTADOS_COBRANZA). SIN_COBRANZA no es un quinto estado de negocio,
+#  es el pseudo-estado que este endpoint YA emitia para las entregas cuyo
+#  pedido todavia no tiene fila en Collection (ver estado_cob_expr).
+#
+#  OJO: PARCIAL NO va aca. PARCIAL es un flag ORTOGONAL a los 4 estados (ver
+#  el comentario de la regla 5 en backend/models.py): una deuda parcial puede
+#  estar en cualquiera de los cuatro. Tratarlo como un quinto estado rompe la
+#  logica.
+CALENDARIO_ESTADOS = ESTADOS_COBRANZA + ("SIN_COBRANZA",)
+
+
+def _lista_filtrada(args, key, permitidos):
+    """Lee una lista de la querystring distinguiendo "sin filtro" de "nada".
+
+    - la clave NO viene            -> sin filtro, se devuelven TODOS los
+                                      valores permitidos (vista por defecto y
+                                      compatible con los links viejos)
+    - la clave viene               -> exactamente los valores validos que
+                                      trajo, que pueden ser NINGUNO
+
+    La distincion importa: si "vacio" significara siempre "todos", destildar
+    el ultimo checkbox mostraria TODO en vez de nada. Por eso el JS manda
+    `key=` (valor vacio) cuando no queda ninguno tildado: la clave esta
+    presente, no pasa el filtro de `permitidos`, y la lista queda vacia.
+    """
+    if key not in args:
+        return list(permitidos)
+    return [v for v in args.getlist(key) if v in permitidos]
+
+
+def _calendario_filtros(args):
+    return {
+        "tipos": _lista_filtrada(args, "tipo", CALENDARIO_TIPOS),
+        "estados": _lista_filtrada(args, "estado", CALENDARIO_ESTADOS),
+        "client_q": (args.get("client_q") or "").strip(),
+        "company_q": (args.get("company_q") or "").strip(),
+    }
+
+
 # Calendario general (entregas y cobranzas)
+
+def _calendario_sugerencias():
+    """Textos para el buscador de cliente/empresa del calendario.
+
+    OJO: son SUGERENCIAS DE TEXTO, no ids. `client_q` y `company_q` viajan como
+    TEXTO LIBRE en la querystring (ver _calendario_filtros) y el backend los
+    resuelve con los helpers de backend/utils/search.py. Convertirlos a
+    client_id/company_id romperia tres cosas de una: la propagacion entre
+    pantallas de nav_url(), la busqueda por texto parcial, y el link copiable.
+
+    Por eso cada sugerencia tiene que ser un texto que el filtro del backend
+    EFECTIVAMENTE matchee:
+
+      - cliente -> "apellido nombre", que es literalmente una de las tres ramas
+        del OR de client_search_filter(). NO se usa Client.display_name, que
+        devuelve "Ferreyra (Marcelo)": los parentesis no estan en ninguna
+        columna y el LIKE no encontraria nada.
+      - empresa -> Company.nombre (la razon social), primera rama del OR de
+        company_search_filter().
+    """
+    q_cli = Client.query.filter(Client.archived.is_(False))
+
+    if not _has_global_access():
+        uid = _effective_user_id()
+        if uid is not None:
+            q_cli = q_cli.filter(Client.owner_user_id == uid)
+
+    vistos = set()
+    clientes = []
+    for c in q_cli.order_by(Client.apellido, Client.nombre).all():
+        txt = f"{(c.apellido or '').strip()} {(c.nombre or '').strip()}".strip()
+        if txt and txt not in vistos:
+            vistos.add(txt)
+            clientes.append(txt)
+
+    empresas = [
+        (e.nombre or "").strip()
+        for e in Company.query.filter(Company.archived.is_(False)).order_by(Company.nombre).all()
+        if (e.nombre or "").strip()
+    ]
+
+    return clientes, empresas
+
 
 @bp.get("/calendario")
 
 def calendario():
 
-    today = date.today().isoformat()
+    # "Hoy" del NEGOCIO (Argentina) por la FUENTE ÚNICA DE VERDAD, no
+    # date.today() del server. Se le pasa tambien al template para que el JS
+    # NO use el reloj del navegador (mismo patron que cobranzas.html).
+    hoy = hoy_negocio()
 
-    return render_template("calendar.html", active="calendario", today=today)
+    filtros = _calendario_filtros(request.args)
+
+    clientes_sug, empresas_sug = _calendario_sugerencias()
+
+    return render_template(
+        "calendar.html",
+        active="calendario",
+        today=hoy.isoformat(),
+        now_date=hoy,
+        # El server pinta el estado inicial de los checkboxes. Asi el refresh
+        # y el link copiado reproducen la vista SIN depender de que el JS
+        # llegue a correr.
+        filtro_tipos=filtros["tipos"],
+        filtro_estados=filtros["estados"],
+        filtro_client_q=filtros["client_q"],
+        filtro_company_q=filtros["company_q"],
+        calendario_tipos=CALENDARIO_TIPOS,
+        calendario_estados=CALENDARIO_ESTADOS,
+        calendario_client_sug=clientes_sug,
+        calendario_company_sug=empresas_sug,
+        # COLORES: una sola fuente. Antes el template repetia a mano el mapa de
+        # tipos (en el dict literal de los checkboxes) y el de severidades (en
+        # el JS y otra vez en la leyenda): tres copias de la misma paleta.
+        # Ahora salen de aca, que es de donde ya salian los colores de los
+        # eventos, asi que el chip del filtro y el evento del calendario NO
+        # pueden quedar de distinto color.
+        calendario_color_tipo=CALENDARIO_COLOR_TIPO,
+        calendario_color_severidad=CALENDARIO_COLOR_SEVERIDAD,
+        # El color del chip de ESTADO se DERIVA de la severidad con la misma
+        # funcion que pinta el punto del evento. No hay mapa nuevo de estado ->
+        # color: seria una implementacion mas de la derivacion de estado.
+        # Consecuencia buscada: EN_CAMINO y SIN_COBRANZA comparten color porque
+        # comparten severidad ("baja"), exactamente como ya se ven en el
+        # calendario. El texto del chip los distingue.
+        calendario_estado_severidad={e: _severidad_calendario(e) for e in CALENDARIO_ESTADOS},
+    )
 
 
 
@@ -5592,258 +6046,418 @@ def comisiones_marcar():
 
 
 
+# ---------------------------------------------------------------------------
+#  Calendario: colores por TIPO y severidad DERIVADA de la fuente única
+# ---------------------------------------------------------------------------
+#  Doble codificación visual (dos canales independientes):
+#
+#    * fondo/borde del evento  -> TIPO   (entrega / cobranza / cumpleaños)
+#    * punto de color          -> SEVERIDAD
+#
+#  La SEVERIDAD se DERIVA del estado de la FUENTE ÚNICA DE VERDAD
+#  (backend/models.py: condiciones_estado_cobranza / estado_cobranza_de) más
+#  los días de atraso. NO se persiste, no hay modelo ni migración detrás.
+#
+#  OJO: no tiene NADA que ver con ClientAlertState. Ese modelo guarda el
+#  estado de las alertas POR USUARIO (descartada / postergada) y responde
+#  "¿qué está mal AHORA?". El calendario responde otra pregunta: "¿qué pasa
+#  el día X?". Son dos conceptos distintos y no se cruzan acá.
+# ---------------------------------------------------------------------------
+
+CALENDARIO_COLOR_TIPO = {
+    "entrega": "#0ea5a3",
+    "cobranza": "#f59e0b",
+    "cumpleanos": "#ec4899",
+}
+
+#  El OTRO eje de color. Estaba escrito a mano dos veces dentro de
+#  calendar.html (el mapa SEVERIDAD_COLOR del JS y, otra vez, los style="" de
+#  la leyenda) y ahora hace falta una tercera vez para los chips del filtro.
+#  Tres copias de la misma paleta es una divergencia esperando pasar, asi que
+#  se centraliza aca, al lado del mapa de tipos. Los valores son EXACTAMENTE
+#  los que ya usaba el template: no se inventa ningun color nuevo.
+CALENDARIO_COLOR_SEVERIDAD = {
+    "critica": "#7f1d1d",
+    "alta": "#dc2626",
+    "media": "#d97706",
+    "baja": "#0284c7",
+    "ninguna": "#94a3b8",
+    "info": "#a855f7",
+}
+
+# Umbral entre "atrasado hace mucho" y "atrasado recién". Se elige el plazo de
+# pago por defecto de la fuente única (PLAZO_PAGO_DIAS_DEFAULT = 30 días): si
+# pasó un ciclo completo de plazo desde el vencimiento, la deuda ya consumió
+# otra ventana entera de cobro sin cobrarse. Es el mismo número que usa la
+# regla 3, así que el umbral no introduce una constante nueva de negocio.
+CALENDARIO_SEVERIDAD_CRITICA_DIAS = PLAZO_PAGO_DIAS_DEFAULT
+
+
+def _severidad_calendario(estado: str, dias_atraso: int = 0) -> str:
+    """Estado (fuente única) + días de atraso -> severidad visual.
+
+    critica  ATRASADO hace >= 30 días (un ciclo de plazo completo vencido)
+    alta     ATRASADO hace 1..29 días
+    media    A_COBRAR (ya entregado, todavía no vencido: hay que accionar)
+    baja     EN_CAMINO (ni entregado ni vencido: nada que hacer hoy)
+    ninguna  COBRADO (cerrado)
+    """
+    if estado == "COBRADO":
+        return "ninguna"
+    if estado == "ATRASADO":
+        if (dias_atraso or 0) >= CALENDARIO_SEVERIDAD_CRITICA_DIAS:
+            return "critica"
+        return "alta"
+    if estado == "A_COBRAR":
+        return "media"
+    return "baja"
+
+
+def _fecha_de(value):
+    """datetime | date | None -> date | None. Sin conversión de huso.
+
+    Las columnas de fecha del proyecto son DateTime NAIVE (fechas de negocio
+    guardadas a medianoche). El código anterior les hacía .astimezone(), que
+    en un datetime naive Python interpreta como hora LOCAL DEL SERVER y
+    convierte: eso puede correr el día. La fuente única (_as_date) y el filtro
+    fecha_iso hacen .date() pelado; acá se hace lo mismo para que el
+    calendario no muestre un día distinto al de /deudas.
+    """
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return None
+
+
 @bp.get("/api/calendario/events")
-
 def api_calendario_events():
-
-    # Rango opcional
-
+    # Rango opcional. OJO: FullCalendar pide SEMIABIERTO -> [start, end).
+    # El `end` es EXCLUSIVO: para septiembre manda end=2026-10-01 y espera que
+    # el 1 de octubre NO entre. Como las fechas del proyecto se guardan a
+    # medianoche, un `<= end` mete el primer dia del rango SIGUIENTE y el mismo
+    # evento aparece en DOS meses (se vio con una cobranza del 2026-10-01 y con
+    # un cumpleaños del 1 de enero duplicado en dos años).
+    # Por eso los tres filtros de abajo (entregas, cobranzas y cumpleaños)
+    # comparan el inicio con >= y el fin con < (estricto). Si tocás uno,
+    # tocá los tres.
     start_raw = request.args.get("start")
-
     end_raw = request.args.get("end")
-
     start = _parse_datetime_like(start_raw) if start_raw else None
-
     end = _parse_datetime_like(end_raw) if end_raw else None
+    start_d = _fecha_de(start)
+    end_d = _fecha_de(end)
 
+    # UN SOLO "hoy": el del negocio, por la fuente única. Antes el endpoint
+    # calculaba el suyo (date.today() del server) y podía discrepar con
+    # /deudas cruzando la medianoche.
+    hoy = hoy_negocio()
 
+    # Estado por la MISMA expresión SQL que filtra /deudas. Se usa la
+    # expresión (y no la property Python) porque el vencimiento efectivo
+    # también hay que FILTRARLO en SQL por el rango del calendario, y porque
+    # así el estado que pinta el calendario es bit a bit el mismo booleano que
+    # evalúa el filtro de /deudas: no hay dos caminos que puedan divergir.
+    cond = condiciones_estado_cobranza(hoy)
+    estado_cob_expr = case(
+        (Collection.id.is_(None), "SIN_COBRANZA"),
+        (cond.cobrado, "COBRADO"),
+        (cond.atrasado, "ATRASADO"),
+        (cond.a_cobrar, "A_COBRAR"),
+        else_="EN_CAMINO",
+    )
+
+    uid = None if _has_global_access() else _effective_user_id()
+
+    # Filtros de la querystring, por el MISMO parser que usa /calendario para
+    # pintar los checkboxes (_calendario_filtros). No se re-parsea nada aca.
+    filtros = _calendario_filtros(request.args)
+    tipos = filtros["tipos"]
+    estados = filtros["estados"]
+    client_q = filtros["client_q"]
+    company_q = filtros["company_q"]
+
+    def _filtrar_por_estado(q):
+        """Filtra por estado usando la MISMA expresion que produce la etiqueta.
+
+        Se reusa `estado_cob_expr`, que ya esta construida sobre
+        condiciones_estado_cobranza(). NO se deriva el estado de nuevo (nada de
+        comparar vencimientos contra hoy a mano): el booleano que filtra es
+        literalmente el mismo objeto que genera el valor mostrado, asi que no
+        hay forma de que filtro y etiqueta diverjan.
+        """
+        if len(estados) == len(CALENDARIO_ESTADOS):
+            return q
+        return q.filter(estado_cob_expr.in_(estados))
+
+    def _filtrar_por_cliente_empresa(q):
+        """Cliente/empresa por los helpers unificados (backend/utils/search.py).
+
+        Mismo patron que /status y /deudas: join sobre Order + el filtro
+        compartido, que ya ignora mayusculas y acentos.
+        """
+        nonlocal_q = q
+        if client_q:
+            nonlocal_q = nonlocal_q.join(Client, Order.client_id == Client.id)
+            f = client_search_filter(client_q)
+            if f is not None:
+                nonlocal_q = nonlocal_q.filter(f)
+        if company_q:
+            nonlocal_q = nonlocal_q.join(Company, Order.company_id == Company.id)
+            f = company_search_filter(company_q)
+            if f is not None:
+                nonlocal_q = nonlocal_q.filter(f)
+        return nonlocal_q
 
     events = []
 
-    # Entregas estimadas (pendientes)
+    def _dias_atraso(venc):
+        v = _fecha_de(venc)
+        if v is None or v >= hoy:
+            return 0
+        return (hoy - v).days
 
+    # -----------------------------------------------------------------
+    #  Entregas estimadas (pendientes)
+    # -----------------------------------------------------------------
+    #  Son ESTIMACIONES, no compromisos: la fecha sale de
+    #  LogisticsStatus.fecha_entrega_estimada (o del plazo promedio), y el
+    #  negocio no tiene contacto directo con el transporte. Por eso el tipo
+    #  "entrega" se puede apagar desde el filtro y los eventos se rotulan
+    #  como estimados en la UI.
+    #
+    #  joinedload de order->client/company: antes cada evento disparaba
+    #  o.client y o.company (N+1).
     q_ent = (
-
-        LogisticsStatus.query
-
+        db.session.query(LogisticsStatus, estado_cob_expr, cond.vencimiento)
         .join(Order, LogisticsStatus.order_id == Order.id)
-
+        .outerjoin(Collection, Collection.order_id == Order.id)
+        .options(
+            joinedload(LogisticsStatus.order).joinedload(Order.client),
+            joinedload(LogisticsStatus.order).joinedload(Order.company),
+        )
+        # Pedidos borrados (soft delete). deleted_at existe SOLO en Order.
+        .filter(Order.deleted_at.is_(None))
         .filter(LogisticsStatus.fecha_entrega_efectiva.is_(None))
-
+        .filter(LogisticsStatus.fecha_entrega_estimada.isnot(None))
     )
 
-    if not _has_global_access():
-
-        uid = _effective_user_id()
-
-        if uid is not None:
-
-            q_ent = q_ent.filter(Order.owner_user_id == uid)
+    if uid is not None:
+        q_ent = q_ent.filter(Order.owner_user_id == uid)
 
     if start:
-
         q_ent = q_ent.filter(LogisticsStatus.fecha_entrega_estimada >= start)
 
+    # `<` estricto: el rango es [start, end). Ver el comentario del parseo.
     if end:
+        q_ent = q_ent.filter(LogisticsStatus.fecha_entrega_estimada < end)
 
-        q_ent = q_ent.filter(LogisticsStatus.fecha_entrega_estimada <= end)
+    q_ent = _filtrar_por_estado(_filtrar_por_cliente_empresa(q_ent))
 
-    for lg in q_ent.filter(LogisticsStatus.fecha_entrega_estimada.isnot(None)).all():
-
+    # El tipo apagado no se consulta: se evita la query entera, no se filtra
+    # despues en Python.
+    for lg, estado, venc in (q_ent.all() if "entrega" in tipos else []):
         o = lg.order
+        d = _fecha_de(lg.fecha_entrega_estimada)
+        if d is None:
+            continue
 
-        # Convertir a fecha local si es posible
+        if o is not None and o.client is not None and o.company is not None:
+            title = f"Entrega: {o.client.apellido} {o.client.nombre} - {o.company.nombre}"
+        else:
+            title = "Entrega"
 
-        dt = lg.fecha_entrega_estimada
-
-        if ZoneInfo:
-
-            try:
-
-                dt = dt.astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
-
-            except Exception:
-
-                pass
-
-        title = f"Entrega: {o.client.apellido} {o.client.nombre} - {o.company.nombre}" if o and o.client and o.company else "Entrega"
-
+        dias = _dias_atraso(venc)
         events.append({
-
-            "id": f"E-{o.id}",
-
+            "id": f"E-{o.id}" if o is not None else f"E-L{lg.id}",
             "title": title,
-
-            "start": dt.date().isoformat(),
-
+            "start": d.isoformat(),
             "allDay": True,
-
-            "color": "#0ea5a3"
-
+            # Fondo/borde = TIPO
+            "color": CALENDARIO_COLOR_TIPO["entrega"],
+            "extendedProps": {
+                "tipo": "entrega",
+                "estado": estado,
+                "severidad": _severidad_calendario(estado, dias),
+                "diasAtraso": dias,
+                "vencimiento": (_fecha_de(venc).isoformat() if _fecha_de(venc) else None),
+            },
         })
 
-
-
-    # Cobranzas estimadas (pendientes)
-
+    # -----------------------------------------------------------------
+    #  Cobranzas pendientes: el evento cae en el VENCIMIENTO EFECTIVO
+    # -----------------------------------------------------------------
+    #  Antes leía Collection.fecha_pago_estimada DIRECTO. Ese campo está NULL
+    #  en la mayoría de las filas, así que el calendario simplemente no
+    #  mostraba esas deudas (el mismo bug que hacía que el filtro "Atrasado"
+    #  de /deudas escondiera deudas vencidas). Ahora la fecha del evento y el
+    #  filtro por rango salen de vencimiento_efectivo_expr().
     q_cob = (
-
-        Collection.query
-
+        db.session.query(Collection, estado_cob_expr, cond.vencimiento)
         .join(Order, Collection.order_id == Order.id)
-
+        .outerjoin(LogisticsStatus, LogisticsStatus.order_id == Order.id)
+        .options(
+            joinedload(Collection.order).joinedload(Order.client),
+            joinedload(Collection.order).joinedload(Order.company),
+            joinedload(Collection.order).joinedload(Order.logistics),
+        )
+        .filter(Order.deleted_at.is_(None))
         .filter(Collection.fecha_cobro_efectiva.is_(None))
-
+        .filter(cond.vencimiento.isnot(None))
     )
 
-    if not _has_global_access():
+    if uid is not None:
+        q_cob = q_cob.filter(Order.owner_user_id == uid)
 
-        uid = _effective_user_id()
+    if start_d:
+        q_cob = q_cob.filter(cond.vencimiento >= start_d)
 
-        if uid is not None:
+    # `<` estricto: el rango es [start, end). Ver el comentario del parseo.
+    if end_d:
+        q_cob = q_cob.filter(cond.vencimiento < end_d)
 
-            q_cob = q_cob.filter(Order.owner_user_id == uid)
+    q_cob = _filtrar_por_estado(_filtrar_por_cliente_empresa(q_cob))
 
-    if start:
-
-        q_cob = q_cob.filter(Collection.fecha_pago_estimada >= start)
-
-    if end:
-
-        q_cob = q_cob.filter(Collection.fecha_pago_estimada <= end)
-
-    for c in q_cob.filter(Collection.fecha_pago_estimada.isnot(None)).all():
-
+    for c, estado, venc in (q_cob.all() if "cobranza" in tipos else []):
         o = c.order
+        d = _fecha_de(venc)
+        if d is None:
+            continue
 
-        dt = c.fecha_pago_estimada
+        if o is not None and o.client is not None and o.company is not None:
+            title = f"Cobranza: {o.client.apellido} {o.client.nombre} - {o.company.nombre}"
+        else:
+            title = "Cobranza"
 
-        if ZoneInfo:
-
-            try:
-
-                dt = dt.astimezone(ZoneInfo("America/Argentina/Buenos_Aires"))
-
-            except Exception:
-
-                pass
-
-        title = f"Cobranza: {o.client.apellido} {o.client.nombre} - {o.company.nombre}" if o and o.client and o.company else "Cobranza"
-
+        dias = _dias_atraso(venc)
         events.append({
-
-            "id": f"C-{o.id}",
-
+            "id": f"C-{o.id}" if o is not None else f"C-C{c.id}",
             "title": title,
-
-            "start": dt.date().isoformat(),
-
+            "start": d.isoformat(),
             "allDay": True,
-
-            "color": "#f59e0b"
-
+            "color": CALENDARIO_COLOR_TIPO["cobranza"],
+            "extendedProps": {
+                "tipo": "cobranza",
+                "estado": estado,
+                "severidad": _severidad_calendario(estado, dias),
+                "diasAtraso": dias,
+                "vencimiento": d.isoformat(),
+            },
         })
 
-
-
-    # Cumpleaños de contactos de clientes
-
-    if start or end:
-
-        # Determinar rango de años a considerar
-
-        year_start = (start.date().year if start else date.today().year)
-
+    # -----------------------------------------------------------------
+    #  Cumpleaños de contactos de clientes
+    # -----------------------------------------------------------------
+    #  No tienen estado de cobranza: severidad "info" (canal neutro). No se
+    #  les aplica deleted_at porque ese campo NO existe en Client ni en
+    #  ClientBirthday: es exclusivo de Order.
+    #
+    #  A PROPOSITO no se les aplica el filtro de ESTADO: un cumpleaños no
+    #  tiene estado de cobranza (`estado: None`), asi que filtrarlo por
+    #  ATRASADO/A_COBRAR/etc. no significa nada y solo lograria esconderlo sin
+    #  motivo. Los cumpleaños se gobiernan por el filtro de TIPO (y por
+    #  cliente/empresa, que si les aplica).
+    #  Los parentesis de (start or end) NO son decorativos: `and` liga mas
+    #  fuerte que `or`, asi que sin ellos esto seria
+    #  `start or (end and "cumpleanos" in tipos)` y los cumpleaños seguirian
+    #  apareciendo con el tipo apagado.
+    if (start or end) and "cumpleanos" in tipos:
+        year_start = (start.date().year if start else hoy.year)
         year_end = (end.date().year if end else year_start)
 
-        bq = ClientBirthday.query.join(Client, ClientBirthday.client_id == Client.id).filter(ClientBirthday.fecha.isnot(None))
+        bq = (
+            ClientBirthday.query
+            .join(Client, ClientBirthday.client_id == Client.id)
+            .options(
+                joinedload(ClientBirthday.client)
+                .selectinload(Client.links)
+                .joinedload(ClientCompanyLink.company)
+            )
+            .filter(ClientBirthday.fecha.isnot(None))
+        )
 
-        if not _has_global_access():
+        if uid is not None:
+            bq = bq.filter(Client.owner_user_id == uid)
 
-            uid = _effective_user_id()
+        # Cliente/empresa: los cumpleaños NO cuelgan de Order, asi que no se
+        # puede usar _filtrar_por_cliente_empresa (que joinea por Order).
+        # Client ya esta joineado, asi que el filtro de cliente entra directo.
+        if client_q:
+            f = client_search_filter(client_q)
+            if f is not None:
+                bq = bq.filter(f)
 
-            if uid is not None:
+        # Empresa: un contacto no tiene "una" empresa, tiene VINCULOS. Se filtra
+        # por existencia de un vinculo a una empresa que matchee, que es la
+        # misma relacion de la que sale la "empresa representativa" del titulo.
+        if company_q:
+            f = company_search_filter(company_q)
+            if f is not None:
+                bq = bq.filter(
+                    ClientCompanyLink.query
+                    .join(Company, ClientCompanyLink.company_id == Company.id)
+                    .filter(ClientCompanyLink.client_id == Client.id)
+                    .filter(f)
+                    .exists()
+                )
 
-                bq = bq.filter(Client.owner_user_id == uid)
-
-        bdays = bq.all()
-
-        for b in bdays:
-
+        for b in bq.all():
             if not b.fecha:
-
                 continue
 
-            # Para cada año en el rango, crear un evento en ese año
+            # Elegir una empresa representativa: priorizar vínculos TRABAJA
+            empresa = None
+            client = b.client
+            if client is not None:
+                for l in client.links:
+                    if l.company:
+                        empresa = l.company
+                        if getattr(l, "status", None) == RelationStatus.TRABAJA:
+                            break
 
-            for y in range(year_start, year_end + 1):
-
-                try:
-
-                    d = date(y, b.fecha.month, b.fecha.day)
-
-                except ValueError:
-
-                    continue
-
-                # Filtrar por rango start/end
-
-                if start and d < start.date():
-
-                    continue
-
-                if end and d > end.date():
-
-                    continue
-
-                client = b.client
-
-                if client:
-
-                    # Elegir una empresa representativa: priorizar vínculos en estado TRABAJA
-
-                    empresa = None
-
-                    try:
-
-                        for l in client.links:
-
-                            if l.company:
-
-                                empresa = l.company
-
-                                if getattr(l, "status", None) == RelationStatus.TRABAJA:
-
-                                    break
-
-                    except Exception:
-
-                        empresa = None
-
-                    emp_name = empresa.nombre if empresa and getattr(empresa, "nombre", None) else "-"
-
-                    if b.puesto:
-
-                        title = f"Cumpleaños: {emp_name} - {b.nombre} ({b.puesto})"
-
-                    else:
-
-                        title = f"Cumpleaños: {emp_name} - {b.nombre}"
-
+            if client is not None:
+                emp_name = empresa.nombre if empresa and getattr(empresa, "nombre", None) else "-"
+                if b.puesto:
+                    title = f"Cumpleaños: {emp_name} - {b.nombre} ({b.puesto})"
                 else:
+                    title = f"Cumpleaños: {emp_name} - {b.nombre}"
+            else:
+                title = f"Cumpleaños: {b.nombre}"
 
-                    title = f"Cumpleaños: {b.nombre}"
+            # Para cada año en el rango, crear un evento en ese año
+            for y in range(year_start, year_end + 1):
+                try:
+                    d = date(y, b.fecha.month, b.fecha.day)
+                except ValueError:
+                    continue
+
+                if start_d and d < start_d:
+                    continue
+
+                # `>=` (no `>`): el rango es [start, end). Acá `d` ya es una
+                # fecha COMPLETA del año `y` (no un mes/día suelto), así que
+                # la comparación es la misma que la de cobranzas/entregas.
+                # Sin esto, un cumpleaños del 1 de enero salía duplicado en el
+                # año `year_start` y otra vez en `year_end`.
+                if end_d and d >= end_d:
+                    continue
 
                 events.append({
-
                     "id": f"B-{b.id}-{y}",
-
                     "title": title,
-
                     "start": d.isoformat(),
-
                     "allDay": True,
-
-                    "color": "#ec4899"  # rosa para distinguir cumpleaños
-
+                    "color": CALENDARIO_COLOR_TIPO["cumpleanos"],
+                    "extendedProps": {
+                        "tipo": "cumpleanos",
+                        "estado": None,
+                        "severidad": "info",
+                        "diasAtraso": 0,
+                        "vencimiento": None,
+                    },
                 })
 
-
-
     return jsonify(events)
-
-
-
 
 
 @bp.get("/clientes/nuevo")
@@ -8229,9 +8843,13 @@ def api_clientes():
 
     if q:
 
-        base = base.filter((Client.apellido + " " + Client.nombre).ilike(f"%{q}%"))
+        client_filter = client_search_filter(q)
 
-    res = [{"id": c.id, "label": f"{c.apellido} {c.nombre}"} for c in base.order_by(Client.apellido).limit(20)]
+        if client_filter is not None:
+
+            base = base.filter(client_filter)
+
+    res = [{"id": c.id, "label": c.display_name} for c in base.order_by(Client.apellido).limit(20)]
 
     return jsonify(res)
 
@@ -8647,6 +9265,10 @@ def cobranzas_pago_anular(payment_id: int):
 
             pass
 
+        # Si se cobro, asumir entrega efectiva (regla unica en _sync_entrega_desde_cobro)
+
+        _sync_entrega_desde_cobro(coll, lg)
+
 
 
     try:
@@ -8875,9 +9497,12 @@ def empresas():
 
     if q:
 
-        ilike = f"%{q}%"
+        # El filtro de archived ya se aplico arriba y se conserva.
+        company_filter = company_search_filter(q)
 
-        base = base.filter((Company.marca.ilike(ilike)) | (Company.nombre.ilike(ilike)))
+        if company_filter is not None:
+
+            base = base.filter(company_filter)
 
     base = base.order_by(Company.marca.nullslast(), Company.nombre)
 
@@ -10149,7 +10774,11 @@ def api_empresas():
 
     if q:
 
-        base = base.filter(Company.nombre.ilike(f"%{q}%"))
+        company_filter = company_search_filter(q)
+
+        if company_filter is not None:
+
+            base = base.filter(company_filter)
 
     res = [{"id": e.id, "label": e.nombre} for e in base.order_by(Company.nombre).limit(20)]
 
@@ -10552,8 +11181,10 @@ def historial_update(order_id: int):
     monto = request.form.get("monto", type=float)
 
     entrega_efectiva_raw = (request.form.get("fecha_entrega_efectiva") or "").strip()
+    entrega_efectiva_present = ("fecha_entrega_efectiva" in request.form)
 
     cobro_efectivo_raw = (request.form.get("fecha_cobro_efectiva") or "").strip()
+    cobro_efectivo_present = ("fecha_cobro_efectiva" in request.form)
 
 
 
@@ -10575,7 +11206,7 @@ def historial_update(order_id: int):
 
 
 
-    if entrega_efectiva_raw is not None:
+    if entrega_efectiva_present:
 
         if not lg:
 
@@ -10593,7 +11224,7 @@ def historial_update(order_id: int):
 
 
 
-    if cobro_efectivo_raw is not None:
+    if cobro_efectivo_present:
 
         if not coll:
 
@@ -10608,6 +11239,12 @@ def historial_update(order_id: int):
         except Exception:
 
             pass
+
+
+
+    # Si se cobro, asumir entrega efectiva (regla unica en _sync_entrega_desde_cobro)
+
+    _sync_entrega_desde_cobro(coll, lg)
 
 
 
@@ -11073,17 +11710,21 @@ def status():
 
         q = q.join(Client, Order.client_id == Client.id)
 
-        pat = f"%{client_q}%"
+        client_filter = client_search_filter(client_q)
 
-        q = q.filter(or_(Client.apellido.ilike(pat), Client.nombre.ilike(pat)))
+        if client_filter is not None:
+
+            q = q.filter(client_filter)
 
     if company_q:
 
         q = q.join(Company, Order.company_id == Company.id)
 
-        pat = f"%{company_q}%"
+        company_filter = company_search_filter(company_q)
 
-        q = q.filter(Company.nombre.ilike(pat))
+        if company_filter is not None:
+
+            q = q.filter(company_filter)
 
     if desde:
 
@@ -11244,10 +11885,13 @@ def status_update(order_id: int):
     forma_pago = None if forma_pago_raw == "" else (PaymentMethod(forma_pago_raw) if forma_pago_raw else None)
 
     fecha_entrega_estimada_raw = (request.form.get("fecha_entrega_estimada") or "").strip()
+    fecha_entrega_estimada_present = ("fecha_entrega_estimada" in request.form)
 
     fecha_compra_raw = (request.form.get("fecha_compra") or "").strip()
+    fecha_compra_present = ("fecha_compra" in request.form)
 
     fecha_entrega_efectiva_raw = (request.form.get("fecha_entrega_efectiva") or "").strip()
+    fecha_entrega_efectiva_present = ("fecha_entrega_efectiva" in request.form)
 
     if precio_is_set:
 
@@ -11257,7 +11901,7 @@ def status_update(order_id: int):
 
         logistics.forma_pago = forma_pago
 
-    if fecha_compra_raw is not None:
+    if fecha_compra_present:
 
         try:
 
@@ -11267,17 +11911,17 @@ def status_update(order_id: int):
 
             pass
 
-    if fecha_entrega_estimada_raw:
+    if fecha_entrega_estimada_present:
 
         try:
 
-            logistics.fecha_entrega_estimada = _parse_datetime_like(fecha_entrega_estimada_raw)
+            logistics.fecha_entrega_estimada = _parse_datetime_like(fecha_entrega_estimada_raw) if fecha_entrega_estimada_raw else None
 
         except Exception:
 
             pass
 
-    if fecha_entrega_efectiva_raw is not None:
+    if fecha_entrega_efectiva_present:
 
         try:
 
@@ -11301,7 +11945,7 @@ def status_update(order_id: int):
 
             coll.forma_pago = forma_pago
 
-        if fecha_entrega_efectiva_raw is not None:
+        if fecha_entrega_efectiva_present:
 
             try:
 
@@ -11959,87 +12603,37 @@ def deudas_pendientes():
 
 
 
-        has_due = Collection.fecha_pago_estimada.isnot(None)
-
-        no_due = Collection.fecha_pago_estimada.is_(None)
-
-        entrega_efectiva_expr = func.coalesce(
-            LogisticsStatus.fecha_entrega_efectiva,
-            Collection.fecha_entrega_efectiva,
-            LogisticsStatus.fecha_entrega_estimada,
-        )
-
-        today_local = now_date_local
-
-        due_overdue = and_(
-
-            has_due,
-
-            func.date(Collection.fecha_pago_estimada) < today_local,
-
-        )
-
-        due_not_overdue = or_(
-
-            no_due,
-
-            func.date(Collection.fecha_pago_estimada) >= today_local,
-
-        )
-
-        en_camino_effective = and_(
-
-            Collection.fecha_cobro_efectiva.is_(None),
-
-            due_not_overdue,
-
-            or_(
-
-                entrega_efectiva_expr.is_(None),
-
-                func.date(entrega_efectiva_expr) > today_local,
-
-            ),
-
-        )
-
-        a_cobrar_effective = and_(
-
-            Collection.fecha_cobro_efectiva.is_(None),
-
-            due_not_overdue,
-
-            entrega_efectiva_expr.isnot(None),
-
-            func.date(entrega_efectiva_expr) <= today_local,
-
-        )
-
-
+        # Estados de cobranza según la FUENTE ÚNICA DE VERDAD (backend/models.py).
+        # El vencimiento efectivo ya viene derivado (fecha_pago_estimada, o
+        # entrega efectiva + plazo de pago), así que el filtro coincide con el
+        # badge que pinta el template. Antes no coincidía: había filas con
+        # badge ATRASADO que este filtro nunca devolvía.
+        cond_cob = condiciones_estado_cobranza(now_date_local)
 
         # Filtros excluyentes (no mezclar)
 
         if "COBRADO" in estados:
 
-            conds.append(Collection.fecha_cobro_efectiva.isnot(None))
+            conds.append(cond_cob.cobrado)
 
 
 
         if "EN_CAMINO" in estados:
 
-            conds.append(en_camino_effective)
+            conds.append(cond_cob.en_camino)
 
 
 
         if "ATRASADO" in estados:
 
-            conds.append(and_(Collection.fecha_cobro_efectiva.is_(None), due_overdue))
+            conds.append(cond_cob.atrasado)
 
 
 
         if "PARCIAL" in estados:
 
-            # Parcial = sin cobro + con pagos/borrador (puede estar vigente o vencido)
+            # Parcial = sin cobro + con pagos/borrador (puede estar vigente o vencido).
+            # Es ORTOGONAL a los 4 estados, no se deriva del vencimiento.
 
             conds.append(and_(Collection.fecha_cobro_efectiva.is_(None), partial_exists))
 
@@ -12049,7 +12643,7 @@ def deudas_pendientes():
 
             # A cobrar = sin cobro + entrega efectiva hoy/pasada + vencimiento NO vencido
 
-            conds.append(and_(a_cobrar_effective, ~partial_exists))
+            conds.append(and_(cond_cob.a_cobrar, ~partial_exists))
 
         if conds:
 
@@ -12063,17 +12657,21 @@ def deudas_pendientes():
 
         q = q.join(Client, Order.client_id == Client.id)
 
-        pat = f"%{client_q}%"
+        client_filter = client_search_filter(client_q)
 
-        q = q.filter(or_(Client.apellido.ilike(pat), Client.nombre.ilike(pat)))
+        if client_filter is not None:
+
+            q = q.filter(client_filter)
 
     if company_q:
 
         q = q.join(Company, Order.company_id == Company.id)
 
-        pat = f"%{company_q}%"
+        company_filter = company_search_filter(company_q)
 
-        q = q.filter(Company.nombre.ilike(pat))
+        if company_filter is not None:
+
+            q = q.filter(company_filter)
 
     if desde:
 
@@ -12149,8 +12747,6 @@ def deudas_pendientes():
 
     sort_col = None
 
-    use_python_vencimiento_asc = bool(sort == "vencimiento" and direction == "asc")
-
     sort_entrega_expr = func.coalesce(
         LogisticsStatus.fecha_entrega_efectiva,
         Collection.fecha_entrega_efectiva,
@@ -12163,131 +12759,31 @@ def deudas_pendientes():
 
     elif sort == "vencimiento":
 
-        sort_col = func.coalesce(Collection.fecha_pago_estimada, sort_entrega_expr)
+        # Ordenar por el vencimiento EFECTIVO de la FUENTE ÚNICA DE VERDAD.
+        # Antes había dos ordenamientos distintos y ninguno era el de los
+        # filtros: en SQL se usaba coalesce(fecha_pago_estimada, entrega) SIN
+        # sumar el plazo de pago, y para el caso asc se reordenaba en Python
+        # con una tercera copia de la derivación. Ahora SQL alcanza para las
+        # dos direcciones, así que se borró el camino en Python.
+        sort_col = vencimiento_efectivo_expr()
 
-    if sort_col is not None and not use_python_vencimiento_asc:
+    if sort_col is not None:
 
         sort_dir = sort_col.desc() if direction == "desc" else sort_col.asc()
 
         q = q.order_by(sort_col.is_(None).asc(), sort_dir, Collection.id.desc())
 
-    elif not use_python_vencimiento_asc:
+    else:
 
         q = q.order_by(Collection.id.desc())
 
-    if use_python_vencimiento_asc:
+    try:
 
-        def _as_date(v):
+        items = q.limit(per_page).offset((page - 1) * per_page).all()
 
-            if v is None:
+    except Exception:
 
-                return None
-
-            try:
-
-                return v.date() if hasattr(v, "date") else v
-
-            except Exception:
-
-                return None
-
-        def _effective_venc_date(coll):
-
-            try:
-
-                due = _as_date(getattr(coll, "fecha_pago_estimada", None))
-
-                if due is not None:
-
-                    return due
-
-                o = getattr(coll, "order", None)
-
-                lg = getattr(o, "logistics", None) if o is not None else None
-
-                entrega = (
-
-                    getattr(lg, "fecha_entrega_efectiva", None)
-
-                    or getattr(coll, "fecha_entrega_efectiva", None)
-
-                    or getattr(lg, "fecha_entrega_estimada", None)
-
-                )
-
-                entrega = _as_date(entrega)
-
-                if entrega is None:
-
-                    return None
-
-                plazo = 30
-
-                try:
-
-                    if o is not None and getattr(o, "plazo_pago_dias", None) is not None:
-
-                        plazo = int(o.plazo_pago_dias or 0)
-
-                    elif (
-
-                        o is not None
-
-                        and getattr(o, "company", None) is not None
-
-                        and getattr(o.company, "plazo_pago_promedio_dias", None) is not None
-
-                    ):
-
-                        plazo = int(o.company.plazo_pago_promedio_dias or 0)
-
-                except Exception:
-
-                    plazo = 30
-
-                return entrega + timedelta(days=int(plazo or 0))
-
-            except Exception:
-
-                return None
-
-        try:
-
-            all_items = q.order_by(Collection.id.desc()).all()
-
-        except Exception:
-
-            all_items = q.all()
-
-        decorated = []
-
-        for coll in all_items:
-
-            eff_due = _effective_venc_date(coll)
-
-            coll_id = int(getattr(coll, "id", 0) or 0)
-
-            decorated.append((eff_due is None, eff_due, -coll_id, coll))
-
-        decorated.sort(key=lambda t: (t[0], t[1], t[2]))
-
-        sorted_items = [t[3] for t in decorated]
-
-        start = max(0, (page - 1) * per_page)
-
-        end = start + per_page
-
-        items = sorted_items[start:end]
-
-    else:
-
-        try:
-
-            items = q.limit(per_page).offset((page - 1) * per_page).all()
-
-        except Exception:
-
-            items = q.limit(per_page).all()
+        items = q.limit(per_page).all()
 
 
 
@@ -12415,7 +12911,10 @@ def deudas_pendientes():
 
                 is_cobrado = bool(getattr(c, "fecha_cobro_efectiva", None))
 
-                is_overdue = bool(getattr(c, "status", None) == "ATRASADO")
+                # FUENTE ÚNICA DE VERDAD, con el mismo "hoy" que el resto del
+                # request (antes esto salía de Collection.status, que comparaba
+                # contra datetime.utcnow() y no conocía el bucket A_COBRAR).
+                is_overdue = bool(estado_cobranza_de(c, now_date_local) == "ATRASADO")
 
                 is_partial = bool(oid and (oid in partial_order_ids))
 
@@ -12484,6 +12983,12 @@ def deudas_pendientes():
         items=items,
 
         now_date=now_date_local,
+
+        # El template NO deriva más el vencimiento ni el estado: consume este
+        # helper, que es la FUENTE ÚNICA DE VERDAD (backend/models.py) evaluada
+        # con el MISMO "hoy" que usaron los filtros SQL de arriba. El
+        # vencimiento sale de la property Collection.vencimiento_efectivo.
+        estado_cobranza=(lambda coll: estado_cobranza_de(coll, now_date_local)),
 
         partial_order_ids=partial_order_ids,
 
@@ -14929,57 +15434,11 @@ def nueva_cobranza_create():
 
         pass
 
-    try:
+    # Si se cobro, asumir entrega efectiva (regla unica en _sync_entrega_desde_cobro)
 
-        if (not is_draft) and getattr(coll, "fecha_cobro_efectiva", None):
+    if not is_draft:
 
-            lg = LogisticsStatus.query.filter_by(order_id=order_id).first()
-
-            if lg is not None and getattr(lg, "fecha_entrega_efectiva", None) is None:
-
-                picked = None
-
-                try:
-
-                    picked = getattr(lg, "fecha_entrega_estimada", None)
-
-                except Exception:
-
-                    picked = None
-
-                if picked is None:
-
-                    try:
-
-                        picked = getattr(coll, "fecha_entrega_efectiva", None)
-
-                    except Exception:
-
-                        picked = None
-
-                picked = picked or datetime.utcnow()
-
-                try:
-
-                    lg.fecha_entrega_efectiva = picked
-
-                except Exception:
-
-                    pass
-
-                try:
-
-                    if getattr(coll, "fecha_entrega_efectiva", None) is None:
-
-                        coll.fecha_entrega_efectiva = picked
-
-                except Exception:
-
-                    pass
-
-    except Exception:
-
-        pass
+        _sync_entrega_desde_cobro(coll)
 
 
 
@@ -15697,7 +16156,9 @@ def cobranzas_mark_cobrado(order_id: int):
 
 
 
-    # Si se cobró, asumir entrega efectiva (para sacar de Status Mercadería y apagar alerta)
+    # Desde esta pantalla, si no hay fila de logística se crea para poder asumir la entrega
+
+    logistics = None
 
     try:
 
@@ -15767,25 +16228,13 @@ def cobranzas_mark_cobrado(order_id: int):
 
 
 
-        if not getattr(logistics, "fecha_entrega_efectiva", None):
-
-            picked = getattr(logistics, "fecha_entrega_estimada", None) or datetime.utcnow()
-
-            logistics.fecha_entrega_efectiva = picked
-
-            try:
-
-                if not getattr(coll, "fecha_entrega_efectiva", None):
-
-                    coll.fecha_entrega_efectiva = picked
-
-            except Exception:
-
-                pass
-
     except Exception:
 
         pass
+
+    # Si se cobro, asumir entrega efectiva (regla unica en _sync_entrega_desde_cobro)
+
+    _sync_entrega_desde_cobro(coll, logistics)
 
     db.session.commit()
 
@@ -15986,8 +16435,10 @@ def cobranzas_update(order_id: int):
     pago_estimado = request.form.get("pago_estimado")
 
     entrega_efectiva_raw = (request.form.get("fecha_entrega_efectiva") or "").strip()
+    entrega_efectiva_present = ("fecha_entrega_efectiva" in request.form)
 
     cobro_efectivo_raw = (request.form.get("fecha_cobro_efectiva") or "").strip()
+    cobro_efectivo_present = ("fecha_cobro_efectiva" in request.form)
 
 
 
@@ -16002,6 +16453,23 @@ def cobranzas_update(order_id: int):
     except Exception:
 
         prev_entrega = None
+
+    # Estado ANTES de tocar nada, con la FUENTE ÚNICA de verdad
+    # (models.estado_cobranza_de). Se lee acá arriba a propósito: más abajo se
+    # mutan monto/entrega/vencimiento/cobro y el estado es DERIVADO, así que
+    # después de mutar ya no se puede saber de dónde venía.
+    # El mismo `hoy` se usa para el antes y el después: si se llamara dos veces
+    # sin fijarlo, un request que cruza la medianoche de Buenos Aires podría
+    # comparar dos estados calculados con días distintos.
+    hoy_local = hoy_negocio()
+
+    try:
+
+        prev_estado = estado_cobranza_de(coll, hoy_local)
+
+    except Exception:
+
+        prev_estado = None
 
     if monto_present:
 
@@ -16021,7 +16489,7 @@ def cobranzas_update(order_id: int):
 
         coll.fecha_pago_estimada = _parse_datetime_like(pago_estimado) if pago_estimado else None
 
-    if entrega_efectiva_raw is not None:
+    if entrega_efectiva_present:
 
         try:
 
@@ -16125,7 +16593,7 @@ def cobranzas_update(order_id: int):
 
         pass
 
-    if cobro_efectivo_raw is not None:
+    if cobro_efectivo_present:
 
         try:
 
@@ -16151,7 +16619,7 @@ def cobranzas_update(order_id: int):
 
             logistics.forma_pago_detalle = forma_pago_detalle
 
-        if entrega_efectiva_raw is not None:
+        if entrega_efectiva_present:
 
             try:
 
@@ -16161,55 +16629,9 @@ def cobranzas_update(order_id: int):
 
                 pass
 
-    try:
+    # Si se cobro, asumir entrega efectiva (regla unica en _sync_entrega_desde_cobro)
 
-        if getattr(coll, "fecha_cobro_efectiva", None):
-
-            if logistics and getattr(logistics, "fecha_entrega_efectiva", None) is None:
-
-                picked = None
-
-                try:
-
-                    picked = getattr(logistics, "fecha_entrega_estimada", None)
-
-                except Exception:
-
-                    picked = None
-
-                if picked is None:
-
-                    try:
-
-                        picked = getattr(coll, "fecha_entrega_efectiva", None)
-
-                    except Exception:
-
-                        picked = None
-
-                picked = picked or datetime.utcnow()
-
-                try:
-
-                    logistics.fecha_entrega_efectiva = picked
-
-                except Exception:
-
-                    pass
-
-                try:
-
-                    if getattr(coll, "fecha_entrega_efectiva", None) is None:
-
-                        coll.fecha_entrega_efectiva = picked
-
-                except Exception:
-
-                    pass
-
-    except Exception:
-
-        pass
+    _sync_entrega_desde_cobro(coll, logistics)
 
     # Mantener consistencia con la Orden
 
@@ -16255,6 +16677,25 @@ def cobranzas_update(order_id: int):
 
             cobro_iso = ""
 
+        # Estado DESPUÉS del commit, otra vez con la fuente única y con el
+        # mismo `hoy` que el de arriba. El front NO re-deriva el estado: sólo
+        # lee estos campos. Así la regla de "pasó a COBRADO" vive en un solo
+        # lugar (models.estado_cobranza_de) y no hay una implementación #12.
+        try:
+
+            new_estado = estado_cobranza_de(coll, hoy_local)
+
+        except Exception:
+
+            new_estado = None
+
+        # TRANSICIÓN, no estado: sólo el cruce NO-COBRADO -> COBRADO dispara el
+        # copiado en el front. Editar el monto de algo que YA estaba cobrado no
+        # es una transición y no debe pisarle el portapapeles al usuario.
+        paso_a_cobrado = bool(
+            new_estado == "COBRADO" and prev_estado is not None and prev_estado != "COBRADO"
+        )
+
         return jsonify({
 
             "ok": True,
@@ -16264,6 +16705,12 @@ def cobranzas_update(order_id: int):
             "fecha_pago_estimada": pago_iso,
 
             "fecha_cobro_efectiva": cobro_iso,
+
+            "estado_previo": prev_estado,
+
+            "estado": new_estado,
+
+            "paso_a_cobrado": paso_a_cobrado,
 
         })
 
