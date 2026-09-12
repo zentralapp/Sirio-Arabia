@@ -5331,6 +5331,49 @@ def _calendario_filtros(args):
 
 # Calendario general (entregas y cobranzas)
 
+def _calendario_sugerencias():
+    """Textos para el buscador de cliente/empresa del calendario.
+
+    OJO: son SUGERENCIAS DE TEXTO, no ids. `client_q` y `company_q` viajan como
+    TEXTO LIBRE en la querystring (ver _calendario_filtros) y el backend los
+    resuelve con los helpers de backend/utils/search.py. Convertirlos a
+    client_id/company_id romperia tres cosas de una: la propagacion entre
+    pantallas de nav_url(), la busqueda por texto parcial, y el link copiable.
+
+    Por eso cada sugerencia tiene que ser un texto que el filtro del backend
+    EFECTIVAMENTE matchee:
+
+      - cliente -> "apellido nombre", que es literalmente una de las tres ramas
+        del OR de client_search_filter(). NO se usa Client.display_name, que
+        devuelve "Ferreyra (Marcelo)": los parentesis no estan en ninguna
+        columna y el LIKE no encontraria nada.
+      - empresa -> Company.nombre (la razon social), primera rama del OR de
+        company_search_filter().
+    """
+    q_cli = Client.query.filter(Client.archived.is_(False))
+
+    if not _has_global_access():
+        uid = _effective_user_id()
+        if uid is not None:
+            q_cli = q_cli.filter(Client.owner_user_id == uid)
+
+    vistos = set()
+    clientes = []
+    for c in q_cli.order_by(Client.apellido, Client.nombre).all():
+        txt = f"{(c.apellido or '').strip()} {(c.nombre or '').strip()}".strip()
+        if txt and txt not in vistos:
+            vistos.add(txt)
+            clientes.append(txt)
+
+    empresas = [
+        (e.nombre or "").strip()
+        for e in Company.query.filter(Company.archived.is_(False)).order_by(Company.nombre).all()
+        if (e.nombre or "").strip()
+    ]
+
+    return clientes, empresas
+
+
 @bp.get("/calendario")
 
 def calendario():
@@ -5341,6 +5384,8 @@ def calendario():
     hoy = hoy_negocio()
 
     filtros = _calendario_filtros(request.args)
+
+    clientes_sug, empresas_sug = _calendario_sugerencias()
 
     return render_template(
         "calendar.html",
@@ -5356,6 +5401,23 @@ def calendario():
         filtro_company_q=filtros["company_q"],
         calendario_tipos=CALENDARIO_TIPOS,
         calendario_estados=CALENDARIO_ESTADOS,
+        calendario_client_sug=clientes_sug,
+        calendario_company_sug=empresas_sug,
+        # COLORES: una sola fuente. Antes el template repetia a mano el mapa de
+        # tipos (en el dict literal de los checkboxes) y el de severidades (en
+        # el JS y otra vez en la leyenda): tres copias de la misma paleta.
+        # Ahora salen de aca, que es de donde ya salian los colores de los
+        # eventos, asi que el chip del filtro y el evento del calendario NO
+        # pueden quedar de distinto color.
+        calendario_color_tipo=CALENDARIO_COLOR_TIPO,
+        calendario_color_severidad=CALENDARIO_COLOR_SEVERIDAD,
+        # El color del chip de ESTADO se DERIVA de la severidad con la misma
+        # funcion que pinta el punto del evento. No hay mapa nuevo de estado ->
+        # color: seria una implementacion mas de la derivacion de estado.
+        # Consecuencia buscada: EN_CAMINO y SIN_COBRANZA comparten color porque
+        # comparten severidad ("baja"), exactamente como ya se ven en el
+        # calendario. El texto del chip los distingue.
+        calendario_estado_severidad={e: _severidad_calendario(e) for e in CALENDARIO_ESTADOS},
     )
 
 
@@ -6006,6 +6068,21 @@ CALENDARIO_COLOR_TIPO = {
     "entrega": "#0ea5a3",
     "cobranza": "#f59e0b",
     "cumpleanos": "#ec4899",
+}
+
+#  El OTRO eje de color. Estaba escrito a mano dos veces dentro de
+#  calendar.html (el mapa SEVERIDAD_COLOR del JS y, otra vez, los style="" de
+#  la leyenda) y ahora hace falta una tercera vez para los chips del filtro.
+#  Tres copias de la misma paleta es una divergencia esperando pasar, asi que
+#  se centraliza aca, al lado del mapa de tipos. Los valores son EXACTAMENTE
+#  los que ya usaba el template: no se inventa ningun color nuevo.
+CALENDARIO_COLOR_SEVERIDAD = {
+    "critica": "#7f1d1d",
+    "alta": "#dc2626",
+    "media": "#d97706",
+    "baja": "#0284c7",
+    "ninguna": "#94a3b8",
+    "info": "#a855f7",
 }
 
 # Umbral entre "atrasado hace mucho" y "atrasado recién". Se elige el plazo de

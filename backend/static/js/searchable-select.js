@@ -163,13 +163,134 @@
     observer.observe(select, OBSERVE_OPTS);
   }
 
+  // ---------------------------------------------------------------------
+  //  MODO TEXTO: mismo buscador, pero el valor que viaja es TEXTO LIBRE
+  // ---------------------------------------------------------------------
+  //  Los selects de arriba mandan un ID. El calendario NO puede mandar un id:
+  //  sus filtros `client_q` / `company_q` viajan como texto en la querystring
+  //  y el backend los resuelve con los helpers de backend/utils/search.py
+  //  (busqueda parcial, sin acentos). Convertirlos a client_id/company_id
+  //  romperia la propagacion entre pantallas de nav_url(), la busqueda por
+  //  texto parcial y el link copiable.
+  //
+  //  Por eso este modo se monta sobre un <input type="search"> y NO sobre un
+  //  <select>: Tom Select sobre un input deja el input original en el DOM con
+  //  su name, y le escribe el TEXTO elegido. El form manda `client_q=<texto>`.
+  //
+  //  Progressive enhancement de verdad, en dos escalones:
+  //    sin Tom Select -> el <input list="..."> usa el <datalist> nativo del
+  //                      browser: sigue habiendo sugerencias Y texto libre.
+  //    con Tom Select -> dropdown propio, filtrado sin acentos, y `create`
+  //                      para que el texto que no esta en la lista igual valga.
+  var ATTR_TEXT = 'data-searchable-text';
+
+  // TRAMPA: Tom Select parte `input.value` por el delimiter para armar los
+  // items iniciales, y el delimiter por defecto es ','. Una razon social como
+  // "Ferreyra, Marcelo" quedaria partida en dos y, con maxItems 1, el segundo
+  // pedazo se perderia EN SILENCIO. Se usa un caracter de control que no puede
+  // aparecer en un nombre.
+  var TEXT_DELIM = '\u0001';
+
+  function textOptions(input) {
+    var out = [];
+    var vistos = {};
+
+    function push(v) {
+      v = (v || '').trim();
+      if (!v || vistos[v]) return;
+      vistos[v] = true;
+      out.push({ value: v, text: v });
+    }
+
+    // Las sugerencias salen del <datalist> que ya renderiza Jinja, que es el
+    // mismo que usa el fallback nativo. Una sola lista, no dos.
+    var listId = input.getAttribute('list');
+    var list = listId ? document.getElementById(listId) : null;
+    if (list) {
+      Array.prototype.forEach.call(list.querySelectorAll('option'), function (o) {
+        push(o.value || o.textContent);
+      });
+    }
+
+    // TRAMPA: addItem() DESCARTA cualquier valor que no sea una opcion
+    // conocida. El valor que viene del server puede ser texto parcial tipeado
+    // a mano ("ferre"), que no esta en la lista; si no lo agregamos como
+    // opcion, el filtro de la URL se perderia al montar.
+    push(input.value);
+
+    return out;
+  }
+
+  function buildText(input) {
+    return new window.TomSelect(input, {
+      // `create` es lo que habilita el texto libre: lo tipeado que no esta en
+      // la lista igual se convierte en valor. `persist: false` para que no
+      // quede ensuciando el dropdown.
+      create: true,
+      createOnBlur: true,
+      persist: false,
+      maxItems: 1,
+      delimiter: TEXT_DELIM,
+      diacritics: true,
+      maxOptions: null,
+      options: textOptions(input),
+      plugins: ['clear_button'],
+      searchField: ['text'],
+      onDropdownOpen: function () {
+        this.clearFilter && this.clearFilter();
+      },
+      render: {
+        option_create: function (data, escape) {
+          return '<div class="create">Buscar &laquo;<strong>' + escape(data.input) + '</strong>&raquo;</div>';
+        }
+      }
+    });
+  }
+
+  function mountText(input) {
+    if (input.tomselect) return;
+    try {
+      buildText(input);
+    } catch (err) {
+      // El <input> nativo queda intacto y usable, con su datalist.
+      if (window.console) console.error('[searchable-select] no se pudo montar (texto)', input.name, err);
+    }
+  }
+
+  /* Escribe un valor DESDE AFUERA (el back/forward del calendario re-sincroniza
+     el form desde la URL). `input.value = x` a secas no alcanza: Tom Select
+     dibuja su propio control y quedaria mostrando lo anterior.
+
+     Todo va en silencio a proposito. Un `change` aca volveria a disparar el
+     handler que aplica el filtro y pushea historial: el back quedaria peleando
+     contra si mismo. */
+  function setTextValue(input, value) {
+    value = (value || '').trim();
+    var ts = input.tomselect;
+    if (!ts) {
+      input.value = value;
+      return;
+    }
+    ts.clear(true);
+    if (value) {
+      ts.addOption({ value: value, text: value });
+      ts.addItem(value, true);
+    }
+    ts.setTextboxValue('');
+    // clear(true) NO toca el input original (updateOriginalInput solo corre si
+    // no es silencioso), asi que el caso "quedo vacio" hay que escribirlo.
+    input.value = value;
+  }
+
   function init() {
     if (!window.TomSelect) {
-      // El CDN no cargo. No es fatal: quedan los <select> nativos.
+      // El CDN no cargo. No es fatal: quedan los <select> nativos y, en modo
+      // texto, el <input> con su datalist.
       if (window.console) console.warn('[searchable-select] TomSelect no disponible, se usan los select nativos');
       return;
     }
     document.querySelectorAll('select[' + ATTR + ']').forEach(mount);
+    document.querySelectorAll('input[' + ATTR_TEXT + ']').forEach(mountText);
   }
 
   if (document.readyState === 'loading') {
@@ -179,5 +300,10 @@
   }
 
   // Para selects que se agregan al DOM despues (modales renderizados por JS).
-  window.SirioSearchableSelect = { mount: mount, initAll: init };
+  window.SirioSearchableSelect = {
+    mount: mount,
+    mountText: mountText,
+    setTextValue: setTextValue,
+    initAll: init
+  };
 })();
