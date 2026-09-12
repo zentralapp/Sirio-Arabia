@@ -30,16 +30,52 @@
  *    VOLVER A VERIFICAR o se rompe el autocompletado de pedidos en silencio.
  *
  * 5. REPOBLADO DINAMICO. #pedido_empresa y #companySelect se llenan por JS
- *    despues de elegir cliente (fetch a /api/clientes/<id>/empresas). Tom
- *    Select 2.x no tiene un sync() que relea el <select>, asi que se observa
- *    el <select> con un MutationObserver y se reinicializa cuando cambia el
- *    CONJUNTO de opciones. Se compara una firma ordenada de las opciones, no
+ *    despues de elegir cliente (fetch a /api/clientes/<id>/empresas). Nadie
+ *    avisa, asi que se observa el <select> con un MutationObserver y se
+ *    reinicializa cuando cambia el CONJUNTO de opciones.
+ *
+ *    (Correccion a lo que decia antes esta nota: 2.6.2 SI tiene sync(), en
+ *    TomSelect.prototype. Releeria el <select> sin destruir. No se cambia
+ *    ahora porque el camino de destroy+rebuild esta verificado punta a punta
+ *    y sync() reemplaza options e items de una, pero es la simplificacion
+ *    obvia si algun dia hay que volver a tocar esto.)
+ *
+ *    Se compara una firma ordenada de las opciones, no
  *    el orden: Tom Select reordena las <option> al seleccionar, y si
  *    reaccionaramos a eso nos reinicializariamos solos en loop.
  *
  * 6. ACENTOS. Tom Select filtra ignorando diacriticos (opcion `diacritics`,
  *    true por defecto). Se deja explicito igual, para que quede consistente
  *    con la busqueda del backend, que tambien ignora acentos.
+ *
+ * 7. LA <option value=""> ES UN PLACEHOLDER, NO UNA SELECCION. Los diez
+ *    <select> de la app abren con una opcion de valor vacio PERO CON TEXTO
+ *    ("Cliente...", "Empresa...", "Todas", "Seleccionar empresa..."). Con
+ *    allowEmptyOption en true, Tom Select la tomaba como valor elegido: la
+ *    pintaba como item fijo dentro del control y lo que el usuario tipeaba
+ *    aparecia AL LADO ("Cliente... b"). Ver getSettings() de tom-select
+ *    2.6.2: `if (!value && !settings.allowEmptyOption) return;` descarta la
+ *    opcion vacia como opcion Y como item, y unas lineas antes usa su
+ *    textContent como placeholder. Por eso ahora va en false.
+ *
+ *    LA <option> NO SE BORRA DEL DOM y no hay que borrarla: es la que hace
+ *    que el form mande vacio cuando no se eligio nada. updateOriginalInput()
+ *    la vuelve a seleccionar sola cuando no hay items (`if (self.items.length
+ *    == 0 && mode == 'single') AddSelected(empty_option, "", "")`). Si se la
+ *    sacara del markup, un form que hoy se manda sin cliente pasaria a mandar
+ *    el primer cliente de la lista.
+ *
+ * 8. CLEAR_BUTTON. Como la opcion vacia ya no aparece en el dropdown, la cruz
+ *    es la unica forma de volver a "sin filtro" ("Todas"/"Todos" del
+ *    dashboard, comisiones y mail de pagos). clear() dispara change, asi que
+ *    los formularios que se auto-envian al cambiar el filtro siguen andando.
+ *
+ * 9. ESCRITURAS DESDE AFUERA. El <select> original no lo toca solo Tom
+ *    Select: pedidos.html hace `sel.value = X` al cargar un borrador o editar
+ *    un pedido, e index.html hace `input.value = ''` al cambiar de modo de
+ *    vista. Tom Select dibuja su propio control y no se entera. Por eso se
+ *    reconcilia el valor (ver syncValue), en silencio: un change nuestro
+ *    re-disparia el auto-submit del dashboard.
  */
 (function () {
   'use strict';
@@ -65,6 +101,8 @@
   function placeholderFor(select) {
     // La primera option vacia ("Cliente...", "Seleccionar...") es el
     // placeholder de toda la vida. Se reusa como placeholder del buscador.
+    // (Tom Select deduce lo mismo solo cuando allowEmptyOption es false; se
+    // deja explicito para no depender de ese detalle y para poder trimear.)
     var first = select.options[0];
     if (first && first.value === '') return first.textContent.trim();
     return 'Buscar...';
@@ -73,7 +111,10 @@
   function build(select) {
     return new window.TomSelect(select, {
       create: false,
-      allowEmptyOption: true,
+      // Ver nota 7: la opcion de valor vacio es el placeholder, no un item.
+      allowEmptyOption: false,
+      // Ver nota 8: unica forma de volver a "sin seleccion" desde el control.
+      plugins: ['clear_button'],
       diacritics: true,
       maxOptions: null,
       placeholder: placeholderFor(select),
@@ -118,11 +159,34 @@
       else if (!select.disabled && ts.isDisabled) ts.enable();
     }
 
+    // Ver nota 9: alguien de afuera escribio select.value. Se reconcilia el
+    // control con el <select>, que es la fuente de verdad del form.
+    //
+    // El `change` cubre a pedidos.html (`sel.value = X; dispatchEvent(change)`
+    // al cargar un borrador o editar). El dashboard, en cambio, hace
+    // `input.value = ''` SIN evento, pero en la misma pasada toca class y
+    // disabled: por eso tambien se llama desde la rama de atributos.
+    //
+    // Silencioso a proposito: el change lo emite quien escribio, no nosotros.
+    function syncValue() {
+      var ts = select.tomselect;
+      if (!ts || rebuilding) return;
+
+      var value = select.value || '';
+      if ((ts.getValue() || '') === value) return;
+
+      if (!value) ts.clear(true);
+      else if (Object.prototype.hasOwnProperty.call(ts.options, value)) ts.setValue(value, true);
+    }
+
+    select.addEventListener('change', syncValue);
+
     var observer = new MutationObserver(function (mutations) {
       if (rebuilding) return;
 
       if (mutations.some(function (m) { return m.type === 'attributes'; })) {
         mirrorState();
+        syncValue();
       }
 
       var next = optionsSignature(select);
