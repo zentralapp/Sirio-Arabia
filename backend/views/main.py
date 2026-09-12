@@ -10853,8 +10853,10 @@ def historial_update(order_id: int):
     monto = request.form.get("monto", type=float)
 
     entrega_efectiva_raw = (request.form.get("fecha_entrega_efectiva") or "").strip()
+    entrega_efectiva_present = ("fecha_entrega_efectiva" in request.form)
 
     cobro_efectivo_raw = (request.form.get("fecha_cobro_efectiva") or "").strip()
+    cobro_efectivo_present = ("fecha_cobro_efectiva" in request.form)
 
 
 
@@ -10876,7 +10878,7 @@ def historial_update(order_id: int):
 
 
 
-    if entrega_efectiva_raw is not None:
+    if entrega_efectiva_present:
 
         if not lg:
 
@@ -10894,7 +10896,7 @@ def historial_update(order_id: int):
 
 
 
-    if cobro_efectivo_raw is not None:
+    if cobro_efectivo_present:
 
         if not coll:
 
@@ -11557,8 +11559,10 @@ def status_update(order_id: int):
     fecha_entrega_estimada_raw = (request.form.get("fecha_entrega_estimada") or "").strip()
 
     fecha_compra_raw = (request.form.get("fecha_compra") or "").strip()
+    fecha_compra_present = ("fecha_compra" in request.form)
 
     fecha_entrega_efectiva_raw = (request.form.get("fecha_entrega_efectiva") or "").strip()
+    fecha_entrega_efectiva_present = ("fecha_entrega_efectiva" in request.form)
 
     if precio_is_set:
 
@@ -11568,7 +11572,7 @@ def status_update(order_id: int):
 
         logistics.forma_pago = forma_pago
 
-    if fecha_compra_raw is not None:
+    if fecha_compra_present:
 
         try:
 
@@ -11588,7 +11592,7 @@ def status_update(order_id: int):
 
             pass
 
-    if fecha_entrega_efectiva_raw is not None:
+    if fecha_entrega_efectiva_present:
 
         try:
 
@@ -11612,7 +11616,7 @@ def status_update(order_id: int):
 
             coll.forma_pago = forma_pago
 
-        if fecha_entrega_efectiva_raw is not None:
+        if fecha_entrega_efectiva_present:
 
             try:
 
@@ -16102,8 +16106,10 @@ def cobranzas_update(order_id: int):
     pago_estimado = request.form.get("pago_estimado")
 
     entrega_efectiva_raw = (request.form.get("fecha_entrega_efectiva") or "").strip()
+    entrega_efectiva_present = ("fecha_entrega_efectiva" in request.form)
 
     cobro_efectivo_raw = (request.form.get("fecha_cobro_efectiva") or "").strip()
+    cobro_efectivo_present = ("fecha_cobro_efectiva" in request.form)
 
 
 
@@ -16154,7 +16160,7 @@ def cobranzas_update(order_id: int):
 
         coll.fecha_pago_estimada = _parse_datetime_like(pago_estimado) if pago_estimado else None
 
-    if entrega_efectiva_raw is not None:
+    if entrega_efectiva_present:
 
         try:
 
@@ -16258,7 +16264,7 @@ def cobranzas_update(order_id: int):
 
         pass
 
-    if cobro_efectivo_raw is not None:
+    if cobro_efectivo_present:
 
         try:
 
@@ -16284,7 +16290,7 @@ def cobranzas_update(order_id: int):
 
             logistics.forma_pago_detalle = forma_pago_detalle
 
-        if entrega_efectiva_raw is not None:
+        if entrega_efectiva_present:
 
             try:
 
