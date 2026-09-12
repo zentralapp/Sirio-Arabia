@@ -592,6 +592,17 @@ def plazo_pago_dias_expr():
 
 def vencimiento_efectivo_expr():
     """Regla 1 en SQL. Devuelve un DATE (o NULL si no hay vencimiento)."""
+    # OJO: `date + entero` de abajo es aritmetica de fechas de PostgreSQL
+    # (suma dias y devuelve un DATE). NO es portable y NO hace falta que lo sea:
+    # el proyecto soporta unicamente PostgreSQL. backend/config.py exige
+    # DATABASE_URL y rechaza explicitamente las URLs sqlite:// al arrancar.
+    #
+    # Por que importa: en SQLite `date('2026-09-01') + 30` no falla, hace
+    # aritmetica numerica sobre el texto y devuelve 2056. Silencioso y
+    # totalmente equivocado: vencimientos, buckets y filtros darian distinto.
+    #
+    # Antes de "hacer esto portable", leer ese contexto: la decision tomada fue
+    # retirar SQLite formalmente, no emular su aritmetica.
     return func.coalesce(
         func.date(Collection.fecha_pago_estimada),
         func.date(entrega_efectiva_expr()) + plazo_pago_dias_expr(),
