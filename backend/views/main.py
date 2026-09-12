@@ -114,6 +114,81 @@ _MODULES = [
 
 
 
+# ---------------------------------------------------------------------------
+#  Filtros que sobreviven al cambio de pantalla
+# ---------------------------------------------------------------------------
+#  El estado de los filtros vive en la QUERYSTRING. Sobrevive al refresh, el
+#  back/forward del browser anda solo, y el link se puede pasar tal cual para
+#  que el otro vea EXACTAMENTE la misma vista.
+#
+#  Lo que faltaba NO era guardar el estado: cada pantalla ya leia sus filtros
+#  de request.args y todos los formularios de filtro ya son method="get", asi
+#  que la querystring ya se armaba sola. El agujero estaba en los links del
+#  menu: eran url_for(...) pelado, sin parametros, asi que cambiar de pantalla
+#  tiraba los filtros a la basura.
+#
+#  OJO, la trampa: el MISMO filtro se llama distinto en cada pantalla, y "q"
+#  significa cosas OPUESTAS segun donde estes.
+#
+#      Pantalla     parametro    que significa
+#      -----------  -----------  ---------------------
+#      /deudas      client_q     termino de CLIENTE
+#      /deudas      company_q    termino de EMPRESA
+#      /status      client_q     termino de CLIENTE
+#      /status      company_q    termino de EMPRESA
+#      /calendario  client_q     termino de CLIENTE
+#      /calendario  company_q    termino de EMPRESA
+#      /clientes    q            termino de CLIENTE
+#      /empresas    q            termino de EMPRESA
+#
+#  Por eso NO se puede copiar la querystring tal cual: el `q` de /clientes es
+#  un cliente y el de /empresas es una empresa. Copiarlo derecho mandaria un
+#  apellido al buscador de empresas. Se traduce por un par de nombres
+#  CANONICOS (client_q / company_q) y cada pantalla declara como llama a los
+#  suyos.
+#
+#  (Es el mismo tipo de trampa que documenta backend/utils/search.py: ahi
+#  `nombre` es fantasia en Client y razon social en Company.)
+# ---------------------------------------------------------------------------
+
+#  endpoint -> { nombre canonico : nombre del parametro EN esa pantalla }
+FILTROS_POR_PANTALLA = {
+    "main.deudas_pendientes": {"client_q": "client_q", "company_q": "company_q"},
+    "main.status": {"client_q": "client_q", "company_q": "company_q"},
+    "main.calendario": {"client_q": "client_q", "company_q": "company_q"},
+    "main.clientes": {"client_q": "q"},
+    "main.empresas": {"company_q": "q"},
+}
+
+
+def _filtros_comunes_actuales():
+    """Filtros comunes de la request actual, traducidos a nombres CANONICOS."""
+    origen = FILTROS_POR_PANTALLA.get(request.endpoint or "", {})
+    valores = {}
+    for canonico, param in origen.items():
+        v = (request.args.get(param) or "").strip()
+        if v:
+            valores[canonico] = v
+    return valores
+
+
+def nav_url(endpoint, **kwargs):
+    """url_for() que ademas se lleva los filtros comunes de la pantalla actual.
+
+    Si la pantalla destino no entiende un filtro, ese filtro NO viaja: es
+    preferible perderlo a colar un parametro que nadie lee (o, peor, que la
+    otra pantalla interprete como otra cosa).
+
+    Lo que se pase explicito en kwargs manda y no se pisa.
+    """
+    destino = FILTROS_POR_PANTALLA.get(endpoint, {})
+    for canonico, valor in _filtros_comunes_actuales().items():
+        param = destino.get(canonico)
+        if param and param not in kwargs:
+            kwargs[param] = valor
+    return url_for(endpoint, **kwargs)
+
+
 @bp.app_context_processor
 
 def inject_permission_helpers():
@@ -121,6 +196,8 @@ def inject_permission_helpers():
     return {
 
         "can_view": _can_view_module,
+
+        "nav_url": nav_url,
 
     }
 
