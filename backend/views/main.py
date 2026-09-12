@@ -11885,6 +11885,7 @@ def status_update(order_id: int):
     forma_pago = None if forma_pago_raw == "" else (PaymentMethod(forma_pago_raw) if forma_pago_raw else None)
 
     fecha_entrega_estimada_raw = (request.form.get("fecha_entrega_estimada") or "").strip()
+    fecha_entrega_estimada_present = ("fecha_entrega_estimada" in request.form)
 
     fecha_compra_raw = (request.form.get("fecha_compra") or "").strip()
     fecha_compra_present = ("fecha_compra" in request.form)
@@ -11910,11 +11911,11 @@ def status_update(order_id: int):
 
             pass
 
-    if fecha_entrega_estimada_raw:
+    if fecha_entrega_estimada_present:
 
         try:
 
-            logistics.fecha_entrega_estimada = _parse_datetime_like(fecha_entrega_estimada_raw)
+            logistics.fecha_entrega_estimada = _parse_datetime_like(fecha_entrega_estimada_raw) if fecha_entrega_estimada_raw else None
 
         except Exception:
 
