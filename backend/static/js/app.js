@@ -138,3 +138,20 @@ function openGmailDraft(to, subject, body){
   window.addEventListener('DOMContentLoaded', init);
   window.addEventListener('resize', function(){ clearTimeout(window.__mc_to); window.__mc_to = setTimeout(rebuild, 150); });
 })();
+
+(function(){
+  // Los menus de acciones de las tablas viven dentro de .table-responsive, que por el
+  // overflow-x de Bootstrap clippea tambien en vertical: por spec CSS, overflow-y:visible
+  // se computa a auto cuando el otro eje no es visible. Posicionar el menu contra el
+  // viewport lo saca de ese recorte sin tocar el scroll horizontal de la tabla.
+  function fijarMenusDeTabla(){
+    if(!(window.bootstrap && window.bootstrap.Dropdown)) return;
+    const toggles = document.querySelectorAll('.table-responsive [data-bs-toggle="dropdown"]');
+    toggles.forEach(t => {
+      window.bootstrap.Dropdown.getOrCreateInstance(t, {
+        popperConfig: base => Object.assign({}, base, { strategy: 'fixed' })
+      });
+    });
+  }
+  window.addEventListener('DOMContentLoaded', fijarMenusDeTabla);
+})();
