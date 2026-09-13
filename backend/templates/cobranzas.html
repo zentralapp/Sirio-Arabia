@@ -244,7 +244,7 @@
       .table-cobranzas td.col-entrega { width: 104px; min-width: 104px; }
 
       .table-cobranzas td.col-date .form-control,
-      .table-cobranzas td.col-entrega .form-control { width: 104px; max-width: 104px; }
+      .table-cobranzas td.col-entrega .form-control { width: 118px; max-width: 118px; }
 
       /* El input de vencimiento comparte celda con el botón de tilde, así que
          no puede llevarse los 104px de .col-date: 80 + gap .2rem + botón 20.8
@@ -2655,7 +2655,7 @@
 
     l.rel = 'stylesheet';
 
-    l.href = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css';
+    l.crossOrigin = 'anonymous'; l.href = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css';
 
     document.head.appendChild(l);
 

@@ -640,6 +640,14 @@ h1,h2{letter-spacing:.2px}
   .w-actions{min-width:90px}
   .col-actions .btn-group{flex-wrap:wrap}
   .alert{padding:.45rem .65rem; font-size:12px}
+
+  /* iOS hace zoom al enfocar un input con font-size computado < 16px. El umbral es
+     exacto y SOLO lo dispara la tipografia: padding, alto y ancho no cuentan.
+     Van en px y no en rem porque el html de este bloque es 13.25px y cualquier
+     rem quedaria por debajo del umbral. El tamano visual se compensa apretando
+     padding y line-height, que no disparan el zoom. */
+  input.form-control,select.form-select,textarea.form-control{font-size:16px}
+  .table input.form-control.form-control-sm,.table select.form-select.form-select-sm{font-size:16px;padding:.14rem .3rem;line-height:1.15;height:auto}
 }
 
 /* Muy pequeñas (ej. 360px). Ver nota H9 del bloque anterior: tamaños en px. */
