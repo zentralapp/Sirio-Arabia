@@ -801,6 +801,38 @@
     </script>
     <script>
       (function(){
+        // Un registro de los clones creados, para poder actualizarlos/apagarlos
+        // a todos desde afuera de setup().
+        var clones = [];
+
+        /* El clon es `position:fixed` con `z-index:1500` inline (mas abajo), y
+           eso lo pone POR ENCIMA del modal de bootstrap (1055) y de su backdrop
+           (1050) en todos los breakpoints donde app.css no sube esos valores:
+           app.css:337-340 los sube a 3000/2990 SOLO en
+           `(max-width:767.98px) and (orientation:portrait)`, asi que en
+           landscape de telefono y en 768-991.98px (tablet) el clon tapaba el
+           modal. Ademas `update()` solo esta atado a scroll/resize, y con un
+           modal abierto el body tiene `overflow:hidden` y la ventana no
+           scrollea: el clon se quedaba congelado en `display:block` durante
+           todo el modal.
+
+           Se apaga con un chequeo propio en vez de depender de los z-index
+           porque asi el arreglo no se cae si alguien toca app.css.
+           `.modal.show` a secas alcanza y sobra ACA: el peor caso de un falso
+           positivo es un clon oculto de mas, que es inofensivo. (El caso
+           contrario — un modal "pegado" con la clase puesta para siempre — lo
+           limpia el bloque de mas abajo, que le saca la clase.) */
+        function hayModalVisible(){
+          try { return !!document.querySelector('.modal.show'); }
+          catch(e){ return false; }
+        }
+
+        function actualizarClones(){
+          for (var i = 0; i < clones.length; i++){
+            try { clones[i](); } catch(e) { /* uno roto no frena a los demas */ }
+          }
+        }
+
         function topOffset(){
           var top = 0;
           try {
@@ -902,6 +934,13 @@
           }
 
           function update(){
+            // Con un modal a la vista el clon NO se dibuja: es fixed contra el
+            // viewport y se le pondria encima (ver el comentario del tope).
+            if (hayModalVisible()){
+              wrap.style.display = 'none';
+              try { cloneTable.style.transform = ''; } catch(e_m) {}
+              return;
+            }
             var top = topOffset();
             var rect = table.getBoundingClientRect();
             var thHeight = thead.getBoundingClientRect().height || 0;
@@ -934,6 +973,7 @@
           window.addEventListener('resize', update);
           var resp = table.closest('.table-responsive');
           if (resp) resp.addEventListener('scroll', update, { passive: true });
+          clones.push(update);
           update();
         }
 
@@ -945,6 +985,31 @@
           } catch(e) {}
 
           try { window.addEventListener('resize', function(){ try { applyCssStickyTop(); } catch(e_top2) {} }); } catch(e_top3) {}
+
+          // Abrir/cerrar modal. `show.bs.modal` y `hidden.bs.modal` burbujean
+          // hasta document. Al cerrar se difiere un tick para que bootstrap ya
+          // le haya sacado la clase `show` al modal antes de que `update()`
+          // vuelva a preguntar si hay alguno visible.
+          try {
+            document.addEventListener('show.bs.modal', actualizarClones);
+            document.addEventListener('hidden.bs.modal', function(){
+              setTimeout(actualizarClones, 0);
+            });
+          } catch(e_modal) {}
+
+          /* Remedir despues de cada repintado del listado.
+             `sync()` copia el ancho de cada `th` real al clon y le pone
+             `table-layout:fixed`, pero solo corre desde `update()`, que estaba
+             atado unicamente a scroll/resize. Los listados de /empresas y
+             /clientes se repintan por AJAX en cada tecla del buscador
+             (`tbody.innerHTML = ...`), y como la tabla es `table-layout:auto`
+             los anchos de columna se recalculan por CONTENIDO: el clon quedaba
+             con los anchos de antes de filtrar, desalineado contra la tabla. */
+          try {
+            if (window.SirioList && window.SirioList.onChange){
+              window.SirioList.onChange(actualizarClones);
+            }
+          } catch(e_list) {}
         }
 
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
