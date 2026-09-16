@@ -125,12 +125,41 @@ function openGmailDraft(to, subject, body){
     } catch(e){ /* noop */ }
   }
 
+  /* Si el CSS oculta el contenedor, no se construyen las tarjetas.
+     ─────────────────────────────────────────────────────────────────────────
+     /clientes y /empresas declaran `<div class="mobile-cards">` en el template
+     pero eligen tabla con scroll horizontal, asi que app.css lo deja siempre en
+     `display:none` (`body[data-active="clientes"] .mobile-cards` y su gemela de
+     empresas). Igual se construian ~80 tarjetas en cada carga y en cada resize,
+     para nada.
+
+     Y no era solo CPU: `buildCardsFor` copia `lastTd.innerHTML` (la celda de
+     acciones) dentro de la tarjeta, y en estas dos vistas esa celda contiene
+     los modales `archiveCompany{id}` / `archiveClient{id}`. O sea que
+     duplicaba ~80 modales, con sus ids, en DOM oculto.
+
+     Se pregunta por el computed style y no por `data-active` a proposito: asi
+     vale para cualquier vista que decida ocultar las tarjetas, sin tener que
+     mantener una lista. Si el contenedor todavia no existe (`cards === null`)
+     se construye como siempre: ahi el que decide es `isMobilePortrait()`.      */
+  function cardsOcultas(cards){
+    try { return window.getComputedStyle(cards).display === 'none'; }
+    catch(e){ return false; }
+  }
+
   function rebuild(){
     const wrappers = document.querySelectorAll('.desktop-table');
     wrappers.forEach(w => {
       const cards = w.nextElementSibling && w.nextElementSibling.classList.contains('mobile-cards') ? w.nextElementSibling : null;
-      if(isMobilePortrait()) buildCardsFor(w);
-      else if(cards) cards.innerHTML = '';
+      if(!isMobilePortrait()){
+        if(cards) cards.innerHTML = '';
+        return;
+      }
+      if(cards && cardsOcultas(cards)){
+        if(cards.innerHTML) cards.innerHTML = '';
+        return;
+      }
+      buildCardsFor(w);
     });
   }
 
