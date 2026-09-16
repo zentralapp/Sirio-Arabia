@@ -135,6 +135,16 @@
         .btn-group.flex-nowrap .btn { white-space: nowrap; }
       </style>
       <div class="table-responsive table-mobile-cards">
+        {# Lista de clientes UNA sola vez para toda la pagina. Cada modal `links{id}`
+           clona estas opciones al abrirse (ver el script al final del archivo), en vez
+           de traerse las 800 opciones repetidas 80 veces. Mismo patron que
+           #companyOptionsTemplate en clientes.html. #}
+        <select id="clientOptionsTemplate" class="d-none" aria-hidden="true" tabindex="-1">
+          <option value="">Seleccionar razón social...</option>
+          {% for c in clients %}
+            <option value="{{ c.id }}">{{ c.apellido }}</option>
+          {% endfor %}
+        </select>
         <table class="table table-hover align-middle mb-0 table-tight table-sticky" id="empresas-table">
         <thead class="table-light">
           <tr>
@@ -335,11 +345,18 @@
                       </div>
                       <form class="row g-2 mb-2" method="post" action="{{ url_for('main.empresas_link_add', company_id=e.id) }}">
                         <div class="col-md-5">
-                          <select class="form-select" name="client_id" required data-searchable>
+                          {# Se renderiza VACIO a proposito y lo puebla el JS de mas abajo al
+                             abrir el modal, clonando #clientOptionsTemplate (que se renderiza
+                             UNA sola vez en toda la pagina). Antes cada uno de estos modales
+                             traia un <option> por CADA cliente del sistema: con 80 empresas y
+                             800 clientes eran 64.000 <option> = 2,64 MB de los 8,79 MB de la
+                             pagina. El universo de opciones NO cambia: sigue siendo todos los
+                             clientes, porque el vinculo cliente-empresa es N:M
+                             (ClientCompanyLink en models.py) y desde aca se da de alta
+                             cualquier cliente, no solo los ya vinculados.
+                             Mismo patron que ya usa clientes.html con #companyOptionsTemplate. #}
+                          <select class="form-select js-client-select" name="client_id" required data-searchable>
                             <option value="">Seleccionar razón social...</option>
-                            {% for c in clients %}
-                              <option value="{{ c.id }}">{{ c.apellido }}</option>
-                            {% endfor %}
                           </select>
                         </div>
                         <div class="col-md-3">
@@ -1180,6 +1197,36 @@
         setTimeout(cleanupOrphanModalState, 0);
       } catch(err) {}
     });
+})();
+</script>
+<script>
+(function(){
+  // Puebla el <select> de "Agregar cliente" recien al abrir el modal, clonando
+  // #clientOptionsTemplate (que se renderiza UNA vez por pagina).
+  // Medido con la forma de datos real (80 empresas, 800 clientes): tener las 800
+  // opciones repetidas en los 80 modales eran 64.000 <option> = 2,64 MB de los
+  // 8,79 MB que pesaba la pagina.
+  // NO hace falta re-inicializar Tom Select a mano: searchable-select.js observa
+  // los <option> del <select> con un MutationObserver y se reconstruye solo
+  // cuando cambian (ver el bloque "TRAMPA: destroy()..." en ese archivo).
+  function llenarSelectDeClientes(modalEl){
+    if (!modalEl || !modalEl.querySelector) return;
+    var sel = modalEl.querySelector('select.js-client-select');
+    if (!sel) return;
+    if (sel.options && sel.options.length > 1) return; // ya poblado
+    var tpl = document.getElementById('clientOptionsTemplate');
+    if (!tpl) return;
+    try {
+      sel.innerHTML = '';
+      Array.prototype.forEach.call(tpl.options || [], function(o){
+        sel.appendChild(o.cloneNode(true));
+      });
+    } catch(e) {}
+  }
+
+  document.addEventListener('show.bs.modal', function(e){
+    try { llenarSelectDeClientes(e.target); } catch(err) {}
+  });
 })();
 </script>
 {% endblock %}
