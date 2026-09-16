@@ -20,6 +20,125 @@ function openGmailDraft(to, subject, body){
   }
 })();
 
+// Generic: Table -> Cards (mobile)
+(function(){
+  const MQ = 768; // <768 mobile
+  function isMobilePortrait(){
+    try { return window.innerWidth < MQ && window.matchMedia && window.matchMedia('(orientation: portrait)').matches; }
+    catch(e){ return window.innerWidth < MQ; }
+  }
+
+  function buildCardsFor(wrapper){
+    try{
+      const table = wrapper.querySelector('table');
+      if(!table) return;
+      // find/create sibling .mobile-cards
+      let cards = wrapper.nextElementSibling;
+      if(!cards || !cards.classList.contains('mobile-cards')){
+        cards = document.createElement('div');
+        cards.className = 'mobile-cards';
+        wrapper.parentNode.insertBefore(cards, wrapper.nextSibling);
+      }
+      cards.innerHTML = '';
+      // headers
+      const heads = Array.from(table.querySelectorAll('thead th')).map(th => (th.textContent||'').trim());
+      const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
+      bodyRows.forEach(tr => {
+        const tds = Array.from(tr.children);
+        if(!tds.length) return;
+        // Heurística de título: primera col no vacía, o que contenga Cliente/Apellido/Nombre/Empresa
+        let titleIdx = 0;
+        const preferred = ['Razón social','Razon social','Razón','Razon','Empresa','Cliente','Apellido','Nombre','Marca','Título','Titulo'];
+        for(let i=0;i<heads.length;i++){
+          if(preferred.some(p => (heads[i]||'').toLowerCase().includes(p.toLowerCase()))){ titleIdx = i; break; }
+        }
+        const card = document.createElement('div');
+        card.className = 'mc-card';
+        const header = document.createElement('div');
+        header.className = 'mc-header';
+        const title = document.createElement('div');
+        title.className = 'mc-title';
+        title.innerHTML = (tds[titleIdx] && tds[titleIdx].innerHTML) || (tds[0]?.innerHTML||'');
+        header.appendChild(title);
+        card.appendChild(header);
+
+        const body = document.createElement('div');
+        body.className = 'mc-body';
+
+        // Detect celda de acciones (última con botones)
+        let actionsHTML = '';
+        const lastTd = tds[tds.length-1];
+        if(lastTd && (lastTd.querySelector('.btn') || lastTd.classList.contains('text-end'))){
+          actionsHTML = lastTd.innerHTML;
+        }
+
+        const rows = [];
+        for(let i=0;i<tds.length;i++){
+          // omitir título duplicado y acciones
+          if(i===titleIdx) continue;
+          if(i===tds.length-1 && actionsHTML) continue;
+          const label = heads[i] || '';
+          const val = tds[i].innerHTML;
+          // saltar si está vacío
+          const txt = (tds[i].textContent||'').trim();
+          if(!txt && !tds[i].querySelector('input,select,button,svg,img')) continue;
+          const isWide = tds[i].classList.contains('col-money') || tds[i].classList.contains('col-forma') || !!tds[i].querySelector('.js-price-group,.js-cob-price-group,.form-control,.form-select');
+          rows.push({label, val, isWide});
+        }
+
+        // mostrar 4 principales y colapsar resto
+        const primaryCount = Math.min(4, rows.length);
+        rows.forEach((r, idx)=>{
+          const row = document.createElement('div');
+          row.className = 'mc-row' + (r.isWide ? ' mc-row-wide' : '') + (idx>=primaryCount ? ' mc-row-extra d-none' : '');
+          const l = document.createElement('div'); l.className='mc-label'; l.textContent = r.label || '';
+          const v = document.createElement('div'); v.className='mc-value'; v.innerHTML = r.val || '-';
+          row.appendChild(l); row.appendChild(v);
+          body.appendChild(row);
+        });
+        card.appendChild(body);
+
+        if(rows.length > primaryCount){
+          const more = document.createElement('div');
+          more.className = 'mc-more';
+          const btn = document.createElement('button');
+          btn.type='button'; btn.className='mc-more-toggle'; btn.textContent='Ver más';
+          btn.addEventListener('click', function(){
+            const hidden = card.querySelectorAll('.mc-row-extra');
+            const isHidden = hidden.length && hidden[0].classList.contains('d-none');
+            hidden.forEach(n=> n.classList.toggle('d-none'));
+            btn.textContent = isHidden ? 'Ver menos' : 'Ver más';
+          });
+          more.appendChild(btn);
+          card.appendChild(more);
+        }
+
+        if(actionsHTML){
+          const actions = document.createElement('div');
+          actions.className = 'mc-actions';
+          actions.innerHTML = actionsHTML;
+          card.appendChild(actions);
+        }
+
+        cards.appendChild(card);
+      });
+    } catch(e){ /* noop */ }
+  }
+
+  function rebuild(){
+    const wrappers = document.querySelectorAll('.desktop-table');
+    wrappers.forEach(w => {
+      const cards = w.nextElementSibling && w.nextElementSibling.classList.contains('mobile-cards') ? w.nextElementSibling : null;
+      if(isMobilePortrait()) buildCardsFor(w);
+      else if(cards) cards.innerHTML = '';
+    });
+  }
+
+  function init(){ rebuild(); }
+  window.addEventListener('DOMContentLoaded', init);
+  window.addEventListener('resize', function(){ clearTimeout(window.__mc_to); window.__mc_to = setTimeout(rebuild, 150); });
+})();
+
 /* ═══════════════════════════════════════════════════════════════════════════
    D — UN SOLO PUNTO DE "EL LISTADO CAMBIO" (window.SirioList)
    ───────────────────────────────────────────────────────────────────────────
@@ -132,176 +251,6 @@ function openGmailDraft(to, subject, body){
   function init(){ observarTodo(); notificar(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
-})();
-
-// Generic: Table -> Cards (mobile)
-(function(){
-  const MQ = 768; // <768 mobile
-  function isMobilePortrait(){
-    try { return window.innerWidth < MQ && window.matchMedia && window.matchMedia('(orientation: portrait)').matches; }
-    catch(e){ return window.innerWidth < MQ; }
-  }
-
-  function buildCardsFor(wrapper){
-    try{
-      const table = wrapper.querySelector('table');
-      if(!table) return;
-      // find/create sibling .mobile-cards
-      let cards = wrapper.nextElementSibling;
-      if(!cards || !cards.classList.contains('mobile-cards')){
-        cards = document.createElement('div');
-        cards.className = 'mobile-cards';
-        wrapper.parentNode.insertBefore(cards, wrapper.nextSibling);
-      }
-      cards.innerHTML = '';
-      // headers
-      const heads = Array.from(table.querySelectorAll('thead th')).map(th => (th.textContent||'').trim());
-      const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
-      bodyRows.forEach(tr => {
-        const tds = Array.from(tr.children);
-        if(!tds.length) return;
-        // Heurística de título: primera col no vacía, o que contenga Cliente/Apellido/Nombre/Empresa
-        let titleIdx = 0;
-        const preferred = ['Razón social','Razon social','Razón','Razon','Empresa','Cliente','Apellido','Nombre','Marca','Título','Titulo'];
-        for(let i=0;i<heads.length;i++){
-          if(preferred.some(p => (heads[i]||'').toLowerCase().includes(p.toLowerCase()))){ titleIdx = i; break; }
-        }
-        const card = document.createElement('div');
-        card.className = 'mc-card';
-        const header = document.createElement('div');
-        header.className = 'mc-header';
-        const title = document.createElement('div');
-        title.className = 'mc-title';
-        title.innerHTML = (tds[titleIdx] && tds[titleIdx].innerHTML) || (tds[0]?.innerHTML||'');
-        header.appendChild(title);
-        card.appendChild(header);
-
-        const body = document.createElement('div');
-        body.className = 'mc-body';
-
-        // Detect celda de acciones (última con botones)
-        let actionsHTML = '';
-        const lastTd = tds[tds.length-1];
-        if(lastTd && (lastTd.querySelector('.btn') || lastTd.classList.contains('text-end'))){
-          // NO BORRAR el strip de modales. En /empresas y /clientes los modales
-          // por fila (archiveCompany{id}, links{id}) viven DENTRO del <td> de
-          // acciones. Clonar el innerHTML tal cual duplicaba esos id, y
-          // `data-bs-target="#archiveCompany5"` resuelve SIEMPRE al primero del
-          // documento: se abria el modal de la tabla escondida, no el de la card.
-          // Los originales se suben a <body> en subirModalesDeFila().
-          const clonAcciones = lastTd.cloneNode(true);
-          clonAcciones.querySelectorAll('.modal').forEach(m => m.remove());
-          actionsHTML = clonAcciones.innerHTML;
-        }
-
-        const rows = [];
-        for(let i=0;i<tds.length;i++){
-          // omitir título duplicado y acciones
-          if(i===titleIdx) continue;
-          if(i===tds.length-1 && actionsHTML) continue;
-          const label = heads[i] || '';
-          const val = tds[i].innerHTML;
-          // saltar si está vacío
-          const txt = (tds[i].textContent||'').trim();
-          if(!txt && !tds[i].querySelector('input,select,button,svg,img')) continue;
-          const isWide = tds[i].classList.contains('col-money') || tds[i].classList.contains('col-forma') || !!tds[i].querySelector('.js-price-group,.js-cob-price-group,.form-control,.form-select');
-          rows.push({label, val, isWide});
-        }
-
-        // mostrar 4 principales y colapsar resto
-        const primaryCount = Math.min(4, rows.length);
-        rows.forEach((r, idx)=>{
-          const row = document.createElement('div');
-          row.className = 'mc-row' + (r.isWide ? ' mc-row-wide' : '') + (idx>=primaryCount ? ' mc-row-extra d-none' : '');
-          const l = document.createElement('div'); l.className='mc-label'; l.textContent = r.label || '';
-          const v = document.createElement('div'); v.className='mc-value'; v.innerHTML = r.val || '-';
-          row.appendChild(l); row.appendChild(v);
-          body.appendChild(row);
-        });
-        card.appendChild(body);
-
-        if(rows.length > primaryCount){
-          const more = document.createElement('div');
-          more.className = 'mc-more';
-          const btn = document.createElement('button');
-          btn.type='button'; btn.className='mc-more-toggle'; btn.textContent='Ver más';
-          btn.addEventListener('click', function(){
-            const hidden = card.querySelectorAll('.mc-row-extra');
-            const isHidden = hidden.length && hidden[0].classList.contains('d-none');
-            hidden.forEach(n=> n.classList.toggle('d-none'));
-            btn.textContent = isHidden ? 'Ver menos' : 'Ver más';
-          });
-          more.appendChild(btn);
-          card.appendChild(more);
-        }
-
-        if(actionsHTML){
-          const actions = document.createElement('div');
-          actions.className = 'mc-actions';
-          actions.innerHTML = actionsHTML;
-          card.appendChild(actions);
-        }
-
-        cards.appendChild(card);
-      });
-    } catch(e){ /* noop */ }
-  }
-
-  // Sube a <body> los modales que viven dentro del <td> de acciones de cada
-  // fila. Hace falta porque en modo cards el `.desktop-table` esta en
-  // display:none, y un modal con un ancestro display:none NO se puede mostrar
-  // por mas que sea position:fixed. Subirlos los deja alcanzables por id desde
-  // los botones de la card.
-  // Es idempotente a proposito: el hook lo puede llamar de mas, y en cada
-  // repintado AJAX aparecen modales nuevos en el tbody que reemplazan a los ya
-  // subidos (si no, quedarian ids duplicados otra vez).
-  function subirModalesDeFila(wrapper){
-    try{
-      wrapper.querySelectorAll('.modal[id]').forEach(function(m){
-        if(m.classList.contains('show')) return; // no mover uno abierto
-        // OJO: aca NO sirve document.getElementById(m.id). Devuelve el PRIMERO en
-        // orden de documento, que es el modal nuevo que todavia esta en el tbody,
-        // no la copia vieja que quedo colgada de <body> en la pasada anterior.
-        // Resultado medido con ese error: despues de buscar quedaban los 10 ids
-        // duplicados. Hay que buscar explicitamente entre los hijos de <body>.
-        var id = m.id;
-        var hijos = document.body.children;
-        for(var i = hijos.length - 1; i >= 0; i--){
-          var p = hijos[i];
-          if(p !== m && p.id === id && p.classList && p.classList.contains('modal')
-             && !p.classList.contains('show')) p.remove();
-        }
-        document.body.appendChild(m);
-      });
-    } catch(e){ /* noop */ }
-  }
-
-  function rebuild(){
-    const wrappers = document.querySelectorAll('.desktop-table');
-    wrappers.forEach(w => {
-      let cards = w.nextElementSibling;
-      if(!cards || !cards.classList.contains('mobile-cards')){
-        cards = document.createElement('div');
-        cards.className = 'mobile-cards';
-        w.parentNode.insertBefore(cards, w.nextSibling);
-      }
-      // El CSS es la UNICA fuente de verdad del breakpoint. Antes esto lo
-      // decidia `isMobilePortrait()` (<768 y portrait) en paralelo a la hoja de
-      // estilos, y las dos definiciones podian divergir: hoy /clientes y
-      // /empresas pasan a cards hasta 991.98px en cualquier orientacion, asi que
-      // preguntarle al computed style evita duplicar el corte en dos lugares.
-      const enModoCards = window.getComputedStyle(cards).display !== 'none';
-      if(enModoCards){ subirModalesDeFila(w); buildCardsFor(w); }
-      else if(cards.childElementCount) cards.innerHTML = '';
-    });
-  }
-
-  // Colgado de SirioList: las cards tienen que rehacerse despues de cada
-  // repintado AJAX del listado, igual que los dropdowns. onChange() ya dispara
-  // una vez en el arranque, asi que no hace falta DOMContentLoaded aparte.
-  window.SirioList.onChange(rebuild);
-  // el resize/rotacion no muta el tbody, asi que el observer no lo ve
-  window.addEventListener('resize', function(){ clearTimeout(window.__mc_to); window.__mc_to = setTimeout(rebuild, 150); });
 })();
 
 (function(){
