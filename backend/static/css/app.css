@@ -331,11 +331,6 @@ h1,h2{letter-spacing:.2px}
   .empresa-search-input{min-width:0!important; max-width:100%!important; width:100%!important}
   .btn-create-client,
   .btn-create-company{min-width:0!important; white-space:nowrap}
-  /* Inputs/botones con min-width en templates: que no hagan overflow en iPhone */
-  .cliente-search-input,
-  .empresa-search-input{min-width:0!important; max-width:100%!important; width:100%!important}
-  .btn-create-client,
-  .btn-create-company{min-width:0!important; white-space:nowrap}
   /* Para tablas con inputs (status/cobranzas), usar auto layout para no recortar campos */
   .table.table-tight, .table.table-cobranzas{ table-layout:auto !important }
   /* Asegurar visibilidad mínima de grupos de precio en mobile */
