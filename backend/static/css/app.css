@@ -63,19 +63,7 @@ h1,h2{letter-spacing:.2px}
 .card{border:1px solid #eef1f4;border-radius:.8rem;overflow:hidden}
 .card .card-body{padding:1rem 1.25rem}
 .card.table-sticky-card{overflow:visible}
-.card.table-sticky-card{overflow:visible}
 .table>thead{font-size:.9rem}
-.table-sticky{border-collapse:separate !important; border-spacing:0}
-.table-sticky thead th{position:sticky !important; top:var(--sticky-top, 0px); z-index:1020; background:var(--bs-table-bg, #fff); background-clip:padding-box}
-.table-sticky thead.table-light th,
-.table-sticky thead th.table-light{background:#f8f9fa}
-.sticky-thead-wrap{background:transparent}
-.sticky-thead-wrap .sticky-thead-table{background:transparent}
-.sticky-thead-wrap .sticky-thead-table thead th{background:var(--bs-table-bg, #fff); background-clip:padding-box}
-.sticky-thead-wrap .sticky-thead-table thead.table-light th,
-.sticky-thead-wrap .sticky-thead-table thead th.table-light{background:#f8f9fa}
-.sticky-thead-wrap{box-shadow:0 2px 10px rgba(0,0,0,.08)}
-.sticky-thead-wrap .sticky-thead-table{margin:0}
 .table-sticky{border-collapse:separate !important; border-spacing:0}
 .table-sticky thead th{position:sticky !important; top:var(--sticky-top, 0px); z-index:1020; background:var(--bs-table-bg, #fff); background-clip:padding-box}
 .table-sticky thead.table-light th,
