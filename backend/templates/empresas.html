@@ -1155,15 +1155,62 @@
         }
       } catch(e) {}
     }
-    function moveModalToBody(modalEl){
+    /* ═══════════════════════════════════════════════════════════════════════
+       Los modales `links{id}` se sacan del `<td>` y se cuelgan de <body>.
+       ───────────────────────────────────────────────────────────────────────
+       NO BORRAR, y sobre todo NO volver a colgarlo solo de DOMContentLoaded.
+       El markup de cada modal vive DENTRO de `<td class="col-actions">`, o sea
+       dentro de `#empresas-table` y de `.table-responsive.table-mobile-cards`.
+       Ahi le pegan selectores que no son para el: `#empresas-table th,td`
+       (este archivo, ~:60) le mete `overflow-wrap:anywhere` a las celdas del
+       modal, `#empresas-table td:nth-child(1),(2)` (~:68) les clava
+       `min-width:170px`, y las reglas de `.table-mobile-cards` de layout.html
+       (~:82-88) lo tratan como tarjeta. Por eso se mueve afuera.
+
+       POR QUE TAMBIEN EN CADA CAMBIO DEL LISTADO Y NO SOLO AL CARGAR
+       `replaceListFromHtml()` (mas arriba en este archivo) hace
+       `tbody.innerHTML = ...` en CADA tecla del buscador y en cada paginacion:
+       eso vuelve a crear los 80 modales DENTRO del `<td>`. Con el move corriendo
+       una sola vez quedaban IDs DUPLICADOS (el viejo colgado de <body> y el
+       nuevo en la tabla), y bootstrap resuelve `data-bs-target` con
+       `document.querySelector`, que devuelve el PRIMERO EN ORDEN DE DOCUMENTO:
+       el de adentro de la tabla, o sea justo el roto. Ese era el modal de
+       Clientes destruido que se veia en el telefono despues de buscar.
+
+       TRAMPA: para encontrar el duplicado viejo NO se puede usar
+       `document.getElementById(id)`. Devuelve el primero en orden de documento,
+       que es el de la tabla: borrariamos el nuevo y dejariamos vivo el viejo.
+       Por eso se indexa recorriendo `document.body.children`, que son los que
+       ya fueron movidos.                                                      */
+    function indexarLinkModalesDeBody(){
+      var porId = {};
       try {
-        if (!modalEl || modalEl.parentElement === document.body) return;
-        document.body.appendChild(modalEl);
+        Array.prototype.forEach.call(document.body.children, function(el){
+          if (!el.id || el.id.indexOf('links') !== 0) return;
+          if (!el.classList || !el.classList.contains('modal')) return;
+          porId[el.id] = el;
+        });
       } catch(e) {}
+      return porId;
     }
     function moveAllLinkModalsToBody(){
       try {
-        document.querySelectorAll('.modal[id^="links"]').forEach(moveModalToBody);
+        var yaEnBody = indexarLinkModalesDeBody();
+        document.querySelectorAll('.modal[id^="links"]').forEach(function(modalEl){
+          try {
+            if (modalEl.parentElement === document.body) return; // ya movido
+            var viejo = yaEnBody[modalEl.id];
+            if (viejo && viejo !== modalEl){
+              // Si el viejo esta abierto, no se le arranca el DOM al usuario:
+              // se deja el duplicado y la proxima pasada lo limpia. Es un caso
+              // de borde (el listado se repinta con un modal fullscreen arriba).
+              if (viejo.classList.contains('show')) return;
+              try { viejo.remove(); } catch(e0) {}
+              delete yaEnBody[modalEl.id];
+            }
+            document.body.appendChild(modalEl);
+          } catch(e1) {}
+        });
       } catch(e) {}
     }
     function cleanupOrphanModalState(){
@@ -1179,10 +1226,23 @@
       } catch(e) {}
     }
 
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', moveAllLinkModalsToBody);
-    } else {
+    // `window.SirioList` lo define js/app.js, que se carga en el PIE de
+    // layout.html: cuando corre este script inline todavia no existe. Por eso
+    // la suscripcion se difiere a DOMContentLoaded, momento en el que app.js ya
+    // se ejecuto. El consumidor es idempotente, que es lo que SirioList exige.
+    function engancharListado(){
       moveAllLinkModalsToBody();
+      try {
+        if (window.SirioList && window.SirioList.onChange){
+          window.SirioList.onChange(moveAllLinkModalsToBody);
+        }
+      } catch(e) {}
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', engancharListado);
+    } else {
+      engancharListado();
     }
 
     document.addEventListener('hidden.bs.modal', function(){
