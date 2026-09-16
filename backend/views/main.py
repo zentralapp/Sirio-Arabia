@@ -9473,7 +9473,20 @@ def empresas():
 
     q = (request.args.get("q") or "").strip()
 
-    show_all = request.args.get("all") == "1"
+    # Pedido del cliente: el listado arranca mostrando TODAS las empresas, sin
+    # paginar. El default pasa a "1" igual que en /clientes (ver la funcion
+    # clientes() en este mismo archivo), y la paginacion queda disponible con
+    # `?all=0` mas el boton "Paginar" del template.
+    # OJO CON EL PESO: cada fila arrastra 2 modales, y el modal `links{id}`
+    # embebe UN <option> POR CADA CLIENTE. O sea el HTML crece con
+    # empresas x clientes. Medido en local:
+    #     60 empresas x  60 clientes ->  0,84 MB,  4.200 <option>,  17.600 tags
+    #    200 empresas x 200 clientes ->  5,20 MB, 42.000 <option>, 113.700 tags
+    # El tiempo de servidor no es el problema (186 ms a 200x200); el problema es
+    # transferir y parsear eso en un telefono. Si el volumen real crece, la
+    # solucion NO es volver a paginar sino sacar los <option> repetidos del
+    # modal (renderizar la lista de clientes UNA sola vez y reusarla).
+    show_all = request.args.get("all", "1") == "1"
 
 
 
