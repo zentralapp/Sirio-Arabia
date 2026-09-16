@@ -88,22 +88,54 @@
         .table-mobile-cards .table tbody tr > td::before, .table-mobile-cards .table tbody tr > th::before { content: attr(data-label); font-weight: 600; color: #6b7280; display: block; margin-bottom: .15rem; }
         .table-mobile-cards .col-actions { width: 100% !important; text-align: left !important; }
         .table-mobile-cards .col-actions .btn-group { display: flex; flex-wrap: wrap; gap: .5rem; }
-        /* Modales fullscreen en móvil.
-           NO BORRAR el layout flex. Antes esto era solo
-           `.modal-content{min-height:100vh}`, y con eso el UNICO elemento que
-           scrolleaba era el propio `.modal` (el overlay position:fixed, que trae
-           overflow-y:auto de bootstrap). Dos consecuencias medidas a 390px:
-             1) el contenido que no entra queda fuera del pliegue y el header se
-                va de pantalla al scrollear (no hay header fijo);
-             2) en iOS scrollear un overlay fixed sin
-                -webkit-overflow-scrolling anda pesimo: hay que mantener el dedo
-                apretado para que arranque. Es el sintoma que reporto el cliente.
-           Ademas 100vh en iOS Safari es el viewport GRANDE (sin barra de URL),
-           asi que el .modal-content siempre quedaba mas alto que el area
-           visible y el footer (Guardar/Cancelar) caia debajo del pliegue.
-           Con 100dvh + flex column el que scrollea es `.modal-body`, header y
-           footer quedan fijos, y el scroll tactil es el nativo del navegador.
-           `height:100vh` va primero como fallback para navegadores sin dvh. */
+
+        /* Scroll horizontal suave para tablas en landscape (y cuando haga falta) */
+        .table-responsive{ -webkit-overflow-scrolling: touch; }
+        .table-responsive > .table{ min-width: 720px; }
+      }
+
+      /* ═══════════════════════════════════════════════════════════════════════
+         Modales fullscreen en móvil Y TABLET.
+         ───────────────────────────────────────────────────────────────────────
+         NO BORRAR el layout flex. Antes esto era solo
+         `.modal-content{min-height:100vh}`, y con eso el UNICO elemento que
+         scrolleaba era el propio `.modal` (el overlay position:fixed, que trae
+         overflow-y:auto de bootstrap). Dos consecuencias medidas a 390px:
+           1) el contenido que no entra queda fuera del pliegue y el header se
+              va de pantalla al scrollear (no hay header fijo);
+           2) en iOS scrollear un overlay fixed sin
+              -webkit-overflow-scrolling anda pesimo: hay que mantener el dedo
+              apretado para que arranque. Es el sintoma que reporto el cliente.
+         Ademas 100vh en iOS Safari es el viewport GRANDE (sin barra de URL),
+         asi que el .modal-content siempre quedaba mas alto que el area
+         visible y el footer (Guardar/Cancelar) caia debajo del pliegue.
+         Con 100dvh + flex column el que scrollea es `.modal-body`, header y
+         footer quedan fijos, y el scroll tactil es el nativo del navegador.
+         `height:100vh` va primero como fallback para navegadores sin dvh.
+
+         ── H12: POR QUE ESTE BLOQUE ES `max-width:991.98px` Y NO `767.98px` ──
+         Estas reglas vivian adentro del bloque `max-width:767.98px` de arriba.
+         Consecuencia: la banda 768-991.98px (iPad vertical, tablets Android,
+         telefono en horizontal) NO las recibia y caia en el default de
+         bootstrap. Medido con el CSS real de la app en el modal de clientes de
+         /empresas:
+           viewport 768 -> .modal-dialog w=500px, margin 28px 134px  (268px perdidos)
+           viewport 820 -> .modal-dialog w=500px, margin 28px 160px  (320px perdidos)
+           .modal-body  -> overflow visible                => NO scrollea
+           .modal       -> clientHeight 700 / scrollHeight 2636
+                        => el UNICO scroller era el overlay fixed, o sea el
+                           sintoma (2) de arriba, EN TABLET.
+         `.modal-lg` no tapaba el agujero: sus 800px recien entran en 992px.
+
+         Es un bloque HERMANO y no se subio el techo del bloque de 767.98px a
+         proposito: ahi viven reglas que deben seguir siendo solo-movil (pisos
+         de area tactil `min-height:44px`, `font-size:16px`, compactacion de
+         tipografia de tabla, `table-mobile-cards`). Arrastrarlas al tablet
+         seria un efecto colateral no pedido.
+
+         Techo en 991.98px: desde 992px entra el sidebar y el modal centrado de
+         bootstrap ya entra comodo. Escritorio INTACTO.                        */
+      @media (max-width: 991.98px) {
         .modal-dialog {
           width: 100% !important; max-width: none !important; margin: 0 !important;
           height: 100vh; height: 100dvh;
@@ -124,11 +156,33 @@
           -webkit-overflow-scrolling: touch;
           overscroll-behavior: contain;
         }
-
-        /* Scroll horizontal suave para tablas en landscape (y cuando haga falta) */
-        .table-responsive{ -webkit-overflow-scrolling: touch; }
-        .table-responsive > .table{ min-width: 720px; }
       }
+
+      /* ═══════════════════════════════════════════════════════════════════════
+         H12b — el `.table-responsive` de CUALQUIER modal es un scroller ANIDADO
+         adentro del `.modal-body`, y se come el arrastre vertical.
+         ───────────────────────────────────────────────────────────────────────
+         Bootstrap le pone `overflow-x:auto` y, por spec CSS, cuando un eje no
+         es `visible` el otro se computa a `auto`. Verificado a 390px con el CSS
+         real: computed overflow-x=auto Y overflow-y=auto (o sea el
+         `overflow-y:visible !important` de app.css:112 es un NO-OP, lo mismo
+         que ya se documento en el commit b1c539a). En el modal de clientes de
+         /empresas ese scroller medía 1388px de los 1665px scrolleables del
+         `.modal-body`: practicamente toda el area tactil del modal.
+
+         `touch-action: pan-x` declara que el elemento solo maneja paneo
+         horizontal, asi que el arrastre vertical se delega al ancestro
+         scrolleable (`.modal-body`) sin tener que soltar y volver a arrastrar.
+         El scroll horizontal INTENCIONAL de las tablas se conserva.
+         Se deja `pinch-zoom` para no romper el zoom de la pagina.
+
+         Sin media query a proposito: `touch-action` NO afecta mouse ni
+         trackpad (solo gestos tactiles directos), asi que en escritorio con
+         mouse no cambia absolutamente nada, y en una pantalla tactil grande
+         arregla el mismo bug. Verificado: ningun `.table-responsive` de la app
+         tiene `max-height`, o sea ninguno depende de scrollear vertical por su
+         cuenta — nada que romper.                                             */
+      .modal .table-responsive { touch-action: pan-x pinch-zoom; }
 
       /* En portrait (celular vertical), se prioriza el modo cards (se genera via JS) */
       @media (max-width: 767.98px) and (orientation: portrait) {

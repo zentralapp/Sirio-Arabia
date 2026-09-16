@@ -96,6 +96,10 @@
   @media (max-width: 399.98px) {
     #empresasPagination > .d-flex { grid-template-columns: 1fr; }
   }
+
+  /* NO agregar reglas de modal aca. El fullscreen de modales para 0-991.98px y
+     el `touch-action` del `.table-responsive` de los modales son GLOBALES y
+     viven en layout.html (bloques H12 y H12b). */
 </style>
 <div class="empresas-toolbar d-flex flex-column flex-md-row justify-content-between align-items-stretch align-items-md-center gap-2 mb-3 mt-3">
   <div class="empresas-toolbar-main">
@@ -354,6 +358,13 @@
                           <button class="btn btn-primary">Agregar</button>
                         </div>
                       </form>
+                      {# NO poner `table-fit` aca. Probado: con `min-width:0` la tabla entra en
+                         363px pero la columna Cliente parte en UNA LETRA POR LINEA y el input de
+                         descuento queda de ~10px; la fila pasa de 54px a 211px de alto. El
+                         `min-width:720px` heredado de app.css:114 es lo que mantiene la tabla
+                         legible, y el scroll horizontal es la estrategia elegida a proposito para
+                         esta vista (ver app.css:106). Lo que estaba roto era el scroll VERTICAL,
+                         que se arregla con el `touch-action` global de layout.html (H12b). #}
                       <div class="table-responsive">
                         <table class="table table-sm align-middle js-sortable-table">
                           <thead>
