@@ -159,30 +159,45 @@
       }
 
       /* ═══════════════════════════════════════════════════════════════════════
-         H12b — el `.table-responsive` de CUALQUIER modal es un scroller ANIDADO
-         adentro del `.modal-body`, y se come el arrastre vertical.
+         H12b — NO VOLVER A PONER `touch-action` EN EL `.table-responsive` DE LOS
+         MODALES. Aca hubo una regla `touch-action: pan-x pinch-zoom` y era EL
+         BUG, no el fix. El cliente reporto: "no puedo scrollear cuando mi dedo
+         esta sobre la tabla, solo me deja scrollear horizontalmente".
          ───────────────────────────────────────────────────────────────────────
-         Bootstrap le pone `overflow-x:auto` y, por spec CSS, cuando un eje no
-         es `visible` el otro se computa a `auto`. Verificado a 390px con el CSS
-         real: computed overflow-x=auto Y overflow-y=auto (o sea el
-         `overflow-y:visible !important` de app.css:112 es un NO-OP, lo mismo
-         que ya se documento en el commit b1c539a). En el modal de clientes de
-         /empresas ese scroller medía 1388px de los 1665px scrolleables del
-         `.modal-body`: practicamente toda el area tactil del modal.
+         La justificacion con la que se agrego decia que `pan-x` "delega" el
+         arrastre vertical al ancestro scrolleable. Es FALSO: `touch-action` no
+         delega nada. Por spec, al empezar un touch el navegador computa la
+         INTERSECCION de los `touch-action` de la cadena de ancestros. Medido en
+         el modal `links{id}` de /empresas a 390px:
+           .table-responsive -> touch-action: pan-x pinch-zoom
+           .modal-body / .modal-content / .modal-dialog / .modal / body / html
+                             -> touch-action: auto
+           interseccion => pan-x pinch-zoom, que NO incluye pan-y
+         O sea le prohibimos al navegador el paneo vertical en toda esa zona. El
+         gesto no "se perdia" en un scroller anidado: estaba haciendo exactamente
+         lo que le pedimos.
 
-         `touch-action: pan-x` declara que el elemento solo maneja paneo
-         horizontal, asi que el arrastre vertical se delega al ancestro
-         scrolleable (`.modal-body`) sin tener que soltar y volver a arrastrar.
-         El scroll horizontal INTENCIONAL de las tablas se conserva.
-         Se deja `pinch-zoom` para no romper el zoom de la pagina.
+         Y el `pan-x` no protegia nada: medido en ese mismo modal, el
+         `.table-responsive` tiene scrollHeight === clientHeight (1291 === 1291),
+         o sea extent vertical CERO. No hay scroll vertical propio que defender.
 
-         Sin media query a proposito: `touch-action` NO afecta mouse ni
-         trackpad (solo gestos tactiles directos), asi que en escritorio con
-         mouse no cambia absolutamente nada, y en una pantalla tactil grande
-         arregla el mismo bug. Verificado: ningun `.table-responsive` de la app
-         tiene `max-height`, o sea ninguno depende de scrollear vertical por su
-         cuenta — nada que romper.                                             */
-      .modal .table-responsive { touch-action: pan-x pinch-zoom; }
+         El encadenamiento al `.modal-body` YA FUNCIONA SOLO. Verificado con
+         rueda de mouse (que por spec NO esta sujeta a `touch-action`, asi que
+         mide la cadena de scroll sin la mascara): rueda sobre la tabla ->
+         .modal-body.scrollTop 0 -> 244 (su maximo) y .table-responsive.scrollTop
+         se queda en 0. La estructura esta sana; lo unico que bloqueaba el dedo
+         era esta regla.
+
+         El sintoma original que se quiso arreglar (en iOS habia que mantener el
+         dedo apretado para que arrancara el scroll) ya lo resuelve la OTRA mitad
+         del bloque H12 de arriba: el `.modal-body{flex:1; min-height:0;
+         overflow-y:auto}` convierte al body en el scroller real, en vez de
+         depender del overlay `position:fixed` de bootstrap. Esta regla era
+         redundante ademas de danina.
+
+         LECCION: `touch-action` es la unica propiedad de todo este laburo que no
+         se puede verificar sin dedo real o emulacion tactil. Medir el computed
+         value NO alcanza: el valor aplicado ERA el bug.                        */
 
       /* En portrait (celular vertical), se prioriza el modo cards (se genera via JS) */
       @media (max-width: 767.98px) and (orientation: portrait) {

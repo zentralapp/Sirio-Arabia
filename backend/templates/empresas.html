@@ -97,9 +97,10 @@
     #empresasPagination > .d-flex { grid-template-columns: 1fr; }
   }
 
-  /* NO agregar reglas de modal aca. El fullscreen de modales para 0-991.98px y
-     el `touch-action` del `.table-responsive` de los modales son GLOBALES y
-     viven en layout.html (bloques H12 y H12b). */
+  /* NO agregar reglas de modal aca. El fullscreen de modales para 0-991.98px es
+     GLOBAL y vive en layout.html (bloque H12). Y NO volver a poner
+     `touch-action` en el `.table-responsive` de los modales: se probo, rompia el
+     scroll vertical con el dedo, y esta explicado en el bloque H12b. */
 </style>
 <div class="empresas-toolbar d-flex flex-column flex-md-row justify-content-between align-items-stretch align-items-md-center gap-2 mb-3 mt-3">
   <div class="empresas-toolbar-main">
@@ -363,8 +364,11 @@
                          descuento queda de ~10px; la fila pasa de 54px a 211px de alto. El
                          `min-width:720px` heredado de app.css:114 es lo que mantiene la tabla
                          legible, y el scroll horizontal es la estrategia elegida a proposito para
-                         esta vista (ver app.css:106). Lo que estaba roto era el scroll VERTICAL,
-                         que se arregla con el `touch-action` global de layout.html (H12b). #}
+                         esta vista (ver app.css:106). El scroll VERTICAL de este modal lo resuelve
+                         el `.modal-body{flex:1; min-height:0; overflow-y:auto}` del bloque H12 de
+                         layout.html: el arrastre vertical encadena solo desde esta tabla al
+                         `.modal-body` (verificado con rueda: la tabla tiene extent vertical 0).
+                         NO agregar `touch-action` aca: se probo y rompia justamente ese gesto. #}
                       <div class="table-responsive">
                         <table class="table table-sm align-middle js-sortable-table">
                           <thead>
