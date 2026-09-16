@@ -820,7 +820,21 @@
             } catch(e_a0) {}
             var nav = document.querySelector('nav.navbar.d-lg-none');
             if (nav && window.getComputedStyle(nav).display !== 'none'){
-              top = Math.round(nav.getBoundingClientRect().height || 0);
+              if (active0 === 'clientes' || active0 === 'empresas'){
+                // A — el navbar movil (mas abajo en este archivo) NO es fixed-top
+                // ni sticky-top: se va con el scroll. Usar su ALTO fija el header
+                // clonado 45-56px mas abajo del borde de la pantalla y por ese
+                // hueco se ve pasar el contenido por detras (era parte del
+                // "contenido colandose" que reporto el cliente).
+                // `bottom` clampeado a 0 da el valor correcto en los dos casos:
+                // vale el alto mientras el navbar se ve, y baja a 0 cuando se fue.
+                // Scopeado a estas 2 vistas para no tocar a /status, /deudas,
+                // /cobranzas e /historial, que salen por la rama de arriba o
+                // dependen de este mismo valor con su propio ajuste.
+                top = Math.max(0, Math.round(nav.getBoundingClientRect().bottom || 0));
+              } else {
+                top = Math.round(nav.getBoundingClientRect().height || 0);
+              }
             }
           } catch(e) {}
           return top;

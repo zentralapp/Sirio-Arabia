@@ -315,10 +315,8 @@ h1,h2{letter-spacing:.2px}
   body[data-active="clientes"] .col-actions .dropdown-toggle,
   body[data-active="empresas"] .col-actions .dropdown-toggle{padding:.25rem .4rem}
 
-  body[data-active="clientes"] table.table-sticky thead th,
-  body[data-active="empresas"] table.table-sticky thead th{position:static !important; top:auto !important}
-  body[data-active="clientes"] .sticky-thead-wrap,
-  body[data-active="empresas"] .sticky-thead-wrap{display:none !important}
+  /* El header fijo de estas 2 vistas se resuelve en el bloque "A" del final de
+     esta hoja, que cubre TODO 0-991.98px y no solo portrait. Ver alla el porque. */
 
   /* Excepción: Status mercadería y Deudas pendientes: tabla real + scroll horizontal */
   body[data-active="status"] .desktop-table,
@@ -840,4 +838,62 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
   .table .input-group .input-group-text{padding:.2rem .35rem; font-size:12px}
   .table .btn-group .btn{padding:.28rem .42rem; font-size:12px}
   .table .badge{font-size:12px; padding:.3em .48em}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   A — HEADER FIJO DE /clientes y /empresas EN MOVIL Y TABLET (0-991.98px)
+   ───────────────────────────────────────────────────────────────────────────
+   PROBLEMA QUE ARREGLA (medido, no inferido)
+   `.table-sticky thead th` del tope de esta hoja trae
+   `position:sticky; top:var(--sticky-top)`, y `--sticky-top` lo setea en runtime
+   `applyCssStickyTop()` de layout.html con el alto del navbar movil (45/56px),
+   ASUMIENDO que el sticky se ancla al viewport. No se ancla ahi: `position:sticky`
+   se resuelve contra el SCROLLPORT mas cercano, que es `.table-responsive`
+   (Bootstrap le pone overflow-x:auto y por spec el otro eje se computa a auto).
+   Resultado medido en /empresas a 844x390, con scrollTop=0 y sin scrollear nada:
+     fila del thead en top=214, `th` pintados en top=270  => +56px
+     th.bottom=300 > row1.top=244                         => TAPA la primera fila
+     filas de datos NO tapadas: 2                         => "una fila y media"
+   Y el offset no compensaba nada: el navbar movil (layout.html:238) NO es
+   fixed-top ni sticky-top, se va con el scroll.
+
+   POR QUE SE ELIGE EL CLON JS Y NO EL STICKY DE CSS
+   Aca hay dos mecanismos de header fijo y estaban peleando. Hay que elegir uno.
+   El sticky de CSS NO PUEDE funcionar en estas vistas: se ancla al
+   `.table-responsive`, y ese contenedor tiene extent vertical CERO (scrollHeight
+   === clientHeight) porque el que scrollea es la VENTANA. Un sticky nunca se
+   despega si su scrollport no scrollea. O sea: con CSS sticky el header o no se
+   pega (portrait, donde estaba apagado) o se pega mal y tapa (landscape).
+   El clon de `layout.html:770-915` en cambio es `position:fixed` contra el
+   viewport, que es exactamente lo que se necesita. Por eso aca se APAGA el
+   sticky de CSS y se DEJA VIVIR al clon (antes pasaba al reves: el CSS
+   `display:none !important` mataba al clon y el JS le seteaba display:block
+   inline sin poder ganarle).
+
+   ALCANCE: 0-991.98px y scopeado a estas 2 vistas a proposito.
+   - Desde 992px NO aplica: ahi el navbar movil esta oculto, `--sticky-top` vale
+     0px, el desplazamiento no existe y el sticky de CSS anda bien. Escritorio
+     INTACTO.
+   - Scopeado a clientes/empresas para NO arrastrar a /status, /deudas,
+     /cobranzas e /historial, que tienen el mismo bug latente pero su propio
+     tratamiento (y su propia rama en `topOffset()`). Eso va en otro laburo.   */
+@media (max-width: 991.98px){
+  body[data-active="clientes"] table.table-sticky thead th,
+  body[data-active="empresas"] table.table-sticky thead th{
+    position: static !important;
+    top: auto !important;
+  }
+}
+
+/* Los `th` NO parten palabras. `overflow-wrap:anywhere` + `word-break:break-word`
+   se aplicaban tambien a los encabezados y partian "Despac/ho", "Plaz/o",
+   "Alerta/s" a mitad de palabra (era la mitad del "letras cortadas" que reporto
+   el cliente; la otra mitad era el solapamiento de arriba). En las celdas de
+   datos SI se conserva: ahi hay razones sociales y mails largos que necesitan
+   cortarse para que la fila no se estire. */
+#empresas-table thead th,
+#clientes-table thead th{
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
 }
