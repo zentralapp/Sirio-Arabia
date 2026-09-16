@@ -290,13 +290,45 @@ function openGmailDraft(to, subject, body){
   //
   // Va colgado de SirioList y NO de DOMContentLoaded: los toggles se destruyen
   // en cada repintado AJAX del listado y hay que volver a fijarlos.
+  //
+  /* ─────────────────────────────────────────────────────────────────────────
+     POR QUE NO ALCANZA CON `getOrCreateInstance(t, config)` A SECAS
+     `getOrCreateInstance` DEVUELVE LA INSTANCIA EXISTENTE E IGNORA EL CONFIG
+     (bootstrap 5.3: `getInstance(el) || new this(el, config)`). O sea: el
+     popperConfig se aplica SOLO si somos los primeros en crear la instancia.
+     Y no siempre lo somos:
+       - el data-api de bootstrap hace `Dropdown.getOrCreateInstance(this).toggle()`
+         en el click, SIN config;
+       - `safeHideDropdown()` de empresas.html / clientes.html hacia lo mismo.
+     Tras `tbody.innerHTML = ...` los toggles son nodos NUEVOS sin instancia, y
+     nosotros los arreglamos recien un macrotask despues (el `setTimeout(0)` de
+     `agendar()`). Si un tap cae en esa ventana — el dedo ya venia bajando
+     cuando llego la respuesta del fetch — bootstrap crea la instancia sin
+     popperConfig y a partir de ahi NO HAY FORMA de reconfigurarla: el menu
+     queda `position:absolute` y lo clippea el `.table-responsive`. Con la tabla
+     filtrada a una o dos filas el contenedor es bajito y el menu se ve cortado.
+
+     Por eso, si encontramos una instancia que no creamos nosotros, se la
+     descarta y se crea de nuevo con el config. La marca en el elemento evita
+     destruir y recrear en cada aviso de SirioList.                           */
+  const MARCA_FIJADO = '_sirioMenuFijado';
   function fijarMenusDeTabla(){
     if(!(window.bootstrap && window.bootstrap.Dropdown)) return;
-    const toggles = document.querySelectorAll('.table-responsive [data-bs-toggle="dropdown"]');
-    toggles.forEach(t => {
-      window.bootstrap.Dropdown.getOrCreateInstance(t, {
-        popperConfig: base => Object.assign({}, base, { strategy: 'fixed' })
-      });
+    const Dropdown = window.bootstrap.Dropdown;
+    const opciones = { popperConfig: base => Object.assign({}, base, { strategy: 'fixed' }) };
+    document.querySelectorAll('.table-responsive [data-bs-toggle="dropdown"]').forEach(t => {
+      try {
+        if (t[MARCA_FIJADO] && Dropdown.getInstance(t)) return; // ya es nuestra y sigue viva
+        const previa = Dropdown.getInstance(t);
+        if (previa){
+          // Menu abierto: descartarlo ahora lo dejaria pegado. Se reintenta en
+          // el proximo aviso, cuando ya este cerrado.
+          if (t.classList.contains('show')) return;
+          try { previa.dispose(); } catch(e){ /* ya estaba muerta */ }
+        }
+        Dropdown.getOrCreateInstance(t, opciones);
+        t[MARCA_FIJADO] = true;
+      } catch(e){ /* un toggle roto no puede dejar sin arreglar a los demas */ }
     });
   }
   window.SirioList.onChange(fijarMenusDeTabla);
