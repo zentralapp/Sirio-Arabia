@@ -333,3 +333,134 @@ function openGmailDraft(to, subject, body){
   }
   window.SirioList.onChange(fijarMenusDeTabla);
 })();
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   E — EL MENU DE ACCIONES SE MUEVE A <body> MIENTRAS ESTA ABIERTO
+   ───────────────────────────────────────────────────────────────────────────
+   POR QUE ESTO Y NO MAS `position:fixed`
+   El menu de 3 puntos vive dentro de `.table-responsive`, que clippea en los
+   dos ejes (Bootstrap le pone `overflow-x:auto` y por spec el otro eje computa
+   a `auto`). Hasta ahora se intentaba que el menu SE ESCAPARA del recorte
+   pidiendole a Popper `strategy:'fixed'` via el `popperConfig` de la instancia
+   de Dropdown (bloque de arriba). Esa cadena tiene cinco eslabones —la
+   instancia, quien la creo primero, el config, Popper, el `position` que
+   termina escrito en el nodo— y si CUALQUIERA falla vuelve el recorte. Ya
+   fallo dos veces por motivos distintos.
+
+   Aca se ataca la causa y no el sintoma: si el menu NO ES DESCENDIENTE del
+   contenedor que clippea, NO HAY RECORTE POSIBLE. No depende de la instancia,
+   ni del config, ni de Popper, ni de ninguna carrera de timing. Y funciona
+   tanto si Popper lo posiciona `fixed` como `absolute`, porque colgado de
+   <body> las dos cosas quedan fuera del recorte.
+
+   ORDEN: `show.bs.dropdown` se dispara ANTES de que bootstrap cree el Popper
+   (`_createPopper()` corre despues del evento), asi que cuando Popper mide, el
+   menu ya esta en <body> y lo ancla igual contra el toggle, que sigue en la
+   tabla. Se le deja ademas un `top`/`left` propio calculado del toggle: si
+   Popper anda se lo pisa, y si no anda el menu igual queda donde va.
+
+   VUELTA A CASA: se deja un comentario de ancla en el lugar original. Al
+   cerrarse el menu vuelve ahi. Si la fila ya no existe (repintado AJAX con el
+   menu abierto) no hay a donde volver y el menu se descarta, para no dejar
+   huerfanos colgando de <body> — que es el problema que ya tuvimos con los
+   modales.                                                                    */
+(function(){
+  var abiertos = [];
+
+  function menuDe(toggle){
+    try {
+      var sig = toggle.nextElementSibling;
+      if (sig && sig.classList && sig.classList.contains('dropdown-menu')) return sig;
+      var padre = toggle.parentElement;
+      return padre ? padre.querySelector('.dropdown-menu') : null;
+    } catch(e){ return null; }
+  }
+
+  function posicionarFallback(menu, toggle){
+    // Solo por si Popper no corre. Si corre, `applyStyles` pisa estos valores.
+    try {
+      var r = toggle.getBoundingClientRect();
+      menu.style.position = 'fixed';
+      menu.style.top = Math.round(r.bottom) + 'px';
+      menu.style.left = Math.round(Math.max(0, r.right - (menu.offsetWidth || 160))) + 'px';
+      menu.style.margin = '0';
+    } catch(e){}
+  }
+
+  function portalizar(toggle){
+    var menu = menuDe(toggle);
+    if (!menu || menu.__sirioPortal) return;
+    try {
+      var ancla = document.createComment('sirio-dropdown');
+      menu.parentNode.insertBefore(ancla, menu);
+      menu.__sirioPortal = { toggle: toggle, ancla: ancla };
+      document.body.appendChild(menu);
+      abiertos.push(menu);
+      posicionarFallback(menu, toggle);
+    } catch(e){}
+  }
+
+  function soltar(menu, devolver){
+    var st = menu && menu.__sirioPortal;
+    if (!st) return;
+    try {
+      if (devolver && st.ancla && st.ancla.parentNode){
+        st.ancla.parentNode.insertBefore(menu, st.ancla);
+        // se limpia lo que escribio el fallback; en su lugar manda el CSS
+        menu.style.position = ''; menu.style.top = ''; menu.style.left = ''; menu.style.margin = '';
+      } else {
+        menu.remove();   // la fila ya no existe: no hay a donde volver
+      }
+      if (st.ancla) st.ancla.remove();
+    } catch(e){}
+    try { delete menu.__sirioPortal; } catch(e){ menu.__sirioPortal = null; }
+    var i = abiertos.indexOf(menu);
+    if (i >= 0) abiertos.splice(i, 1);
+  }
+
+  // Un menu queda huerfano si su fila desaparecio mientras estaba abierto.
+  function limpiarHuerfanos(){
+    abiertos.slice().forEach(function(menu){
+      var st = menu.__sirioPortal;
+      if (!st) return;
+      var vivo = st.ancla && st.ancla.isConnected !== false &&
+                 st.toggle && st.toggle.isConnected !== false;
+      if (!vivo) soltar(menu, false);
+    });
+  }
+
+  document.addEventListener('show.bs.dropdown', function(e){
+    try {
+      var toggle = e.target;
+      if (!toggle || !toggle.closest || !toggle.closest('.table-responsive')) return;
+      portalizar(toggle);
+    } catch(err){}
+  });
+
+  document.addEventListener('hidden.bs.dropdown', function(e){
+    try {
+      var menu = menuPortalizadoDe(e.target);
+      if (menu) soltar(menu, true);
+    } catch(err){}
+  });
+
+  function menuPortalizadoDe(toggle){
+    for (var i = 0; i < abiertos.length; i++){
+      if (abiertos[i].__sirioPortal && abiertos[i].__sirioPortal.toggle === toggle) return abiertos[i];
+    }
+    return null;
+  }
+
+  // Expuesto para quien necesite el toggle de un menu que ya no esta al lado
+  // suyo en el DOM (p.ej. `safeHideDropdown` de las vistas).
+  window.SirioMenuPortal = {
+    toggleDe: function(nodo){
+      try {
+        var menu = nodo && nodo.closest ? nodo.closest('.dropdown-menu') : null;
+        return (menu && menu.__sirioPortal) ? menu.__sirioPortal.toggle : null;
+      } catch(e){ return null; }
+    }
+  };
+
+  window.SirioList.onChange(limpiarHuerfanos);
+})();

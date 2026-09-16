@@ -1146,9 +1146,16 @@
     }
     function safeHideDropdown(fromEl){
       try {
-        var dd = closest(fromEl, '.dropdown');
-        if (!dd) return;
-        var toggle = dd.querySelector('[data-bs-toggle="dropdown"]');
+        // Con el menu portalizado a <body> (bloque E de app.js) el boton ya NO
+        // tiene un `.dropdown` de ancestro, asi que primero se pregunta al
+        // portal por el toggle y recien despues se cae al camino de siempre.
+        var toggle = (window.SirioMenuPortal && window.SirioMenuPortal.toggleDe)
+          ? window.SirioMenuPortal.toggleDe(fromEl) : null;
+        if (!toggle){
+          var dd = closest(fromEl, '.dropdown');
+          if (!dd) return;
+          toggle = dd.querySelector('[data-bs-toggle="dropdown"]');
+        }
         if (!toggle) return;
         // getInstance y NO getOrCreateInstance: crear la instancia aca la
         // crearia SIN el popperConfig de `fijarMenusDeTabla` (app.js), y
