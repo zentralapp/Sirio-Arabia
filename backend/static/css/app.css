@@ -466,23 +466,6 @@ h1,h2{letter-spacing:.2px}
   /* Deudas/Status: Status más legible (badge/"logo") */
   body[data-active="deudas"] .badge,
   body[data-active="status"] .badge{font-size:.95rem !important; padding:.42em .66em !important; font-weight:700}
-  .mobile-cards .mc-card{background:#fff; border:1px solid #e5e7eb; border-radius:.75rem; box-shadow:0 2px 8px rgba(0,0,0,.05); padding:.75rem .9rem}
-  .mobile-cards .mc-header{display:flex; align-items:center; justify-content:space-between; margin-bottom:.5rem}
-  .mobile-cards .mc-title{font-weight:600; font-size:1rem; color:#0f3d4c}
-  .mobile-cards .mc-body{display:grid; grid-template-columns:1fr; row-gap:.35rem}
-  .mobile-cards .mc-row{display:flex; justify-content:space-between; gap:.5rem}
-  /* Filas anchas (dinero/controles): label arriba, valor a 100% */
-  .mobile-cards .mc-row.mc-row-wide{flex-direction:column; align-items:stretch}
-  .mobile-cards .mc-row.mc-row-wide .mc-label{margin-bottom:.15rem}
-  .mobile-cards .mc-row.mc-row-wide .mc-value{width:100%}
-  .mobile-cards .mc-row.mc-row-wide .mc-value .input-group{width:100%}
-  .mobile-cards .mc-row.mc-row-wide .mc-value .form-control,
-  .mobile-cards .mc-row.mc-row-wide .mc-value .form-select{width:100%; font-size:16px; min-height:44px}
-  .mobile-cards .mc-label{color:#6b7280; font-weight:600; font-size:.88rem}
-  .mobile-cards .mc-value{color:#111827; font-size:.95rem; text-align:right}
-  .mobile-cards .mc-actions{margin-top:.5rem; display:flex; flex-wrap:wrap; gap:.5rem; justify-content:flex-end}
-  .mobile-cards .mc-more{margin-top:.5rem}
-  .mobile-cards .mc-more-toggle{border:1px solid #e5e7eb; background:#f9fafb; color:#0f766e; padding:.35rem .6rem; border-radius:.5rem; font-size:.9rem}
 }
 
 /* Interacciones globales con acento petróleo */
@@ -841,3 +824,79 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
   .table .btn-group .btn{padding:.28rem .42rem; font-size:12px}
   .table .badge{font-size:12px; padding:.3em .48em}
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   C — /clientes y /empresas pasan a CARDS en movil y tablet
+   ───────────────────────────────────────────────────────────────────────────
+   Revierte la "Excepción: en Clientes/Empresas (listas) se prefiere tabla con
+   scroll horizontal" de mas arriba en esta hoja (bloque de 767.98px portrait).
+   Aquellas reglas quedan donde estan a proposito: con `.desktop-table` en
+   display:none son inofensivas, y dejarlas hace que revertir este bloque
+   devuelva la app al comportamiento anterior sin tocar nada mas.
+
+   POR QUE SE ABANDONA EL SCROLL HORIZONTAL EN ESTAS DOS LISTAS
+   La tabla necesita 720px de ancho minimo y el contenedor da 371px a 390px de
+   viewport. Para que entre, `.table-responsive` tiene que llevar
+   `overflow-x:auto`, y por spec CSS eso hace que el OTRO eje se compute a
+   `auto` tambien (el `overflow-y:visible !important` de mas arriba es un no-op
+   comprobado). Con eso el contenedor se vuelve un SCROLLPORT, y de ahi salen
+   los tres sintomas que reporto el cliente, que son el mismo problema:
+     1) `position:sticky` del thead se ancla al scrollport y NO al viewport, asi
+        que el `top:var(--sticky-top)` (alto del navbar) se aplica DENTRO de la
+        caja de la tabla. Medido a 844x390: la fila del thead en top=214 y los
+        `th` pintados en top=270, +56px, tapando la primera fila, con
+        scrollTop=0 y sin scrollear nada;
+     2) por eso mismo mas arriba se apagan los DOS mecanismos de header fijo en
+        portrait (`position:static` y `.sticky-thead-wrap{display:none}`), o sea
+        que al scrollear no queda ningun encabezado;
+     3) cualquier popup `position:absolute` de adentro (el menu de 3 puntos) lo
+        recorta el scrollport, y escapar de ahi obliga a hacks con Popper.
+   O sea: mientras la estrategia sea "tabla de 720px en un viewport de 371px",
+   el contenedor TIENE que ser scrollport, y entonces el header fijo y los menus
+   flotantes no pueden funcionar. No es un bug de CSS, es la estrategia. En
+   cards no hay scrollport: no hay nada que recortar ni nada que anclar mal.
+
+   EL TECHO ES 991.98px Y NO 767.98px, A PROPOSITO
+   El caso que reporto el cliente con captura es un telefono EN HORIZONTAL:
+   844x390. Ahi `max-width:767.98px` no matchea, asi que ni el bloque portrait
+   ni el landscape aplican, la tabla vuelve al sticky del tope de esta hoja y
+   aparece el solapamiento de +56px descrito arriba. Un techo en 767.98px
+   dejaria roto justamente el caso de la captura. 991.98px ademas es el mismo
+   corte que usa el fullscreen de modales, y desde 992px entra el sidebar.
+   Escritorio (>=992px) INTACTO: ahi el navbar movil esta oculto, `--sticky-top`
+   vale 0px y el desplazamiento no existe.
+
+   Se scopea a estas dos vistas y no se toca el framework generico de mas
+   arriba, para no cambiarle el breakpoint a crm/cobranzas/cobranzas_pendientes,
+   que hoy pasan a cards recien en 767.98px portrait.                          */
+@media (max-width: 991.98px){
+  body[data-active="clientes"] .desktop-table,
+  body[data-active="empresas"] .desktop-table{display:none}
+  body[data-active="clientes"] .mobile-cards,
+  body[data-active="empresas"] .mobile-cards{display:flex; flex-direction:column; gap:.75rem}
+}
+
+/* C — presentacion de las cards, FUERA de todo media query.
+   Estaba adentro del bloque `max-width:767.98px and (orientation:portrait)`, asi
+   que a 844x390 (telefono en horizontal, el caso de la captura del cliente) las
+   cards se mostraban SIN estilos: label y valor apilados y a tamaño completo.
+   Que las cards se VEAN o no es cosa del breakpoint; como se ven, no. El
+   selector exige `.mobile-cards`, que arranca en display:none, asi que sacar
+   estas reglas del media query no cambia nada en las vistas que no usan cards. */
+.mobile-cards .mc-card{background:#fff; border:1px solid #e5e7eb; border-radius:.75rem; box-shadow:0 2px 8px rgba(0,0,0,.05); padding:.75rem .9rem}
+.mobile-cards .mc-header{display:flex; align-items:center; justify-content:space-between; margin-bottom:.5rem}
+.mobile-cards .mc-title{font-weight:600; font-size:1rem; color:#0f3d4c}
+.mobile-cards .mc-body{display:grid; grid-template-columns:1fr; row-gap:.35rem}
+.mobile-cards .mc-row{display:flex; justify-content:space-between; gap:.5rem}
+/* Filas anchas (dinero/controles): label arriba, valor a 100% */
+.mobile-cards .mc-row.mc-row-wide{flex-direction:column; align-items:stretch}
+.mobile-cards .mc-row.mc-row-wide .mc-label{margin-bottom:.15rem}
+.mobile-cards .mc-row.mc-row-wide .mc-value{width:100%}
+.mobile-cards .mc-row.mc-row-wide .mc-value .input-group{width:100%}
+.mobile-cards .mc-row.mc-row-wide .mc-value .form-control,
+.mobile-cards .mc-row.mc-row-wide .mc-value .form-select{width:100%; font-size:16px; min-height:44px}
+.mobile-cards .mc-label{color:#6b7280; font-weight:600; font-size:.88rem}
+.mobile-cards .mc-value{color:#111827; font-size:.95rem; text-align:right}
+.mobile-cards .mc-actions{margin-top:.5rem; display:flex; flex-wrap:wrap; gap:.5rem; justify-content:flex-end}
+.mobile-cards .mc-more{margin-top:.5rem}
+.mobile-cards .mc-more-toggle{border:1px solid #e5e7eb; background:#f9fafb; color:#0f766e; padding:.35rem .6rem; border-radius:.5rem; font-size:.9rem}
