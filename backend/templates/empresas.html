@@ -1198,6 +1198,10 @@
         var yaEnBody = indexarLinkModalesDeBody();
         document.querySelectorAll('.modal[id^="links"]').forEach(function(modalEl){
           try {
+            // La NodeList de querySelectorAll es ESTATICA: sigue teniendo los
+            // duplicados viejos que esta misma pasada ya saco del DOM. Sin este
+            // chequeo los volviamos a colgar de <body> y no se limpiaba nada.
+            if (modalEl.isConnected === false) return;
             if (modalEl.parentElement === document.body) return; // ya movido
             var viejo = yaEnBody[modalEl.id];
             if (viejo && viejo !== modalEl){
