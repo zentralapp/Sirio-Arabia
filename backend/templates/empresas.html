@@ -1213,18 +1213,28 @@
         });
       } catch(e) {}
     }
-    function cleanupOrphanModalState(){
-      try {
-        var hasVisibleModal = !!document.querySelector('.modal.show');
-        if (hasVisibleModal) return;
-        document.querySelectorAll('.modal-backdrop').forEach(function(bd){
-          try { bd.remove(); } catch(e0) {}
-        });
-        document.body.classList.remove('modal-open');
-        document.body.style.removeProperty('overflow');
-        document.body.style.removeProperty('padding-right');
-      } catch(e) {}
-    }
+    /* NO VOLVER A PONER UN `cleanupOrphanModalState()` LOCAL ACA.
+       ───────────────────────────────────────────────────────────────────────
+       Habia uno, y era un BUG, no una red de seguridad. Chequeaba
+       `document.querySelector('.modal.show')` a secas, que es EXACTAMENTE el
+       chequeo que layout.html (~:956) documenta como insuficiente, y lo
+       disparaba con `setTimeout(..., 0)` justo despues del click que abre el
+       modal. En bootstrap 5.3 `Modal.show()` muestra primero el backdrop y
+       espera su transicion (~150ms) antes de agregarle la clase `show` al
+       modal: en el tick 0 todavia NO hay ningun `.modal.show`, asi que la
+       limpieza no hacia early-return y borraba el `.modal-backdrop` recien
+       creado, `body.modal-open` y `body.style.overflow`, o sea el scroll-lock.
+
+       La version buena vive en layout.html:981-1000, usa `isReallyVisible()`
+       (clase + display + rect, no solo la clase), ademas fuerza el cierre de
+       los modales "pegados", y cubre MAS disparadores que la local:
+         hidden.bs.modal (:1072)        <- mismo que tenia la local
+         click en [data-bs-toggle=modal] (:1076, a los 250ms, y sin acotar a
+                                          los botones `#links`)
+         toque en el velo (:1049-1050)
+         click en [data-bs-dismiss=modal] (:1057)
+         pageshow (:1084)
+       O sea: borrarla no deja ningun caso sin cubrir. */
 
     // `window.SirioList` lo define js/app.js, que se carga en el PIE de
     // layout.html: cuando corre este script inline todavia no existe. Por eso
@@ -1245,16 +1255,13 @@
       engancharListado();
     }
 
-    document.addEventListener('hidden.bs.modal', function(){
-      setTimeout(cleanupOrphanModalState, 0);
-    });
-
+    // Solo cerrar el menu de 3 puntos: la limpieza de estado huerfano la hace
+    // layout.html, con el chequeo correcto y con el timing correcto.
     document.addEventListener('click', function(e){
       try {
         var btn = e.target && e.target.closest ? e.target.closest('button[data-bs-toggle="modal"][data-bs-target^="#links"]') : null;
         if (!btn) return;
         safeHideDropdown(btn);
-        setTimeout(cleanupOrphanModalState, 0);
       } catch(err) {}
     });
 })();
