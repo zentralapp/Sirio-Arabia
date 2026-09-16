@@ -362,27 +362,6 @@ h1,h2{letter-spacing:.2px}
   .table .btn-group{flex-wrap:nowrap}
   .table .btn-group form{display:inline-block}
   .table .btn-group .btn{white-space:nowrap}
-
-  /* Deudas/Status (mobile): overrides finales para monto y badges */
-  body[data-active="deudas"] .table-cobranzas td.col-money .input-group-text,
-  body[data-active="status"] td.col-money .input-group-text{
-    font-size:12px !important;
-    padding:.18rem .35rem !important;
-  }
-  body[data-active="deudas"] .table-cobranzas td.col-money .form-control,
-  body[data-active="status"] td.col-money .form-control{
-    font-size:12px !important;
-    min-height:26px !important;
-    height:26px !important;
-    padding:.2rem .35rem !important;
-    line-height:1.1 !important;
-  }
-  body[data-active="deudas"] .table-cobranzas td.col-money input,
-  body[data-active="status"] td.col-money input{min-height:26px !important; height:26px !important}
-
-  body[data-active="deudas"] .table .badge,
-  body[data-active="status"] .table .badge{font-size:.95rem !important; padding:.42em .66em !important; font-weight:700 !important}
-
   /* Deudas/Status (mobile): overrides finales para monto y badges */
   body[data-active="deudas"] .table-cobranzas td.col-money .input-group-text,
   body[data-active="status"] td.col-money .input-group-text{
