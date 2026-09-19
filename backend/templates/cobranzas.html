@@ -42,6 +42,16 @@
 
     .date-soft .form-control { background:#fafafa; border:1px solid #e5e7eb; min-height:36px; font-size:.9rem; }
 
+    /* T1-B — `.9rem` NO alcanza en mobile. `html{font-size}` baja a 13.25px
+       (<=576px) y 12.75px (<=400px) en app.css, asi que ese `.9rem` computaba
+       11.5-11.9px REALES y iOS Safari hace zoom al enfocar cualquier input por
+       debajo de 16px. Y el `min-height:36px` de la linea de arriba tiene mas
+       especificidad que el piso tactil `.form-control{min-height:44px}` de
+       layout.html, o sea que tambien lo estaba pisando: se repone aca. */
+    @media (max-width: 991.98px) {
+      .date-soft .form-control { font-size:16px; min-height:44px; }
+    }
+
     .date-soft .form-control:focus { background:#fff; border-color:#86b7fe; box-shadow:0 0 0 .2rem rgba(13,110,253,.15); }
 
     .date-soft .btn-clear { border:1px solid #e5e7eb; background:#fff; padding:.25rem .5rem; color:#6c757d; }

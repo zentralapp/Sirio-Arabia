@@ -84,7 +84,9 @@
     .db-table thead th{ font-size:12px; }
     .db-table tbody td{ font-size:12px; }
     .db-link{ font-size:12px; }
-    .db-range .form-control{ font-size:12px; }
+    /* T1-B: `.db-range .form-control` YA NO baja a 12px. Es un `<input type=date>`
+       real y por debajo de 16px iOS Safari hace zoom al enfocarlo. Su tipografía
+       la fija ahora el bloque anti-zoom de más abajo. */
     .db-filter-bar .btn-sm{ font-size:12px; }
     .db-kpi-title{ font-size:11px; }
     .db-filter-label{ font-size:11px; }
@@ -102,6 +104,39 @@
     .db-range .form-control{ min-height:40px; }
     .db-filter-bar .form-select, .db-filter-bar .form-control{ min-height:40px; }
     .db-link{ display:inline-block; min-height:40px; padding-top:.5rem; padding-bottom:.5rem; }
+  }
+
+  /* ── T1-B: ANTI-ZOOM DE iOS EN LA BARRA DE FILTROS ─────────────────────────
+     iOS Safari hace zoom automático al enfocar un input con font-size computado
+     < 16px, y al volver deja la página descuadrada. Los controles del filtro
+     eran los peores de toda la app: `.db-filter-bar .form-select-sm{.78rem}` y
+     `.db-range .form-control{.77rem}` sobre un `html{font-size:12.75px}`
+     computaban 9.95px y 9.82px REALES a 390px (medido).
+     En px y no en rem: el piso NO debe volver a escalar con el html{font-size}.
+     El techo es 991.98px y no 767.98px porque a 800px esos mismos rem seguían
+     dando 12.3-12.5px, o sea también por debajo del umbral.
+     `height:auto` es obligatorio: las reglas de arriba clavan `height:26px` y
+     `height:30px`, y 16px de texto no entra ahí. El alto táctil lo pone el
+     min-height. El `.btn-sm` NO se toca: un botón no recibe foco de teclado y
+     por lo tanto no dispara el zoom.
+     El `input` de Tom Select va aparte porque lo genera el JS y no lleva
+     `.form-control`: hereda el .875rem propio del componente (14px a 800px). */
+  @media (max-width: 991.98px){
+    .db-filter-bar .form-control,
+    .db-filter-bar .form-select,
+    .db-range .form-control,
+    .db-filter-bar .ts-control,
+    .db-filter-bar .ts-control > input{
+      font-size:16px; height:auto; min-height:44px;
+    }
+    /* Subir los dos `<input type=date>` del período a 16px los ensancha: su
+       min-content nativo pasa a 164px cada uno y `.db-range` pedía 346px
+       dentro de 327px disponibles a 360px de viewport => 3px de scroll
+       horizontal del BODY (medido). `min-width:0` le saca el piso de
+       min-content al flex item para que pueda encoger, y `flex-wrap` es la red
+       de seguridad para que en el peor caso apilen en vez de desbordar. */
+    .db-range{ padding:.2rem .35rem; flex-wrap:wrap; }
+    .db-range .form-control{ flex:1 1 130px; min-width:0; }
   }
 </style>
 

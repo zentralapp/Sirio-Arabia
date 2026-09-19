@@ -249,26 +249,33 @@ h1,h2{letter-spacing:.2px}
   body[data-active="deudas"] .js-cob-price-group .input-group-text,
   body[data-active="status"] .js-price-group .input-group-text,
   body[data-active="status"] .js-cob-price-group .input-group-text{padding:.18rem .35rem !important; font-size:12px}
+  /* T1-B — 16px OBLIGATORIO. iOS Safari hace zoom al enfocar un input con
+     font-size computado < 16px y descuadra la pantalla; el umbral es exacto y
+     SOLO lo dispara la tipografia. Estaba en 12px con alto fijo de 26px.
+     El alto pasa a `auto` con piso de 32px porque 16px de texto no entra en
+     26px: se clipeaba. La compactacion visual se mantiene apretando padding y
+     line-height, que no disparan el zoom. La fila queda un poco mas alta: es
+     el precio aceptado a cambio de que el input no dispare el zoom. */
   body[data-active="deudas"] .js-cob-price-group .form-control,
   body[data-active="status"] .js-price-group .form-control,
   body[data-active="status"] .js-cob-price-group .form-control{
-    font-size:12px !important;
-    min-height:26px !important;
-    height:26px !important;
-    padding:.25rem .4rem !important;
-    line-height:1.1 !important;
+    font-size:16px !important;
+    min-height:32px !important;
+    height:auto !important;
+    padding:.15rem .35rem !important;
+    line-height:1.15 !important;
   }
   body[data-active="deudas"] .js-cob-price-group .form-control.form-control-sm,
   body[data-active="status"] .js-price-group .form-control.form-control-sm,
   body[data-active="status"] .js-cob-price-group .form-control.form-control-sm{
-    min-height:26px !important;
-    height:26px !important;
-    font-size:12px !important;
-    padding:.2rem .35rem !important;
+    min-height:32px !important;
+    height:auto !important;
+    font-size:16px !important;
+    padding:.15rem .3rem !important;
   }
   body[data-active="deudas"] .js-cob-price-group input,
   body[data-active="status"] .js-price-group input,
-  body[data-active="status"] .js-cob-price-group input{min-height:26px !important; height:26px !important}
+  body[data-active="status"] .js-cob-price-group input{min-height:32px !important; height:auto !important}
   body[data-active="deudas"] td.col-money,
   body[data-active="status"] td.col-money{min-width:150px !important}
 
@@ -368,16 +375,19 @@ h1,h2{letter-spacing:.2px}
     font-size:12px !important;
     padding:.18rem .35rem !important;
   }
+  /* T1-B — 16px OBLIGATORIO, mismo motivo que el bloque gemelo de portrait de
+     mas arriba: por debajo de 16px iOS hace zoom al enfocar. Alto a `auto` con
+     piso de 32px porque 16px no entra en 26px. */
   body[data-active="deudas"] .table-cobranzas td.col-money .form-control,
   body[data-active="status"] td.col-money .form-control{
-    font-size:12px !important;
-    min-height:26px !important;
-    height:26px !important;
-    padding:.2rem .35rem !important;
-    line-height:1.1 !important;
+    font-size:16px !important;
+    min-height:32px !important;
+    height:auto !important;
+    padding:.15rem .3rem !important;
+    line-height:1.15 !important;
   }
   body[data-active="deudas"] .table-cobranzas td.col-money input,
-  body[data-active="status"] td.col-money input{min-height:26px !important; height:26px !important}
+  body[data-active="status"] td.col-money input{min-height:32px !important; height:auto !important}
 
   body[data-active="deudas"] .table .badge,
   body[data-active="status"] .table .badge{font-size:.95rem !important; padding:.42em .66em !important; font-weight:700 !important}
@@ -618,11 +628,36 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
      contenedor). El ancho de columna de /deudas — la única tabla que
      desbordaba fuerte — se ajusta en su propio template (cobranzas.html). */
   .js-forma, .js-cob-forma, .js-cob-estimado{max-width:118px}
-  .table .form-control.form-control-sm,
-  .table .form-select.form-select-sm{font-size:12px; padding:.24rem .4rem}
+  /* T1-B: los INPUTS y SELECTS de esta banda ya NO se compactan acá. Su
+     tipografía se parte en dos sub-bandas justo debajo, porque 768-991.98px es
+     tacto (tablet / teléfono horizontal) y 992-1199.98px es mouse. Acá quedan
+     sólo los elementos que NO reciben foco de teclado y por lo tanto no
+     disparan el zoom de iOS. */
   .table .input-group .input-group-text{padding:.2rem .35rem; font-size:12px}
   .table .btn-group .btn{padding:.28rem .42rem; font-size:12px}
   .table .badge{font-size:12px; padding:.3em .48em}
+}
+
+/* T1-B — LOS CONTROLES DE TABLA SE PARTEN EN DOS SUB-BANDAS. NO VOLVER A
+   UNIFICARLOS EN UN SOLO `768-1199.98`.
+   ───────────────────────────────────────────────────────────────────────────
+   `.table .form-control-sm{font-size:12px}` vivía en el bloque 768-1199.98px de
+   arriba. Esa banda mezcla dos mundos: de 768 a 991.98 se usa con el dedo
+   (tablet vertical, tablet Android, teléfono en horizontal) y ahí 12px dispara
+   el zoom automático de iOS Safari al enfocar; de 992 a 1199.98 es mouse y la
+   compactación de 12px es deseable para que la tabla entre.
+   Medido a 800x1000 con la regla unificada: 210 inputs por debajo de 16px, el
+   grueso en /deudas (80), /estado-clientes (60) y /status (22).
+   La sub-banda táctil sube a 16px y compensa el tamaño visual apretando padding
+   y line-height, que NO cuentan para el umbral de iOS. La sub-banda de mouse
+   conserva los 12px originales, o sea el escritorio queda INTACTO.            */
+@media (min-width: 768px) and (max-width: 991.98px){
+  .table .form-control.form-control-sm,
+  .table .form-select.form-select-sm{font-size:16px; padding:.15rem .3rem; height:auto; line-height:1.15}
+}
+@media (min-width: 992px) and (max-width: 1199.98px){
+  .table .form-control.form-control-sm,
+  .table .form-select.form-select-sm{font-size:12px; padding:.24rem .4rem}
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

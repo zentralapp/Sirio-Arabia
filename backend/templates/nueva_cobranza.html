@@ -99,6 +99,14 @@
         .pm-wrap{ display:grid; grid-template-columns: repeat(2, minmax(240px, 1fr)); gap:1rem; }
         @media (max-width: 991.98px){ .pm-wrap{ grid-template-columns: 1fr; } }
         .pm-card .form-control, .pm-card .form-select{ font-size:.95rem; }
+        /* T1-B — `.95rem` NO alcanza en mobile: `html{font-size}` cae a 13.25px
+           (<=576px) y 12.75px (<=400px) en app.css, asi que computaba 12.11px
+           REALES (medido a 390px) y iOS Safari hace zoom al enfocar cualquier
+           input por debajo de 16px. A 800px computaba 15.2px, que tambien esta
+           por debajo del umbral. Por eso el techo es 991.98px y no 767.98px. */
+        @media (max-width: 991.98px){
+          .pm-card .form-control, .pm-card .form-select{ font-size:16px; }
+        }
         .pm-extras{ border: 1px dashed rgba(0,0,0,.15); border-radius: .5rem; padding: .5rem; background: rgba(0,0,0,.02); }
         .pm-extra-item{ border: 1px solid rgba(0,0,0,.10); border-radius: .5rem; padding: .5rem; background: #fff; }
         .pm-extra-row{ display:flex; align-items:end; gap:.5rem; flex-wrap:wrap; }
