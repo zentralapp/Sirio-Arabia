@@ -323,7 +323,7 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="{{ url_for('static', filename='vendor/chartjs/4.5.1/chart.umd.min.js') }}"></script>
 <script id="dashboardDataJson" type="application/json">{{ {
   "filters": f,
   "orders_chart": orders_chart,
