@@ -148,6 +148,33 @@
            estirado y el ancho colapsado es un óvalo aunque tenga texto.        */
         .btn:has(> i.bi:only-child),
         .btn.rounded-circle { min-width: 44px; }
+
+        /* T1-D — LOS TRES TARGETS DE LA BARRA SUPERIOR.
+           Fallan en LAS 22 PÁGINAS AUTENTICADAS, o sea que un solo arreglo de
+           tres reglas se lleva 110 hallazgos. Ninguno de los tres es un `.btn`,
+           por eso el piso táctil de arriba nunca los tocó. Medido a 390px:
+             .navbar-brand            220.7 x 25.8px  -> falta alto
+             .navbar-toggler           45.0 x 32.3px  -> falta alto
+             campana de notificaciones 30.8 x 44px    -> falta ancho, y el
+                                                         contenido partía en
+                                                         varias líneas.
+           La campana lleva un `.badge` en `position:absolute` que infla el
+           contenido del ancla: con `inline-flex` + `line-height:1` el badge
+           sale del flujo de verdad y el ancla vuelve a medir lo que mide el
+           ícono. Se selecciona por su `aria-label` a propósito: es el mismo
+           gancho que ya usa el JS de este archivo para actualizar el contador,
+           así que no hace falta tocar el markup. */
+        .navbar-brand { min-height: 44px; }
+        .navbar-toggler { min-width: 44px; min-height: 44px; }
+        a[aria-label="Centro de notificaciones"] {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 44px;
+          min-height: 44px;
+          line-height: 1;
+          white-space: nowrap;
+        }
       }
 
       /* ═══════════════════════════════════════════════════════════════════════
