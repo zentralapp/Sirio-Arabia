@@ -231,6 +231,41 @@
           display: flex; flex-direction: column;
         }
         .modal-header, .modal-footer { flex: 0 0 auto; }
+
+        /* H12c — UN `<form>` ENTRE `.modal-content` Y `.modal-body` CORTA LA
+           CADENA FLEX.
+           ───────────────────────────────────────────────────────────────────
+           `.modal-body{flex:1 1 auto; min-height:0}` solo hace algo si el PADRE
+           del body es el contenedor flex. En historial.html el `.modal-content`
+           abre, despues entra un `<form>` y recien adentro viene el
+           `.modal-body`: el form es un `display:block` comun, asi que el body
+           deja de ser flex item, no recibe altura y no scrollea. El que termina
+           scrolleando es el overlay `.modal` (position:fixed), o sea el sintoma
+           (2) del bloque de arriba, y el footer con Guardar nace abajo del
+           pliegue. Medido en /historial con el modal `orderDetails` abierto:
+             360x740        footer 361.1px abajo del pliegue
+             390x844        footer 257.1px abajo del pliegue
+             740x360 land   footer 892.6px abajo del pliegue
+           En los tres, `.modal` scrolleaba y `.modal-body` no.
+
+           POR QUE SE ARREGLA POR CSS Y NO MOVIENDO EL `<form>` ADENTRO DEL
+           `.modal-body`: mover el form dejaria el `.modal-footer` FUERA de el.
+           Hoy el boton Guardar se asocia por `form="histForm{id}"`, asi que el
+           submit sobreviviria, pero `form.elements` / `new FormData(form)`
+           dejarian de ver cualquier control del footer, y meter un `<form>`
+           nuevo adentro del body rompe los selectores `.modal-body > *`. Hacer
+           que el form PARTICIPE de la cadena no toca el markup ni el DOM de
+           ningun script, y de yapa cubre a cualquier vista que caiga en el
+           mismo anidado. Se apunta solo al form que es hijo directo del
+           `.modal-content` (hoy: solo historial.html de las 9 plantillas con
+           modales), asi que ningun otro modal cambia. */
+        .modal-content > form {
+          display: flex;
+          flex-direction: column;
+          flex: 1 1 auto;
+          min-height: 0;
+        }
+
         .modal-body {
           flex: 1 1 auto;
           min-height: 0;           /* sin esto el flex item no encoge y no scrollea */
