@@ -1420,25 +1420,29 @@
   }
 
   function safeHideDropdown(fromEl){
-
     try {
-
-      var dd = fromEl && fromEl.closest ? fromEl.closest('.dropdown') : null;
-
-      if (!dd) return;
-
-      var toggle = dd.querySelector('[data-bs-toggle="dropdown"]');
-
-      if (!toggle) return;
-
-      if (window.bootstrap && window.bootstrap.Dropdown){
-
-        try { window.bootstrap.Dropdown.getOrCreateInstance(toggle).hide(); } catch(e0) {}
-
+      // Con el menu portalizado a <body> (bloque E de app.js, desde da878de) el
+      // boton ya NO tiene un `.dropdown` de ancestro, asi que primero se
+      // pregunta al portal por el toggle y recien despues se cae al camino de
+      // siempre. Mismo patron que clientes.html:1294 y empresas.html:1207.
+      var toggle = (window.SirioMenuPortal && window.SirioMenuPortal.toggleDe)
+        ? window.SirioMenuPortal.toggleDe(fromEl) : null;
+      if (!toggle){
+        var dd = fromEl && fromEl.closest ? fromEl.closest('.dropdown') : null;
+        if (!dd) return;
+        toggle = dd.querySelector('[data-bs-toggle="dropdown"]');
       }
-
+      if (!toggle) return;
+      // getInstance y NO getOrCreateInstance: crear la instancia aca la crearia
+      // SIN el popperConfig de `fijarMenusDeTabla` (app.js), y
+      // `getOrCreateInstance` despues devuelve esa e IGNORA el config, o sea el
+      // menu quedaria position:absolute y lo clipearia el .table-responsive.
+      // Si no hay instancia, el menu no esta abierto y no hay nada que cerrar.
+      if (window.bootstrap && window.bootstrap.Dropdown){
+        var inst = window.bootstrap.Dropdown.getInstance(toggle);
+        if (inst) { try { inst.hide(); } catch(e0) {} }
+      }
     } catch(e) {}
-
   }
 
   /* NO VOLVER A PONER UN `cleanupOrphanModalState()` LOCAL ACA.
