@@ -122,6 +122,32 @@
          `app.css` sin necesidad de un solo `!important`.                       */
       @media (max-width: 991.98px) {
         .btn, .form-control, .form-select { min-height: 44px; font-size: 16px; }
+
+        /* T1-C — EL ANCHO DE LOS BOTONES ÍCONO-ONLY.
+           CAUSA: el `min-height:44px` de la línea de arriba les estira el alto
+           y NADA les sostiene el ancho, así que quedan óvalos verticales.
+           Medido a 390px antes del fix: 144 botones con ancho < 44px y alto
+           >= 40px en 22 rutas; el peor, `/notificaciones`, con 59 botones
+           `rounded-circle` renderizando a 19.8 x 44px.
+
+           POR QUÉ NO SE PONE `min-width:44px` EN TODO `.btn` — PROBADO Y
+           REVERTIDO. Para un flex item el default es `min-width:auto`, que es
+           JUSTO lo que le impide encogerse por debajo de su min-content.
+           Declarar `min-width:44px` REEMPLAZA esa protección: el botón deja de
+           tener piso de min-content y el navegador lo puede achicar hasta 44.
+           Medido a 800px en /estado-clientes: los 50 botones "Guardar" (que
+           viven en un `form.d-inline-flex`) pasaron de 85px en una línea a 61px
+           partidos en DOS líneas. Un botón con texto NO necesita este piso: ya
+           es más ancho que 44px por su propio contenido.
+
+           Se apunta sólo a los que no tienen texto que proteger: `:has()` con
+           `:only-child` da "el único hijo elemento es un ícono". `:has()` es
+           Safari 15.4+ / Chrome 105+; si un navegador viejo lo ignora, la regla
+           entera se descarta y volvemos al estado previo, que es degradación
+           limpia. Se suma `.rounded-circle` porque un botón redondo con el alto
+           estirado y el ancho colapsado es un óvalo aunque tenga texto.        */
+        .btn:has(> i.bi:only-child),
+        .btn.rounded-circle { min-width: 44px; }
       }
 
       /* ═══════════════════════════════════════════════════════════════════════
