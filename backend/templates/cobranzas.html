@@ -1441,29 +1441,31 @@
 
   }
 
-  function cleanupOrphanModalState(){
+  /* NO VOLVER A PONER UN `cleanupOrphanModalState()` LOCAL ACA.
+     ─────────────────────────────────────────────────────────────────────────
+     Habia uno, y era un BUG, no una red de seguridad. Es la TERCERA copia del
+     mismo error (ya se borro de /clientes y de /empresas en 93a67ec).
 
-    try {
+     Chequeaba `document.querySelector('.modal.show')` a secas — el chequeo que
+     layout.html (~:1105) documenta como insuficiente — y lo disparaba con
+     `setTimeout(..., 0)` en el click que ABRE el modal. En bootstrap 5.3
+     `Modal.show()` muestra primero el backdrop y espera su transicion (~150ms)
+     antes de ponerle la clase `show` al modal: en el tick 0 todavia NO hay
+     ningun `.modal.show`, asi que la limpieza no hacia early-return y borraba
+     el `.modal-backdrop` recien creado, `body.modal-open` y el scroll-lock.
+     Medido: delOrder y markPaid abrian SIN velo y SIN scroll-lock en los 4
+     viewports mobile y tambien en desktop 1280.
 
-      var hasVisibleModal = !!document.querySelector('.modal.show');
-
-      if (hasVisibleModal) return;
-
-      document.querySelectorAll('.modal-backdrop').forEach(function(bd){
-
-        try { bd.remove(); } catch(e0) {}
-
-      });
-
-      document.body.classList.remove('modal-open');
-
-      document.body.style.removeProperty('overflow');
-
-      document.body.style.removeProperty('padding-right');
-
-    } catch(e) {}
-
-  }
+     La version buena vive en layout.html:1129-1147, usa `isReallyVisible()`
+     (clase + display + rect, no solo la clase), ademas fuerza el cierre de los
+     modales "pegados", y cubre MAS disparadores que la local:
+       hidden.bs.modal (:1220)          <- mismo que tenia la local
+       click en [data-bs-toggle=modal] (:1226, a los 250ms, y sin acotar a
+                                        markPaid/delOrder/editOrder)
+       toque en el velo (:1196-1197)
+       click en [data-bs-dismiss=modal] (:1205)
+       pageshow (:1232)
+     O sea: borrarla no deja ningun caso sin cubrir. */
 
 
 
@@ -1489,19 +1491,10 @@
 
       safeHideDropdown(btn);
 
-      setTimeout(cleanupOrphanModalState, 0);
-
     } catch(err) {}
 
   });
 
-
-
-  document.addEventListener('hidden.bs.modal', function(){
-
-    setTimeout(cleanupOrphanModalState, 0);
-
-  });
 
 })();
 
