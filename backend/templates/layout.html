@@ -95,6 +95,36 @@
       }
 
       /* ═══════════════════════════════════════════════════════════════════════
+         T1-A — PISO TÁCTIL (44px) Y ANTI-ZOOM DE iOS (16px) HASTA 991.98px.
+         NO BORRAR. NO FUSIONAR con el bloque `max-width:767.98px` de arriba.
+         ───────────────────────────────────────────────────────────────────────
+         AGUJERO MEDIDO QUE TAPA: el único lugar de toda la app donde existía el
+         piso de 44px y el anti-zoom de 16px era la regla
+         `.btn,.form-control,.form-select` del bloque `max-width:767.98px` de
+         arriba. De 768px para arriba no había NADA, y la auditoría de 23 rutas
+         × 3 viewports lo mostró como un salto brutal en la cuenta de inputs con
+         `font-size` < 16px (los que disparan el zoom automático de iOS Safari):
+             360px -> 48     390px -> 48     800px -> 220
+         O sea: tablet vertical, tablet Android y teléfono en horizontal (la
+         banda 768-991.98px) quedaban sin blindaje, que es justo la franja donde
+         el dedo sigue siendo el puntero.
+
+         POR QUÉ ES UN BLOQUE HERMANO Y NO SE SUBIÓ EL TECHO DEL DE 767.98px:
+         ese bloque también contiene `.table{font-size:13px}` y el padding
+         compacto de celdas. Subirlos a 991.98px achicaría las tablas en tablet,
+         que hoy se ven bien. Sería una regresión, no un arreglo. Acá va SÓLO el
+         blindaje táctil y tipográfico, nada de tipografía de tabla.
+
+         POR QUÉ VIVE EN layout.html Y NO EN app.css: `app.css` se linkea en el
+         `<head>` ANTES de este `<style>`, así que pierde todos los empates de
+         especificidad contra él (las media queries no aportan especificidad).
+         Puesto acá, gana contra los `.form-control{font-size:.92rem}` de
+         `app.css` sin necesidad de un solo `!important`.                       */
+      @media (max-width: 991.98px) {
+        .btn, .form-control, .form-select { min-height: 44px; font-size: 16px; }
+      }
+
+      /* ═══════════════════════════════════════════════════════════════════════
          Modales fullscreen en móvil Y TABLET.
          ───────────────────────────────────────────────────────────────────────
          NO BORRAR el layout flex. Antes esto era solo
