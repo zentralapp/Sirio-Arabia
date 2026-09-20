@@ -304,22 +304,50 @@
         gap: .45rem !important;
       }
 
+      /* ── LOS FILTROS DE ESTADO: GRID, NO FLEX-WRAP ────────────────────────
+         SINTOMA MEDIDO a 390x844: "En camino | A cobrar | Parcial | Atrasado"
+         entraban en una fila y "Cobrado" quedaba SOLO en la siguiente,
+         estirado a 378.3px = 97% del viewport. A 360px: 348.3px = 96.8%.
+
+         CAUSA: `flex-wrap: wrap` + `flex: 1 1 auto` + `min-width: 86px`. Con
+         5 botones de 86px minimo en 377px utiles entran 4 por fila; el quinto
+         baja solo y `flex-grow: 1` le da TODO el espacio sobrante de su fila.
+         Es el comportamiento normal de flexbox: el reparto se hace por fila y
+         una fila de un solo item se la lleva entera. Flexbox no tiene forma de
+         alinear en columnas entre filas distintas — eso es literalmente lo que
+         diferencia a grid.
+
+         ARREGLO: grid de columnas iguales. Cada boton mide exactamente
+         1/cols, este en la fila que este. La cantidad de columnas va por
+         custom property porque los dos grupos tienen distinta cantidad de
+         botones: 5 estados -> 3 columnas, 2 tipos de comprobante -> 2.
+
+         Hay que resetear `margin-left` y `border-radius`: `.btn-group` de
+         bootstrap pega los botones con `margin-left:-1px` y les saca las
+         esquinas, y con `gap` eso queda desalineado. Ya venian separados de
+         hecho, por el wrap.
+
+         Medido despues: 5 botones en 3+2, todos de 123.2px = 31.6% del
+         viewport a 390px (31.4% a 360, 31.6% a 414). Ninguno desborda su
+         texto (scrollWidth == clientWidth). A partir de 768px no cambia nada:
+         entran los 5 en una fila como siempre.                               */
       .cob-filter-wrap .btn-group {
         width: 100%;
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(var(--cob-filtro-cols, 2), minmax(0, 1fr));
+        gap: .3rem;
         margin-left: 0 !important;
       }
 
-      .cob-filter-wrap .btn-group .btn {
-        flex: 1 1 auto;
-        min-width: 86px;
-        padding: .38rem .5rem;
-        font-size: .84rem;
-      }
+      .cob-filter-wrap .cob-filter { --cob-filtro-cols: 3; }   /* 5 estados */
+      .cob-filter-wrap .cob-type-group { --cob-filtro-cols: 2; } /* Factura / Remito */
 
-      .cob-type-group .btn {
-        min-width: 96px;
+      .cob-filter-wrap .btn-group > .btn {
+        min-width: 0;
+        margin-left: 0;
+        border-radius: .3rem;
+        padding: .38rem .35rem;
+        font-size: .84rem;
       }
 
       .cob-date-range {

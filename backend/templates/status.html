@@ -133,16 +133,27 @@
         align-items: stretch !important;
         gap: .45rem !important;
       }
+      /* Mismo grid que los filtros de /deudas (ver el comentario largo en
+         cobranzas.html). Aca HOY no hay sintoma: son 3 botones de estado y 2
+         de tipo, y a 390px ya salian a 33.1% y 48.9% del viewport. El cambio
+         es un no-op visual medido (mismas 3 columnas, mismos anchos) y saca de
+         encima la bomba de tiempo: en cuanto alguien agregue un cuarto estado,
+         `flex-wrap` + `flex-grow:1` le da la fila entera al que baje solo, que
+         es exactamente lo que pasaba en /deudas con el quinto. */
       .status-filter .btn-group {
         width: 100%;
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(var(--status-filtro-cols, 2), minmax(0, 1fr));
+        gap: .3rem;
         margin-left: 0 !important;
       }
-      .status-filter .btn-group .btn {
-        flex: 1 1 auto;
-        min-width: 98px;
-        padding: .38rem .5rem;
+      .status-filter .status-estado-group { --status-filtro-cols: 3; } /* 3 estados */
+      .status-filter .status-type-group { --status-filtro-cols: 2; }   /* Factura / Remito */
+      .status-filter .btn-group > .btn {
+        min-width: 0;
+        margin-left: 0;
+        border-radius: .3rem;
+        padding: .38rem .35rem;
         font-size: .86rem;
       }
       .status-date-range {
@@ -194,7 +205,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.css') }}">
   <script src="{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.js') }}"></script>
   <form id="statusFilter" class="status-filter d-flex align-items-end gap-2 flex-wrap" method="get">
-    <div class="btn-group filter-group" role="group" aria-label="Filtros de estado">
+    <div class="btn-group filter-group status-estado-group" role="group" aria-label="Filtros de estado">
       <button type="button" class="btn btn-sm btn-outline-secondary {{ 'active' if 'EN_CAMINO' in request.args.getlist('status') else '' }}" data-status="EN_CAMINO" aria-pressed="{{ 'true' if 'EN_CAMINO' in request.args.getlist('status') else 'false' }}">En camino</button>
       <button type="button" class="btn btn-sm btn-outline-danger {{ 'active' if 'ATRASADO' in request.args.getlist('status') else '' }}" data-status="ATRASADO" aria-pressed="{{ 'true' if 'ATRASADO' in request.args.getlist('status') else 'false' }}">Atrasado</button>
       <button type="button" class="btn btn-sm btn-outline-success {{ 'active' if 'ENTREGADO' in request.args.getlist('status') else '' }}" data-status="ENTREGADO" aria-pressed="{{ 'true' if 'ENTREGADO' in request.args.getlist('status') else 'false' }}">Entregado</button>
@@ -202,7 +213,7 @@
     {% for st in request.args.getlist('status') %}
       <input type="hidden" name="status" value="{{ st }}">
     {% endfor %}
-    <div class="btn-group filter-group ms-2" role="group" aria-label="Tipo de comprobante">
+    <div class="btn-group filter-group status-type-group ms-2" role="group" aria-label="Tipo de comprobante">
       {% set tipos_sel = request.args.getlist('tipo') %}
       <button type="button" class="btn btn-sm btn-outline-primary {{ 'active' if 'FACTURA' in tipos_sel else '' }}" data-tipo="FACTURA" aria-pressed="{{ 'true' if 'FACTURA' in tipos_sel else 'false' }}">Factura</button>
       <button type="button" class="btn btn-sm btn-outline-danger {{ 'active' if 'REMITO' in tipos_sel else '' }}" data-tipo="REMITO" aria-pressed="{{ 'true' if 'REMITO' in tipos_sel else 'false' }}">Remito</button>
