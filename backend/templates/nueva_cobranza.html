@@ -489,8 +489,8 @@
     row.innerHTML = ''
       + '<input class="form-control js-only-number" name="' + (kind === 'ret' ? 'ret_amount' : 'nc_amount') + '" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off">'
       + '<input class="form-control" name="' + (kind === 'ret' ? 'ret_concept' : 'nc_concept') + '" type="text" placeholder="Concepto (opcional)" autocomplete="off">'
-      + '<button type="button" class="btn btn-sm btn-outline-secondary js-money-add" aria-label="Agregar">+</button>'
-      + '<button type="button" class="btn btn-sm btn-outline-danger js-money-remove" aria-label="Eliminar">X</button>';
+      + '<button type="button" class="btn btn-sm btn-outline-secondary js-money-add" aria-label="Agregar"><i class="bi bi-plus-lg"></i></button>'
+      + '<button type="button" class="btn btn-sm btn-outline-danger js-money-remove" aria-label="Eliminar"><i class="bi bi-x-lg"></i></button>';
 
     list.appendChild(row);
 
