@@ -696,10 +696,35 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
      INTACTO.
    - Scopeado a clientes/empresas para NO arrastrar a /status, /deudas,
      /cobranzas e /historial, que tienen el mismo bug latente pero su propio
-     tratamiento (y su propia rama en `topOffset()`). Eso va en otro laburo.   */
+     tratamiento (y su propia rama en `topOffset()`). Eso va en otro laburo.
+
+   ── EL "OTRO LABURO": ESTO YA NO VA SCOPEADO POR VISTA ──────────────────────
+   El bug latente dejo de ser latente. Medido en las 6 vistas con `.table-sticky`
+   (clientes, empresas, deudas, status, historial, eliminados) x 5 viewports,
+   midiendo `th.bottom - row0.top` (cuantos px del `th` pisan la primera fila):
+     800x1000   status / historial / eliminados  -> 60px de solape
+     740x360 L  historial / eliminados           -> 59px de solape
+     el resto                                    -> 0px
+   En /historial eso hacia que el boton "Ver" NO SE PUDIERA TOCAR: el
+   `th.text-end` (sticky, z-index 1020) se comia el tap. Playwright:
+   `<th class="text-end">Ver detalles</th> ... intercepts pointer events`, y
+   `elementFromPoint` sobre el centro del boton devolvia el TH. Con `.click()`
+   por JS si abria, o sea el handler estaba bien: el dedo no llegaba.
+
+   Y en LAS SEIS vistas el `.table-responsive` tiene extent vertical CERO
+   (scrollHeight === clientHeight, medido en los 5 viewports): el sticky de CSS
+   nunca se despega porque su scrollport no scrollea. O sea que no aporta NADA y
+   lo unico que hace es pintarse `--sticky-top` px mas abajo y tapar filas.
+   El header fijo de verdad lo da el clon `position:fixed` de layout.html.
+
+   Por eso la regla deja de enumerar vistas: apagar el sticky de CSS en
+   0-991.98px es correcto para TODAS. Es preferible a sumar una tercera y una
+   cuarta excepcion con nombres de vista hardcodeados. Desde 992px no se toca:
+   ahi `--sticky-top` vale 0px, no hay desplazamiento y escritorio queda INTACTO.
+   Las reglas por vista que ya hacian esto mismo (status/deudas en el bloque de
+   767.98px de arriba) quedan redundantes pero inofensivas.               */
 @media (max-width: 991.98px){
-  body[data-active="clientes"] table.table-sticky thead th,
-  body[data-active="empresas"] table.table-sticky thead th{
+  table.table-sticky thead th{
     position: static !important;
     top: auto !important;
   }
