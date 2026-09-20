@@ -422,19 +422,43 @@
         width: 104px;
       }
 
-      /* Acá el botón va DEBAJO del input, no al lado. El piso táctil de 40px
-         (H9, abajo) más los 104px del input no entran en el ancho de la celda:
-         medido con los dos en fila, `flex-shrink` le comía el input hasta 62px
-         (clientWidth 60 contra 99 que necesita la fecha) y "07/09/2026" salía
-         cortado. Apilados, el input recupera sus ~105px, el botón mantiene los
-         40x40 y la columna NO crece: td.col-venc = 120px y #cobTable = 1195.1px
-         a 576px de viewport, los mismos números que antes del botón. */
+      /* ── EL BOTÓN VUELVE AL LADO DEL INPUT ────────────────────────────────
+         Acá el botón estaba DEBAJO del input. La razón que decía el comentario
+         anterior era correcta pero ya no aplica:
+
+           "El piso táctil de 40px más los 104px del input no entran en el ancho
+            de la celda: con los dos en fila, flex-shrink le comía el input hasta
+            62px y '07/09/2026' salía cortado. Apilados, la columna NO crece:
+            td.col-venc = 120px."
+
+         O sea: apilar era el precio que se pagaba para que la COLUMNA NO
+         CRECIERA. Ese presupuesto lo levantó el usuario por escrito — la tabla
+         ya scrollea en horizontal y lo aceptó. Sin ese techo, apilar sólo
+         cuesta alto de fila: 90px de alto de celda medidos, que empujaban la
+         fila a 99px y dejaban 3 filas por pantalla en un iPhone.
+
+         Lo que hacía falta para ponerlos en fila NO era más ancho a secas: era
+         que el input DEJE DE ENCOGERSE. Tenía `flex:1 1 auto` + `min-width:0`
+         (app.css) y además `width:100%!important`, así que flexbox lo comprimía
+         hasta 62px. Con `flex:0 0 104px` la base es fija, no encoge, y el
+         `width:100%!important` queda sin efecto porque el flex-basis explícito
+         le gana al width.
+
+         La celda se dimensiona sola: `width:1%` + el min-content del flex row
+         = 104 (input) + .2rem (gap) + 40 (botón) + padding de la celda. No hay
+         número mágico que mantener sincronizado a mano. */
       #cobTable td.col-venc .cob-venc-wrap {
-        flex-direction: column;
-        align-items: flex-start;
+        flex-direction: row;
+        align-items: center;
+      }
+
+      #cobTable td.col-date.col-venc {
+        width: 1%;
+        white-space: nowrap;
       }
 
       #cobTable td.col-venc .form-control {
+        flex: 0 0 104px;
         width: 104px;
         max-width: 104px;
       }
