@@ -24,6 +24,12 @@
       .brand-side p, .brand-side .small{color:#f2fbff !important; text-shadow: 0 1px 6px rgba(0,0,0,.25)}
       .divider{display:flex; align-items:center; gap:.75rem; color:#f2fbff; opacity:.95}
       .divider::before, .divider::after{content:""; flex:1; height:1px; background: rgba(242,251,255,.8)}
+
+      {# /login no extiende layout.html (a proposito: no queremos navbar ni
+         sidebar aca), asi que el blindaje tactil hay que traerlo explicitamente.
+         Va al FINAL del <style> para ganarle tambien a las reglas de arriba de
+         este mismo bloque, como el `.btn-teal`. #}
+      {% include '_blindaje_mobile.html' %}
     </style>
   </head>
   <body class="d-flex align-items-center py-4 py-md-5">
