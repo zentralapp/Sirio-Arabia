@@ -2712,8 +2712,6 @@
 
       try { if (el && el._flatpickr) return; } catch(e) {}
 
-      var isRowPago = el.classList && el.classList.contains('js-cob-estimado');
-
       var fpInst = flatpickr(el, {
 
         altInput: true,
@@ -2726,21 +2724,32 @@
 
         disableMobile: true,
 
-        onChange: function(){
+        /* ── ACA NO VA UN onChange QUE SUBMITEE: SALIAN DOS POST POR TOQUE ────
+           Cuando flatpickr termina de correr los hooks de `onChange` dispara
+           ADEMAS eventos nativos sobre el input original (flatpickr.min.js,
+           triggerEvent):
 
-          if (isRowPago){
+             "onChange" === e && (w.input.dispatchEvent(we("change")),
+                                  w.input.dispatchEvent(we("input")))
 
-            var f = el.form || el.closest('form');
+           Ese `change` nativo YA lo escucha el bloque de mas arriba: :2339 para
+           .js-cob-estimado y :2353 para .js-cob-entrega / .js-cob-cobro. Los dos
+           llaman a syncAndSubmit. Un hook `onChange` que encima submiteara por
+           su cuenta le daba a `pago_estimado` DOS submits identicos por un solo
+           toque, mientras entrega y cobro tenian uno. Eso es una escritura de
+           mas en /cobranzas/<id>/update por cada fecha que se toca.
 
-            // Reutilizar syncAndSubmit si existe
+           Medido en /deudas, tap real (touchscreen.tap) sobre un dia del
+           calendario, contando eventos `submit`, en WebKit y Chrome a 390x844
+           y 360x740:
 
-            try{ if (typeof window.syncAndSubmit === 'function') { window.syncAndSubmit(f); return; } }catch(e){}
+             js-cob-entrega   1 -> 1
+             js-cob-estimado  2 -> 1
+             js-cob-cobro     1 -> 1
 
-            if (f) { (f.requestSubmit ? f.requestSubmit() : f.submit()); }
-
-          }
-
-        },
+           El guardado NO cambia: sigue saliendo al seleccionar la fecha, por la
+           misma via de `change` nativo que ya usaban los otros dos campos, y con
+           el mismo payload (pago_estimado en Y-m-d). */
 
         /* ── EL CALENDARIO NO REABRE EN iOS: HAY QUE BLUREAR AL CERRAR ────────
            flatpickr elige el evento de "click afuera" segun el dispositivo
