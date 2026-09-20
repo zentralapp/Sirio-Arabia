@@ -312,6 +312,42 @@
       /* NO BORRAR: sin min-width:0 el flex item no puede encogerse por debajo de su min-content (tablas anchas) y la .row se envuelve, mandando el main debajo del sidebar */
       main.col { min-width: 0; }
 
+      /* ══════════════════════════════════════════════════════════════════════
+         EL CONTENEDOR DE TOASTS SE COMIA LA ESQUINA DEL BOTON HAMBURGUESA
+         ──────────────────────────────────────────────────────────────────────
+         `div.toast-stack` es `position-fixed top-0 end-0 p-3` con z-index 1100,
+         o sea que SIEMPRE esta arriba de todo en el vertice superior derecho,
+         aunque no haya ningun toast: el `.toast` oculto no ocupa lugar pero los
+         `p-3` del contenedor si, y dejan una caja viva de 32 x 32px.
+
+         MEDIDO por el chequeo `obscured_controls` del harness, en LOS DOS
+         motores y en LOS TRES viewports:
+           button.navbar-toggler   rect 305.4, 6.4, 45 x 44
+           blocked_points 1 de 5   (la esquina superior derecha, punto "tr")
+           blocker                 div.position-fixed.top-0.end-0.p-3
+           center_blocked false    -> el centro se podia tocar, el borde no
+         22 rutas autenticadas x 3 viewports x 2 motores. Es el hallazgo mas
+         repetido de toda la auditoria.
+
+         ARREGLO: el patron estandar de "capa de notificaciones". El CONTENEDOR
+         deja de recibir eventos y cada `.toast` los vuelve a pedir. Asi la caja
+         de 32px es transparente al dedo mientras esta vacia, y un toast VISIBLE
+         sigue siendo clickeable (incluido su boton de cerrar, que hereda
+         `pointer-events` del toast).
+
+         POR QUE NO SE MUEVE NI SE ACHICA EL CONTENEDOR: correrlo hacia abajo lo
+         despegaria del borde (es donde el usuario espera el aviso) y sacarle el
+         padding pegaria el toast al vertice de la pantalla. El solape no es un
+         problema de POSICION, es de que una capa vacia intercepte el toque.
+
+         EL SELECTOR DEL HIJO ES `> .toast` A PROPOSITO: el helper `showToast`
+         de este mismo archivo REESCRIBE `el.className` entero en cada llamada
+         ('toast align-items-center border-0 text-bg-' + variante), asi que
+         cualquier clase propia que le pusieramos al toast se perderia en el
+         primer aviso. `.toast` es la unica que el helper garantiza.          */
+      .toast-stack { pointer-events: none; }
+      .toast-stack > .toast { pointer-events: auto; }
+
       @media (max-width: 991.98px) {
         #topMenu {
           max-height: calc(100vh - 56px);
@@ -428,7 +464,7 @@
       </div>
     </div>
     <!-- Toast container global para alertas estéticas -->
-    <div class="position-fixed top-0 end-0 p-3" style="z-index: 1100">
+    <div class="toast-stack position-fixed top-0 end-0 p-3" style="z-index: 1100">
       <div id="appToast" class="toast align-items-center text-bg-primary border-0" role="status" aria-live="assertive" aria-atomic="true" data-bs-delay="2500">
         <div class="d-flex">
           <div id="appToastBody" class="toast-body">Acción realizada</div>
