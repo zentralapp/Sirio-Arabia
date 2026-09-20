@@ -368,6 +368,14 @@
 (function(){
   var currentKind = 'ALL';
   var currentInactBucket = 'ALL';
+
+  // Tipos de alerta que la CAMPANA del navbar cuenta. Sale de los defaults de
+  // _compute_alerts_for_all_clients: inject_notification_count la llama sin
+  // include_delivery_alerts ni include_inactivity_alerts, o sea solo cobranzas
+  // atrasadas. La constante viene del mismo `{% raw %}{% set %}{% endraw %}` que pinta las pills,
+  // asi que si el dia de manana el backend suma un tipo a la campana, se
+  // agrega aca y no hay dos literales sueltos que puedan discrepar.
+  var BELL_KINDS = ['{{ _k_cob }}'];
   var sortStateByTable = new WeakMap();
 
   function getRowTextAttr(row, key){
@@ -715,7 +723,36 @@
       var sel = '.js-notif-item[data-client-id="' + payload.client_id + '"][data-order-id="' + payload.order_id + '"][data-kind="' + payload.kind + '"]';
       document.querySelectorAll(sel).forEach(function(n){ try { n.remove(); } catch(e0) {} });
       recomputeNotifCounts();
-      setBellCount(getBellCount() - 1);
+
+      // LA CAMPANA NO CUENTA LO MISMO QUE ESTA PAGINA. ESA ES LA CAUSA DEL BUG.
+      //
+      // Sintoma reportado: "el numero de la campanita a veces se descuenta,
+      // despues saco otra notificacion y vuelve a aumentar".
+      //
+      // La campana (inject_notification_count en backend/views/main.py) cuenta
+      // SOLO COBRANZAS ATRASADAS: es un semaforo de urgencia, y el comentario
+      // del backend dice explicitamente que la diferencia con el total de esta
+      // pagina es INTENCIONAL. Esta pagina, en cambio, lista los tres tipos.
+      // Este handler le restaba 1 a la campana para CUALQUIER tipo marcado.
+      // Marcar una EMPRESA_INACTIVA la bajaba 16 -> 15 sin que el server
+      // hubiera cambiado nada, y el `setInterval(refresh, 8000)` de
+      // layout.html la devolvia a 16 unos segundos despues. De ahi el "sube
+      // sola": no subia, se estaba corrigiendo una resta que nunca
+      // correspondio. MEDIDO: 16 -> 15 -> (8s) 16 -> 15 -> (8s) 16.
+      //
+      // Se arregla en dos pasos, y los dos hacen falta:
+      // 1) El descuento optimista se aplica SOLO si el tipo marcado es uno de
+      //    los que la campana cuenta. Asi el feedback sigue siendo inmediato
+      //    para el caso que importa, sin inventar un numero para los otros.
+      // 2) Se resincroniza contra el server con refreshNotifCount(), que ya
+      //    expone layout.html. El POST invalida el cache de 60s del contador
+      //    (_invalidate_notif_count_cache), asi que esta lectura trae el valor
+      //    real y no el cacheado. El server queda como unica fuente de verdad
+      //    y el poll de 8s ya no puede contradecir a la UI.
+      if (BELL_KINDS.indexOf(payload.kind) !== -1) {
+        setBellCount(getBellCount() - 1);
+      }
+      try { if (window.refreshNotifCount) window.refreshNotifCount(); } catch(_) {}
       if (window.showToast) window.showToast('Notificación marcada como visualizada', 'success');
       var list = document.getElementById('notifActivasList');
       if (list && list.querySelectorAll('.js-notif-item').length === 0){
