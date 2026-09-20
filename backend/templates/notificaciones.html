@@ -131,6 +131,49 @@
        no hay tabla). Neutralizar en CSS deja la decision donde se ve. */
     .notif-cell--action::before{ content:none; }
   }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     LAS 4 PESTAÑAS DE FILTRO NO LLEGABAN AL PISO TACTIL DE 44px
+     ───────────────────────────────────────────────────────────────────────
+     MEDIDO en los DOS motores (WebKit y Chrome), identico en los dos:
+       360x740 y 390x844   95 / 121.9 / 104.4 / 245.9  x  30.6px de alto
+       800x1000            119.2 / 153 / 131 / 308.6   x  40px de alto
+     Son los UNICOS `small_touch_targets` que le quedaban a esta vista: 4 por
+     viewport, 12 por motor. Se les escapaba el blindaje de la app porque el
+     piso de 44px de `_blindaje_mobile.html` apunta a `.btn`, `.form-control` y
+     `.form-select`, y una pill de Bootstrap es `.nav-link`, ninguna de las tres.
+
+     BANDA 991.98px, NO 767.98px: es la misma que usa T1-A en
+     `_blindaje_mobile.html`. El piso tactil de esta app llega hasta ahi porque
+     entre 768 y 991.98 (tablet, y telefono en horizontal) el dedo sigue siendo
+     el puntero. A 800px las pills median 40px, o sea tambien fallaban.
+
+     SOLO ALTO. NO SE TOCA EL ANCHO, Y ES A PROPOSITO: esta documentado en
+     `_blindaje_mobile.html` (T1-C) que poner `min-width:44px` en un flex item
+     REEMPLAZA el `min-width:auto` que le impide encogerse por debajo de su
+     min-content, y que asi fue como los botones "Guardar" de /estado-clientes
+     se partieron en dos lineas. Estas pills ya miden 95-308px por su propio
+     texto: no necesitan piso de ancho y pedirlo solo traeria esa regresion.
+     Medido: con esta regla los cuatro anchos quedan EXACTAMENTE iguales que
+     antes en los dos motores y en los tres viewports.
+
+     `inline-flex` + `align-items:center` en vez de estirar el `line-height`:
+     con min-height a secas el texto queda pegado arriba, y centrarlo con
+     line-height obliga a una cuenta contra el padding, que NO es el mismo en
+     las dos bandas (6.375px hasta 767.98 y 8px arriba). Flexbox lo centra sin
+     numero magico. El contenedor de flex no rompe el contador: el JS de
+     2f4e15a escribe en `span[data-count-kind]`/`#notifActivasCount` por
+     textContent, y medido, el ancho de las pills no se movio ni un pixel.
+
+     No se generaliza a `.nav-pills .nav-link` porque el otro `nav-pills` de la
+     app es el del sidebar (layout.html:409) y no hace falta arrastrarlo. */
+  @media (max-width: 991.98px){
+    #notifKindTabs .nav-link{
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+    }
+  }
 </style>
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h1 class="h4 mb-0">Notificaciones</h1>
