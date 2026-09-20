@@ -33,6 +33,19 @@
     .notif-cell{ white-space:normal; overflow:visible; text-overflow:clip; }
     .notif-cell::before{ content:attr(data-label); display:block; font-size:.66rem; line-height:1.1; color:#6c757d; text-transform:uppercase; letter-spacing:.02em; margin-bottom:.15rem; font-weight:700; }
     .notif-cell--action{ grid-column:1 / -1; justify-content:flex-end; }
+
+    /* La celda de accion NO lleva etiqueta. El `::before` de arriba existe
+       porque en modo tarjeta se pierde el `thead`: cada dato necesita decir
+       de que campo es. La celda de accion no es un dato, es un boton, y el
+       boton ya se explica solo (check verde) y ya declara su nombre
+       accesible por `aria-label` + `title`, asi que "ACCIÓN" era ruido que
+       ademas ocupaba 42px de alto.
+       Se neutraliza con `content:none` y NO borrando el `data-label` del
+       markup: el atributo es el gancho semantico de la celda y ningun JS de
+       esta vista lo lee (verificado: el unico `data-label` que toca el JS es
+       el de layout.html:1279, que solo escribe sobre `td` de `.table`, y aca
+       no hay tabla). Neutralizar en CSS deja la decision donde se ve. */
+    .notif-cell--action::before{ content:none; }
   }
 </style>
 <div class="d-flex justify-content-between align-items-center mb-4">
