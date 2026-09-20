@@ -544,6 +544,60 @@ h1,h2{letter-spacing:.2px}
 body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   H9 — /estado-clientes: en Safari "Estado único del cliente:" se partía en dos
+   ───────────────────────────────────────────────────────────────────────────
+   MISMA FAMILIA QUE EL BUG DE /deudas (7e2a199): WebKit sub-computa el
+   intrínseco del contenido de un `<td>` y Chrome no. Medido a 360x740 sobre
+   ESTE markup, 10 veces repetido (una por cliente):
+
+     td > form.d-inline-flex > span.text-muted
+       Chrome   144.8 x 17.0   (UN renglón)
+       WebKit    98.9 x 33.6   (DOS renglones, 45.9px más angosto)
+     thead th (alto)      43 -> 43   pero con otro reparto de anchos
+     <body> (alto total)  6295.6 -> 6463.6px   => la página medía 168px MÁS
+
+   POR QUÉ NO ALCANZA CON PONER `min-width` EN EL SPAN (probado y descartado):
+   a <768px este archivo declara, 130 líneas más arriba,
+       `.table form.d-inline-flex{display:block!important; width:100%}`
+   así que el form NO es un flex container en el teléfono y el span queda
+   `display:inline`. `min-width` NO APLICA a un inline no reemplazado (CSS
+   Sizing §4). Verificado: con `min-width:145px` en el span el computed decía
+   `145px` y el ancho usado seguía siendo 98.9 en WebKit y 144.8 en Chrome.
+   El que sí lo acepta es el FORM, que ahí es un bloque.
+
+   EL PRESUPUESTO ES MEDIDO, NO ESTIMADO: 144.8px es el ancho de una línea de
+   "Estado único del cliente:" con la tipografía de `.table` en mobile (13px).
+   Se redondea a 145. Como el form es `display:block`, su min-content es el
+   máximo de sus hijos, y ese máximo es justo el span: declararlo acá fija el
+   piso del `<td>` y las dos celdas miden igual en los dos motores.
+
+   MEDIDO DESPUÉS (Chrome vs WebKit, mismo harness)
+     span                 144.8x17 vs 144.8x16.8   (UN renglón en los dos)
+     <body> @390x844      6264.1 vs 6264.1         (idéntico; antes +16.8)
+     <body> @360x740      6264.1 vs 6280.9         (antes +168)
+     hojas divergentes    360: 329 -> 110   390: 311 -> 102   800: 206 -> 156
+     h_scroll del body    0 en los dos motores, en los tres viewports
+
+   POR QUÉ LA REGLA VIVE ACÁ Y NO EN UN <style> DE LA VISTA
+   1) La regla que causa el problema (`display:block!important` de la línea
+      ~412) está en ESTE archivo: el antídoto va al lado de la causa.
+   2) `.table-fit` ya es un hook que esta hoja posee (bloque H4, acá arriba) y
+      que sólo usa estado_clientes.html, así que el alcance ya está acotado.
+   3) No hace falta la especificidad extra de un <style> en el <body>: no hay
+      NINGUNA otra declaración de `min-width` para este elemento. El <style>
+      de layout.html (que va después de esta hoja) sólo toca
+      `.table-responsive > .table`, que es otro elemento. Verificado con
+      getComputedStyle: la regla gana tal cual está escrita.
+
+   SIN MEDIA QUERY A PROPÓSITO: a >=768px el form vuelve a ser `inline-flex` y
+   mide 429-457px, así que los 145px quedan inertes. El `min-width:max-content`
+   del span es el espejo: a <768px es inerte (el span es inline) y a >=768px
+   evita que el mismo texto se apile en TRES renglones (76px de ancho) — ahí
+   los dos motores computan igual el max-content y quedan los dos en 156.8px. */
+.table-fit .table td > form.d-inline-flex{min-width:145px}
+.table-fit .table td > form.d-inline-flex > span.text-muted{min-width:max-content}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    H3 — fuga de orientación en los kill-switches de `table-mobile-cards`
    ───────────────────────────────────────────────────────────────────────────
    `.table-mobile-cards` se define en layout.html (línea ~74) dentro de
