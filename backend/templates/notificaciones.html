@@ -82,6 +82,42 @@
     /* El hueco que ocupa el boton, reservado en la celda que queda debajo. */
     .notif-row > .notif-cell:nth-child(2){ padding-right:52px; }
 
+    /* CIRCULO VISIBLE DE 30px CON AREA DE TOQUE DE 44px.
+       El pedido es "un poco mas chico". Achicar el BOTON a 30px seria
+       deshacer el arreglo de la tanda 1: `_blindaje_mobile.html` le pone
+       `min-height:44px` a todo `.btn` y `min-width:44px` a `.btn.rounded-circle`
+       justo porque este boton renderizaba 19.8 x 44px, un ovalo vertical, y
+       era el peor target tactil de la app. 30px de target es peor que eso en
+       una dimension y no se negocia.
+
+       TECNICA: la caja sigue midiendo 44 x 44 — o sea el rect que recibe el
+       toque, el que mide cualquier auditoria y el que usa el hit-testing del
+       navegador, NO cambia — y se pinta el verde solo en el content-box de
+       30px con `background-clip:content-box`. Los 7px de padding de cada lado
+       quedan transparentes pero siguen siendo parte del boton: son area
+       clickeable de verdad, no un pseudo-elemento fantasma. Por eso NO se usa
+       un `::after` que extienda el area: eso dejaria el rect en 30px y toda
+       auditoria de targets lo contaria como chico, mintiendo al reves.
+
+       `border:0` es obligatorio: el borde se pinta sobre el BORDER-box, asi
+       que un `.btn-success` con su `border-color` dibujaria igual el circulo
+       de 44px por fuera del relleno de 30 y no se veria ningun cambio.
+       `border-radius:50%` sobre el border-box se reduce solo en los 7px de
+       padding y deja el content-box redondo: 30px de diametro exacto.
+
+       EL SELECTOR LLEVA `.btn` Y LA CELDA ADELANTE A PROPOSITO. Un
+       `.notif-btn-check` pelado es (0,1,0) y PIERDE contra el
+       `.btn.btn-sm{padding:.36rem .5rem}` de app.css, que es (0,2,0).
+       Medido con el selector pelado: el padding seguia siendo 4.59/6.375px y
+       el circulo salia 31.25 x 34.82px, o sea ni redondo ni de 30. Con
+       `.notif-cell--action .btn.notif-btn-check` (0,3,0) gana sin `!important`. */
+    .notif-cell--action .btn.notif-btn-check{
+      width:44px; height:44px; min-width:44px; min-height:44px;
+      padding:7px; border:0;
+      background-clip:content-box;
+      font-size:15px; line-height:1;
+    }
+
     /* La celda de accion NO lleva etiqueta. El `::before` de arriba existe
        porque en modo tarjeta se pierde el `thead`: cada dato necesita decir
        de que campo es. La celda de accion no es un dato, es un boton, y el
