@@ -951,43 +951,52 @@
           }
         }
 
+        /* Donde arranca el header clonado (position:fixed) y, arriba de 992px,
+           el `top` del sticky de CSS.
+           ─────────────────────────────────────────────────────────────────────
+           UNA SOLA FORMULA, SIN NOMBRES DE VISTA. Antes habia tres ramas
+           escritas a mano: una para `deudas|status` (que devolvia 0), otra para
+           `clientes|empresas` (`bottom` clampeado a 0) y un `else` generico que
+           usaba el ALTO del navbar. Ese `else` era el bug: el navbar movil NO es
+           fixed-top ni sticky-top, se va con el scroll, asi que usar su alto deja
+           el header clonado 45-56px por debajo del borde de la pantalla y por ese
+           hueco se ve pasar el contenido por detras.
+
+           Medido con la pagina scrolleada 500px, hueco entre el borde de arriba y
+           el clon, y que devuelve elementFromPoint dentro del hueco:
+             800x1000  deudas     60px  -> TD.col-money asomando
+             800x1000  status     60px  -> TD.col-money asomando
+             800x1000  historial  60px  -> TD asomando
+             740x360L  historial  59px  -> TD asomando
+             el resto             0px
+           O sea que el `else` no se comia solo a /historial y /eliminados:
+           tambien a /deudas y /status arriba de 768px, donde su rama propia
+           (acotada a `max-width:767.98px`) no llegaba.
+
+           `Math.max(0, nav.bottom)` es correcto para TODAS: vale el alto del
+           navbar mientras el navbar se ve, y baja solo a 0 cuando se fue
+           scrolleando. La rama de `deudas|status` devolvia 0 fijo, que es el
+           mismo valor que da esta formula una vez que el navbar se fue (que es
+           cuando el clon se muestra), y de yapa ahora tambien es correcta
+           durante la transicion. Se conserva la correccion de
+           `visualViewport.offsetTop`, que era lo unico propio de esa rama y
+           cubre el pinch-zoom de iOS, pero aplicada a todas las vistas.        */
         function topOffset(){
-          var top = 0;
           try {
+            var vvTop = 0;
             try {
-              var active0 = '{{ active }}';
-              var isMobile0 = false;
-              try { isMobile0 = !!(window.matchMedia && window.matchMedia('(max-width: 767.98px)').matches); }
-              catch(e_mq0){ isMobile0 = window.innerWidth < 768; }
-              if ((active0 === 'deudas' || active0 === 'status') && isMobile0) {
-                try {
-                  if (window.visualViewport && typeof window.visualViewport.offsetTop === 'number') {
-                    return Math.round(window.visualViewport.offsetTop || 0);
-                  }
-                } catch(e_vv) {}
-                return 0;
+              if (window.visualViewport && typeof window.visualViewport.offsetTop === 'number') {
+                vvTop = Math.max(0, Math.round(window.visualViewport.offsetTop || 0));
               }
-            } catch(e_a0) {}
+            } catch(e_vv) {}
+
+            var navBottom = 0;
             var nav = document.querySelector('nav.navbar.d-lg-none');
             if (nav && window.getComputedStyle(nav).display !== 'none'){
-              if (active0 === 'clientes' || active0 === 'empresas'){
-                // A — el navbar movil (mas abajo en este archivo) NO es fixed-top
-                // ni sticky-top: se va con el scroll. Usar su ALTO fija el header
-                // clonado 45-56px mas abajo del borde de la pantalla y por ese
-                // hueco se ve pasar el contenido por detras (era parte del
-                // "contenido colandose" que reporto el cliente).
-                // `bottom` clampeado a 0 da el valor correcto en los dos casos:
-                // vale el alto mientras el navbar se ve, y baja a 0 cuando se fue.
-                // Scopeado a estas 2 vistas para no tocar a /status, /deudas,
-                // /cobranzas e /historial, que salen por la rama de arriba o
-                // dependen de este mismo valor con su propio ajuste.
-                top = Math.max(0, Math.round(nav.getBoundingClientRect().bottom || 0));
-              } else {
-                top = Math.round(nav.getBoundingClientRect().height || 0);
-              }
+              navBottom = Math.max(0, Math.round(nav.getBoundingClientRect().bottom || 0));
             }
-          } catch(e) {}
-          return top;
+            return Math.max(navBottom, vvTop);
+          } catch(e) { return 0; }
         }
 
         function applyCssStickyTop(){
