@@ -278,9 +278,12 @@
          columna titulada "Días". Que parta en dos líneas. */
       #cobTable tbody td .badge { white-space: normal; }
 
-      /* Cliente/Empresa: partir en vez de estirar la columna. */
+      /* Cliente/Empresa: partir en vez de estirar la columna.
+         `anywhere` -> `break-word` (ver layout.html, "COLUMNAS DE NOMBRES
+         PROPIOS"): `anywhere` hacia que el min-content de la celda fuera UN
+         caracter y la columna se estrangulaba hasta partir los apellidos. */
       #cobTable td.col-client,
-      #cobTable td.col-company { max-width: 130px; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+      #cobTable td.col-company { max-width: 130px; white-space: normal; overflow-wrap: break-word; word-break: normal; }
     }
 
     @media (max-width: 767.98px) {
@@ -355,12 +358,16 @@
         vertical-align: top;
       }
 
+      /* `anywhere` -> `break-word`: ver layout.html, "COLUMNAS DE NOMBRES
+         PROPIOS". Esta regla lleva ID y esta en un <style> del <body>, o sea
+         que le gana por especificidad Y por orden a `.table td.col-nombre`;
+         mientras dijera `anywhere` la clase no tenia ningun efecto aca. */
       #cobTable td.col-client,
       #cobTable td.col-company {
         max-width: 175px;
         white-space: normal;
-        overflow-wrap: anywhere;
-        word-break: break-word;
+        overflow-wrap: break-word;
+        word-break: normal;
       }
 
       #cobTable th.col-money,
@@ -607,9 +614,9 @@
 
           <tr>
 
-            <th class="col-client js-sort-text" data-sort-type="text" style="cursor:pointer;">Cliente</th>
+            <th class="col-client col-nombre js-sort-text" data-sort-type="text" style="cursor:pointer;">Cliente</th>
 
-            <th class="col-company js-sort-text" data-sort-type="text" style="cursor:pointer;">Empresa</th>
+            <th class="col-company col-nombre js-sort-text" data-sort-type="text" style="cursor:pointer;">Empresa</th>
 
             <th class="d-none d-md-table-cell js-sort-date col-orderdate" data-sort-type="date" style="cursor:pointer;">Fecha compra</th>
 
@@ -690,13 +697,13 @@
           {% set dep_text = 'Dep ' ~ (c.order.client.apellido or '') ~ ' - ' ~ (c.order.company.nombre or '') %}
           <tr data-cliente="{{ ((c.order.client.apellido or '') ~ ' ' ~ (c.order.client.nombre or ''))|lower }}" data-empresa="{{ (c.order.company.nombre or '')|lower }}" data-dep="{{ dep_text }}">
 
-            <td class="col-client">{{ c.order.client.apellido }}
+            <td class="col-client col-nombre">{{ c.order.client.apellido }}
 
               <form id="upd{{ c.order.id }}" method="post" action="{{ url_for('main.cobranzas_update', order_id=c.order.id) }}" class="d-none"></form>
 
             </td>
 
-            <td class="col-company">{{ c.order.company.nombre }}</td>
+            <td class="col-company col-nombre">{{ c.order.company.nombre }}</td>
 
             {% set fecha_compra_ref = (c.order.logistics.fecha_compra if c.order and c.order.logistics and c.order.logistics.fecha_compra else (c.order.created_at if c.order and c.order.created_at else None)) %}
             <td class="d-none d-md-table-cell col-orderdate">{{ fecha_compra_ref|fecha }}</td>

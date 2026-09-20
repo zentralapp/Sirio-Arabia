@@ -175,12 +175,14 @@
         vertical-align: top;
         line-height: 1.25;
       }
+      /* `anywhere` -> `break-word`: ver layout.html, "COLUMNAS DE NOMBRES
+         PROPIOS". Medido a 800px: 11 celdas de Cliente picadas, hasta 6 lineas. */
       #status-table td.col-client,
       #status-table td.col-company {
         max-width: 190px;
         white-space: normal;
-        overflow-wrap: anywhere;
-        word-break: break-word;
+        overflow-wrap: break-word;
+        word-break: normal;
       }
       #status-table .w-actions { min-width: 90px; }
       #status-table .w-actions .btn {
@@ -238,8 +240,8 @@
         <table class="table table-hover align-middle mb-0 table-tight table-sticky" id="status-table">
         <thead class="table-light">
           <tr>
-            <th class="col-client">Cliente</th>
-            <th class="col-company">Empresa</th>
+            <th class="col-client col-nombre">Cliente</th>
+            <th class="col-company col-nombre">Empresa</th>
             <th class="d-none d-md-table-cell js-sort-date" data-sort-type="date" style="cursor:pointer;">Fecha compra</th>
             <th class="d-none d-md-table-cell js-sort-date" data-sort-type="date" style="cursor:pointer;">Entrega</th>
             <th>Monto</th>
@@ -250,8 +252,8 @@
         <tbody id="status-tbody">
         {% for s in items %}
           <tr data-cliente="{{ (s.order.client.apellido or '')|lower }}" data-empresa="{{ (s.order.company.nombre or '')|lower }}" data-demora="{{ (s.order.demora_despacho_promedio_dias or 0) }}">
-            <td class="col-client">{{ s.order.client.apellido }}</td>
-            <td class="col-company">{{ s.order.company.nombre }}</td>
+            <td class="col-client col-nombre">{{ s.order.client.apellido }}</td>
+            <td class="col-company col-nombre">{{ s.order.company.nombre }}</td>
             <td class="d-none d-md-table-cell">
               <input name="fecha_compra" form="upd{{ s.order.id }}" type="text" data-datepicker class="form-control form-control-sm js-compra status-date"
                      value="{{ s.fecha_compra|fecha_iso }}">

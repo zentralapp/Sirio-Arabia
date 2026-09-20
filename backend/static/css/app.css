@@ -612,10 +612,17 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
   .table thead th{font-size:12px}
 
   /* Texto largo: que parta en dos líneas en vez de estirar la columna */
+  /* `overflow-wrap:anywhere` -> `break-word`: ver "COLUMNAS DE NOMBRES
+     PROPIOS" en el <style> de layout.html. `anywhere` baja el min-content de
+     la celda a UN caracter y con table-layout:auto la columna se estrangula.
+     Estos selectores llevan ID (1,1,1) asi que le ganan a `.table td.col-nombre`
+     (0,2,1): si no se corrigen aca, la clase no sirve de nada.
+     El `max-width:150px` se deja: `min-width` siempre le gana a `max-width`,
+     asi que .col-nombre puede pasarse de 150 sin pelear con esta linea. */
   #cobTable td.col-client, #cobTable td.col-company,
   #status-table td.col-client, #status-table td.col-company,
   #clientes-table td.col-client, #clientes-table td.col-company{
-    max-width:150px; white-space:normal; overflow-wrap:anywhere; word-break:break-word;
+    max-width:150px; white-space:normal; overflow-wrap:break-word; word-break:normal;
   }
   /* Encabezados: no reservar ancho por una sola palabra larga */
   .table thead th{white-space:normal}

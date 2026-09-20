@@ -97,6 +97,53 @@
         .table-responsive{ -webkit-overflow-scrolling: touch; }
         .table-responsive > .table{ min-width: 720px; }
       }
+
+      /* ═══════════════════════════════════════════════════════════════════════
+         COLUMNAS DE NOMBRES PROPIOS (.col-nombre) — NO SE PICAN A MITAD.
+         ───────────────────────────────────────────────────────────────────────
+         SINTOMA MEDIDO en /deudas a 390x844: la columna "Cliente" renderizaba a
+         56px de ancho (43.3px utiles) y los apellidos salian partidos en 5, 6 y
+         hasta 7 lineas de dos caracteres: "Noguei/ra", "Maldo/nado",
+         "Lomba/rdi", "Ovejer/o". 28 celdas picadas entre Cliente y Empresa.
+
+         CAUSA REAL: `overflow-wrap: anywhere` de la regla
+         `.table th, .table td` de mas arriba. `anywhere` NO es equivalente a
+         `break-word`: los dos parten una palabra que no entra, pero SOLO
+         `anywhere` cambia el calculo del min-content de la caja — lo baja al
+         ancho de UN caracter. Con `table-layout: auto` el navegador reparte el
+         ancho respetando el min-content de cada columna, asi que las columnas
+         con `anywhere` pierden todo su piso y las de fecha/monto (que tienen
+         inputs de ancho fijo) se las comen enteras. Esa es la unica diferencia
+         entre las dos propiedades y es exactamente el bug.
+
+         POR QUE NO SE SACA `anywhere` GLOBALMENTE: esta ahi para que razones
+         sociales, mails y notas largas sin espacios no desborden la fila. Se
+         acota: las columnas de nombre propio se marcan con `.col-nombre` y se
+         pasan a `break-word`, que sigue partiendo la palabra si de verdad no
+         entra pero NO regala el min-content.
+
+         EL `min-width` HACE FALTA IGUAL (medido): con solo `break-word` la
+         columna de /deudas sube de 56px a 112.8px pero sigue con 20 celdas
+         picadas, porque la tabla esta dentro de un `.table-responsive` de 390px
+         y el reparto sigue apretando. Con 170px quedan 0 nombres de mas de 2
+         lineas. Es un `var()` para que una vista pueda subirlo o bajarlo sin
+         tocar esta regla.
+
+         VA FUERA DE TODA MEDIA QUERY a proposito: el picado se midio en 360,
+         390 Y 800px (en 800 aparecen ademas /status y /historial). En desktop
+         estas columnas ya son mas anchas que el minimo, asi que no cambia nada.
+
+         NO SE APLICO A /usuarios NI A /crm: medido, ahi EMPEORA. En /usuarios
+         la tabla mide 319.8px y darle 170px a la primera columna estrangula las
+         otras tres (2 celdas picadas -> 5). Un minimo global habria sido una
+         regresion; por eso la clase se pone a mano, columna por columna.       */
+      .table th.col-nombre,
+      .table td.col-nombre {
+        min-width: var(--col-nombre-min, 170px);
+        overflow-wrap: break-word;
+        word-break: normal;
+      }
+
       {% include '_blindaje_mobile.html' %}
 
       /* ═══════════════════════════════════════════════════════════════════════
