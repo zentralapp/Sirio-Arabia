@@ -64,6 +64,47 @@
 
     .flatpickr-calendar.open { z-index: 3050; }
 
+    /* ── "FILTRAR FECHAS": EL CALENDARIO TAPABA LOS BUSCADORES ────────────────
+       Medido con document.elementFromPoint() sobre el centro de cada control,
+       en WebKit y en Chrome, a 390x844 y a 360x740: con el rango abierto,
+       #cobClientQ y #cobCompanyQ devolvian `span.flatpickr-day`. El usuario
+       cree que toca el buscador y en realidad toca un dia del calendario.
+
+       Bajar el z-index no arregla nada: el calendario seguiria encima de esos
+       inputs. La unica forma de que NINGUN control quede debajo es sacarlo del
+       flujo flotante y ponerlo EN el flujo: se monta dentro de #cobCalHost
+       (appendTo) y se lo fuerza a position:static, con lo cual empuja la barra
+       de busqueda hacia abajo en vez de taparla. El comportamiento de la
+       seleccion de fechas NO cambia. */
+    .cob-cal-host { display: block; }
+
+    /* `relative` y NO `static`: las flechas .flatpickr-prev-month /
+       .flatpickr-next-month son position:absolute con top/left/right 0 y
+       necesitan que el calendario sea su bloque contenedor. Con `static` se
+       escapaban al bloque contenedor inicial y aterrizaban en la esquina
+       superior de la pagina, encima del boton del menu (medido: el centro de
+       .navbar-toggler devolvia span.flatpickr-next-month, y un toque en 8,8
+       caia en .flatpickr-prev-month en vez de cerrar el calendario).
+       `relative` sigue en flujo y no desplaza nada porque anulamos top/left. */
+    .cob-cal-host .flatpickr-calendar {
+      position: relative !important;
+      top: auto !important;
+      left: auto !important;
+      right: auto !important;
+      margin: .25rem auto .5rem;
+      box-shadow: 0 0 0 1px #e5e7eb;
+    }
+
+    .cob-cal-host .flatpickr-calendar:not(.open) { display: none !important; }
+
+    .cob-cal-host .flatpickr-calendar.open { display: block !important; }
+
+    /* la flechita apunta al input flotante; en flujo no tiene sentido */
+    .cob-cal-host .flatpickr-calendar.arrowTop::before,
+    .cob-cal-host .flatpickr-calendar.arrowTop::after,
+    .cob-cal-host .flatpickr-calendar.arrowBottom::before,
+    .cob-cal-host .flatpickr-calendar.arrowBottom::after { display: none !important; }
+
     /* Colores activos */
 
     .cob-filter .btn-outline-primary:hover,
@@ -718,6 +759,9 @@
   </form>
 
 </div>
+
+<!-- Contenedor EN FLUJO del calendario de "Filtrar fechas": ver .cob-cal-host -->
+<div id="cobCalHost" class="cob-cal-host"></div>
 
 <div class="cob-search-bar d-flex justify-content-end mb-2 gap-2 flex-wrap">
 
@@ -2781,15 +2825,23 @@
 
     var rangeEl = document.getElementById('cobDateRange');
 
-    if (rangeEl){
+    // el guard evita dos calendarios apilados dentro de #cobCalHost si
+    // mountFlatpickr se vuelve a ejecutar (cobFetchAndReplace, :2113)
+    if (rangeEl && !rangeEl._flatpickr){
 
       var fromH = document.getElementById('cobFrom');
 
       var toH = document.getElementById('cobTo');
 
+      var calHost = document.getElementById('cobCalHost');
+
       window.__cobRangePicker = flatpickr(rangeEl, {
 
         mode: 'range',
+
+        // EN FLUJO, no flotando: asi no puede taparle el toque a #cobClientQ
+        // ni a #cobCompanyQ. Ver el bloque CSS .cob-cal-host.
+        appendTo: calHost || undefined,
 
         altInput: true,
 
