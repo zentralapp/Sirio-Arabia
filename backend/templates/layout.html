@@ -1247,6 +1247,49 @@
         window.addEventListener('pageshow', function(){
           setTimeout(cleanupOrphanModalState, 0);
         });
+
+        /* ── RED DE SEGURIDAD AGNOSTICA DEL ORIGEN ──────────────────────────
+           Todos los disparadores de arriba son POR EVENTO: hay que tocar el
+           velo, o el boton que abre, o el que cierra. En movil los modales son
+           fullscreen y NO hay velo visible para tocar (ver el comentario de
+           :1215): si un `.modal-backdrop` aparece SIN modal detras, la pantalla
+           queda gris y no hay ningun gesto que la limpie. La app queda
+           inusable y la unica salida es recargar.
+
+           Esto vigila el DOM en vez de vigilar un gesto: cada vez que aparece
+           un backdrop, se reevalua a los 400ms. Si para entonces hay un modal
+           de verdad a la vista, cleanupOrphanModalState() corta por
+           `hasVisibleModal()` y no toca nada.
+
+           Los 400ms salen del peor caso de bootstrap 5.3: `Modal.show()`
+           muestra el backdrop, espera su transicion (~150ms) y recien ahi le
+           pone `show` al modal. El disparador por click de :1243 ya usa 250ms;
+           400 deja margen para el reflow del modal fullscreen sin que el gris
+           llegue a ser perceptible. Mas corto arriesga repetir el bug que
+           documenta cobranzas.html:1539 (borrar el velo de un modal que estaba
+           naciendo). */
+        try {
+          if (window.MutationObserver) {
+            var bdTimer = null;
+            new MutationObserver(function(muts){
+              var vioBackdrop = false;
+              for (var i = 0; i < muts.length && !vioBackdrop; i++){
+                var added = muts[i].addedNodes || [];
+                for (var j = 0; j < added.length; j++){
+                  var n = added[j];
+                  if (n && n.nodeType === 1 && n.classList &&
+                      n.classList.contains('modal-backdrop')) { vioBackdrop = true; break; }
+                }
+              }
+              if (!vioBackdrop) return;
+              if (bdTimer) clearTimeout(bdTimer);
+              bdTimer = setTimeout(function(){
+                bdTimer = null;
+                cleanupOrphanModalState();
+              }, 400);
+            }).observe(document.body, { childList: true });
+          }
+        } catch(e_mo) {}
       })();
     </script>
     <script>

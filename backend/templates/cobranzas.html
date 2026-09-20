@@ -2627,7 +2627,7 @@
 
       var isRowPago = el.classList && el.classList.contains('js-cob-estimado');
 
-      flatpickr(el, {
+      var fpInst = flatpickr(el, {
 
         altInput: true,
 
@@ -2653,9 +2653,82 @@
 
           }
 
+        },
+
+        /* ── EL CALENDARIO NO REABRE EN iOS: HAY QUE BLUREAR AL CERRAR ────────
+           flatpickr elige el evento de "click afuera" segun el dispositivo
+           (flatpickr.min.js, bindEvents):
+
+             void 0 !== window.ontouchstart
+               ? P(window.document, "touchstart", X)
+               : P(window.document, "mousedown",  X);
+
+           y la REAPERTURA la ata solo a dos eventos del input:
+
+             clickOpens === true && (P(w._input,"focus",w.open), P(w._input,"click",w.open))
+
+           En desktop, tocar afuera dispara un mousedown que ADEMAS blurea el
+           input: medido en Chrome 390x844 con touch, despues del toque afuera
+           `document.activeElement` vuelve a ser BODY, y por eso el siguiente
+           toque sobre el mismo input vuelve a disparar `focus` y reabre.
+
+           En iOS Safari NO: tocar una zona no interactiva cierra el calendario
+           (el `touchstart` de arriba) pero NO le saca el foco al campo de texto
+           — el teclado QWERTY se queda arriba, que es exactamente lo que se ve
+           en la captura del cliente. Con el input ya enfocado, el proximo toque
+           no dispara `focus` (ya lo tiene) y iOS tampoco entrega un `click`
+           confiable sobre un input enfocado: lo consume para posicionar el
+           cursor. Resultado: mueren las DOS vias de reapertura y el calendario
+           no vuelve a abrir nunca. El respaldo por `click` de layout.html
+           (bindFlatpickrAltInputs) cae por el mismo motivo.
+
+           Blureando al cerrar dejamos el mismo estado que en desktop: se baja
+           el teclado y el proximo toque vuelve a disparar `focus`.
+
+           No dispara submit: el handler de `blur` de layout.html llama a
+           normalizeAltInput -> pushDateToFlatpickr, que corta por `sameDay` si
+           la fecha no cambio. Solo sincroniza si el usuario tipeo algo, que es
+           lo que iba a pasar igual al salir del campo. */
+        onClose: function(selectedDates, dateStr, inst){
+
+          try {
+
+            var alt = inst && inst.altInput;
+
+            if (alt && document.activeElement === alt) alt.blur();
+
+          } catch(e) {}
+
         }
 
       });
+
+      /* Respaldo tactil de la reapertura. layout.html ya tiene uno por `click`,
+         pero en iOS el click sobre un input enfocado no llega (ver arriba).
+         `touchend` si llega siempre. Va despues del `touchstart` de flatpickr,
+         asi que si habia OTRO calendario abierto ese ya se cerro y este abre el
+         suyo. Si el propio ya esta abierto no hace nada. */
+      try {
+
+        var altI = fpInst && fpInst.altInput;
+
+        if (altI && !altI._cobTouchOpen) {
+
+          altI._cobTouchOpen = true;
+
+          altI.addEventListener('touchend', function(){
+
+            setTimeout(function(){
+
+              try { if (fpInst && !fpInst.isOpen) fpInst.open(); } catch(e2) {}
+
+            }, 0);
+
+          }, { passive: true });
+
+        }
+
+      } catch(e) {}
 
     });
 
