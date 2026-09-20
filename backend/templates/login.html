@@ -4,9 +4,13 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Ingresar - Sirio Arabia</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <!-- Tipografia AUTOHOSPEDADA (Poppins + Playfair Display).
+         Antes esto eran 3 lineas contra fonts.googleapis.com/fonts.gstatic.com.
+         Era el ultimo recurso externo de la app: si Google tarda, toda la
+         tipografia cae al system font y la app se ve como otro producto.
+         Los pesos y subsets son EXACTAMENTE los que servia Google, para que el
+         render no cambie. Detalle completo en el header de fonts.css. -->
+    <link href="{{ url_for('static', filename='vendor/fonts/fonts.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='vendor/bootstrap/5.3.3/css/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='vendor/bootstrap-icons/1.11.3/bootstrap-icons.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
