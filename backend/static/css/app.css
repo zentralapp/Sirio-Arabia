@@ -1,4 +1,45 @@
-:root{--brand:#0f3d4c;--brand-700:#09303b;--accent:#0d6efd;--ink:#111827;--muted:#6b7280;--teal:#0f766e}
+/* ════════════════════════════════════════════════════════════════════════════
+   EL PRIMARY DE LA MARCA ES EL PETROLEO, NO EL AZUL DE BOOTSTRAP.
+   ────────────────────────────────────────────────────────────────────────────
+   `--accent` valia #0d6efd, el azul default de bootstrap, en una app cuya
+   marca es el petroleo #0f766e (que estaba hardcodeado 51 veces mientras
+   `var(--teal)` se usaba 4). El sintoma mas visible era el boton
+   "+ Crear Cliente" de /clientes, azul bootstrap sobre una pantalla petroleo.
+
+   Se cambia por las VARIABLES de bootstrap, no clase por clase en los
+   templates: asi cae todo junto (btn-primary, btn-outline-primary, .text-
+   primary, .bg-primary, .border-primary, los links, los focus rings) y se
+   revierte con un `git revert` de este commit.
+
+   Por que aca y no en un <style> del layout: app.css se linkea DESPUES de
+   bootstrap.min.css, o sea que le gana los empates de especificidad contra la
+   hoja de bootstrap sin un solo !important. Contra los <style> de las vistas
+   pierde, pero ninguna vista pisa el primary.
+
+   LA RAMPA sale de las MISMAS formulas que usa bootstrap con su azul, para que
+   los estados se comporten igual (verificado contra los numeros de
+   .btn-primary de bootstrap 5.3.3):
+     hover-bg / active-border   shade 15% / 25%  = color * 0.85 / 0.75
+     hover-border / active-bg   shade 20%        = color * 0.80
+     focus-shadow-rgb           mix(blanco 15%)
+   Para #0f766e = rgb(15,118,110):
+     *0.85 -> #0d645e   *0.80 -> #0c5e58   *0.75 -> #0b5852
+     mix blanco 15% -> 51,138,132
+   ════════════════════════════════════════════════════════════════════════════ */
+:root{--brand:#0f3d4c;--brand-700:#09303b;--teal:#0f766e;--accent:var(--teal);--ink:#111827;--muted:#6b7280;
+      --teal-600:#0d645e;--teal-700:#0c5e58;--teal-800:#0b5852;--teal-rgb:15,118,110}
+
+/* Bootstrap: sus tokens globales apuntan al petroleo. De aca salen .text-primary,
+   .bg-primary, .border-primary, los links y los anillos de foco. */
+:root{
+  --bs-primary: var(--teal);
+  --bs-primary-rgb: var(--teal-rgb);
+  --bs-link-color: var(--teal);
+  --bs-link-color-rgb: var(--teal-rgb);
+  --bs-link-hover-color: var(--teal-700);
+  --bs-link-hover-color-rgb: 12,94,88;
+  --bs-focus-ring-color: rgba(15,118,110,.25);
+}
 
 /* Typography */
 body{font-family:'Poppins',system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Helvetica,Arial}
@@ -79,8 +120,42 @@ h1,h2{letter-spacing:.2px}
 .badge.bg-primary{background:var(--brand)!important}
 
 /* Buttons tweak */
-.btn-primary{background-color:var(--accent);border-color:var(--accent)}
-.btn-primary:hover{filter:brightness(.95)}
+/* Antes esto era `background-color:var(--accent)` + `filter:brightness(.95)` en
+   el hover. Pisar `background-color` directo le gana a `--bs-btn-bg`, asi que
+   cambiar la variable no habria servido de nada; y el `filter` oscurecia TODO
+   el boton (texto incluido) en vez de solo el fondo. Ahora se declaran las
+   variables de componente de bootstrap y los estados salen solos. */
+.btn-primary{
+  --bs-btn-bg: var(--teal);
+  --bs-btn-border-color: var(--teal);
+  --bs-btn-hover-bg: var(--teal-600);
+  --bs-btn-hover-border-color: var(--teal-700);
+  --bs-btn-active-bg: var(--teal-700);
+  --bs-btn-active-border-color: var(--teal-800);
+  --bs-btn-disabled-bg: var(--teal);
+  --bs-btn-disabled-border-color: var(--teal);
+  --bs-btn-focus-shadow-rgb: 51,138,132;
+}
+.btn-outline-primary{
+  --bs-btn-color: var(--teal);
+  --bs-btn-border-color: var(--teal);
+  --bs-btn-hover-bg: var(--teal);
+  --bs-btn-hover-border-color: var(--teal);
+  --bs-btn-active-bg: var(--teal);
+  --bs-btn-active-border-color: var(--teal);
+  --bs-btn-disabled-color: var(--teal);
+  --bs-btn-disabled-border-color: var(--teal);
+  --bs-btn-focus-shadow-rgb: var(--teal-rgb);
+}
+
+/* Los anillos de foco de los form controls estan HARDCODEADOS en bootstrap
+   (`border-color:#86b7fe; box-shadow:...rgba(13,110,253,.25)`), no salen de
+   ninguna variable, asi que hay que repetirlos. #87bab7 es el mismo tint 50%
+   que bootstrap le aplica a su azul para el borde. */
+.form-control:focus,
+.form-select:focus{border-color:#87bab7;box-shadow:0 0 0 .25rem rgba(15,118,110,.25)}
+.form-check-input:checked{background-color:var(--teal);border-color:var(--teal)}
+.form-check-input:focus{border-color:#87bab7;box-shadow:0 0 0 .25rem rgba(15,118,110,.25)}
 .btn-outline-secondary{color:var(--ink);border-color:#e5e7eb}
 .btn-outline-secondary:hover{background:#f9fafb}
 
