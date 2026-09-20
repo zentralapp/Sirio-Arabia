@@ -138,7 +138,9 @@
 
     .table-cobranzas td.col-date { width: 120px; min-width: 120px; }
 
-    .table-cobranzas td.col-date .form-control { max-width: 120px; width: 100%; }
+    /* El `width:100%` que habia aca lo pisaba el `width:120px` de 8 lineas mas
+       abajo (misma especificidad, mas tarde). Queda solo el max-width. */
+    .table-cobranzas td.col-date .form-control { max-width: 120px; }
 
 
 

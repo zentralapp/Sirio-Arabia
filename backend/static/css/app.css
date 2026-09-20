@@ -157,7 +157,9 @@ h1,h2{letter-spacing:.2px}
 .form-check-input:checked{background-color:var(--teal);border-color:var(--teal)}
 .form-check-input:focus{border-color:#87bab7;box-shadow:0 0 0 .25rem rgba(15,118,110,.25)}
 .btn-outline-secondary{color:var(--ink);border-color:#e5e7eb}
-.btn-outline-secondary:hover{background:#f9fafb}
+/* Aca vivia `.btn-outline-secondary:hover{background:#f9fafb}`. Estaba MUERTA:
+   mas abajo en esta misma hoja hay un `background:rgba(15,118,110,.06)!important`
+   para el mismo :hover, y el !important le gana siempre. */
 
 /* Responsive table->cards framework */
 .desktop-table{display:block}
@@ -205,10 +207,10 @@ h1,h2{letter-spacing:.2px}
      esta hoja, que cubre TODO 0-991.98px y no solo portrait. Ver alla el porque. */
 
   /* Excepción: Status mercadería y Deudas pendientes: tabla real + scroll horizontal */
-  body[data-active="status"] .desktop-table,
-  body[data-active="deudas"] .desktop-table{display:block}
-  body[data-active="status"] .mobile-cards,
-  body[data-active="deudas"] .mobile-cards{display:none}
+  /* `deudas` salio de estas dos: cobranzas.html no tiene `.desktop-table` ni
+     `.mobile-cards`. Su `.table-mobile-cards` (mas abajo) SI existe y se queda. */
+  body[data-active="status"] .desktop-table{display:block}
+  body[data-active="status"] .mobile-cards{display:none}
   body[data-active="status"],
   body[data-active="deudas"]{--sticky-top:0px}
   body[data-active="status"] table.table-sticky thead th,
@@ -243,33 +245,26 @@ h1,h2{letter-spacing:.2px}
   /* Excepción: Historial: tabla real + scroll horizontal */
   body[data-active="historial"] .desktop-table{display:block}
   body[data-active="historial"] .mobile-cards{display:none}
-  body[data-active="historial"],
   body[data-active="historial"]{--sticky-top:0px}
   body[data-active="historial"] .table-responsive{overflow-x:auto !important; -webkit-overflow-scrolling:touch}
   body[data-active="historial"] .table-responsive > .table{min-width:1100px !important}
-  body[data-active="historial"] .table-mobile-cards .table{display:table !important; width:100% !important}
-  body[data-active="historial"] .table-mobile-cards .table thead{display:table-header-group !important}
-  body[data-active="historial"] .table-mobile-cards .table tbody{display:table-row-group !important}
-  body[data-active="historial"] .table-mobile-cards .table tr{display:table-row !important; border:0 !important; border-radius:0 !important; margin:0 !important}
-  body[data-active="historial"] .table-mobile-cards .table tr > *{display:table-cell !important; width:auto !important}
-  body[data-active="historial"] .table-mobile-cards .table td::before{content:none !important; display:none !important}
+  /* Los 6 kill-switches de `.table-mobile-cards` de historial se borraron: NI
+     historial.html NI pedidos_eliminados.html (las 2 vistas con active=historial)
+     tienen esa clase. Tienen `.desktop-table` + `.mobile-cards`, que si se apagan
+     arriba. */
   body[data-active="historial"] .table{font-size:12px}
   body[data-active="historial"] .table th,
   body[data-active="historial"] .table td{padding:.35rem .5rem}
   body[data-active="historial"] .table thead th{font-size:12px; white-space:nowrap !important}
 
   /* Excepción: Comisiones: tabla real + scroll horizontal */
-  body[data-active="comisiones"] .desktop-table{display:block}
-  body[data-active="comisiones"] .mobile-cards{display:none}
+  /* comisiones.html NO tiene `.desktop-table`, ni `.mobile-cards`, ni
+     `.table-mobile-cards`: nunca estuvo en el esquema tabla-a-tarjetas. Se
+     borraron los 8 kill-switches que la nombraban. Queda solo lo que SI aplica
+     a su tabla (sticky-top, scroll horizontal, compactacion). */
   body[data-active="comisiones"]{--sticky-top:0px}
   body[data-active="comisiones"] .table-responsive{overflow-x:auto !important; -webkit-overflow-scrolling:touch}
   body[data-active="comisiones"] .table-responsive > .table{min-width:900px !important}
-  body[data-active="comisiones"] .table-mobile-cards .table{display:table !important; width:100% !important}
-  body[data-active="comisiones"] .table-mobile-cards .table thead{display:table-header-group !important}
-  body[data-active="comisiones"] .table-mobile-cards .table tbody{display:table-row-group !important}
-  body[data-active="comisiones"] .table-mobile-cards .table tr{display:table-row !important; border:0 !important; border-radius:0 !important; margin:0 !important}
-  body[data-active="comisiones"] .table-mobile-cards .table tr > *{display:table-cell !important; width:auto !important}
-  body[data-active="comisiones"] .table-mobile-cards .table td::before{content:none !important; display:none !important}
   body[data-active="comisiones"] .table{font-size:12px}
   body[data-active="comisiones"] .table th,
   body[data-active="comisiones"] .table td{padding:.35rem .5rem}
@@ -281,12 +276,8 @@ h1,h2{letter-spacing:.2px}
   body[data-active="crm"]{--sticky-top:0px}
   body[data-active="crm"] .table-responsive{overflow-x:auto !important; -webkit-overflow-scrolling:touch}
   body[data-active="crm"] .table-responsive > .table{min-width:900px !important}
-  body[data-active="crm"] .table-mobile-cards .table{display:table !important; width:100% !important}
-  body[data-active="crm"] .table-mobile-cards .table thead{display:table-header-group !important}
-  body[data-active="crm"] .table-mobile-cards .table tbody{display:table-row-group !important}
-  body[data-active="crm"] .table-mobile-cards .table tr{display:table-row !important; border:0 !important; border-radius:0 !important; margin:0 !important}
-  body[data-active="crm"] .table-mobile-cards .table tr > *{display:table-cell !important; width:auto !important}
-  body[data-active="crm"] .table-mobile-cards .table td::before{content:none !important; display:none !important}
+  /* Idem historial: crm.html no tiene `.table-mobile-cards` (si `.desktop-table`
+     + `.mobile-cards`, que se apagan arriba). Sus 6 kill-switches se borraron. */
   body[data-active="crm"] .table{font-size:12px}
   body[data-active="crm"] .table th,
   body[data-active="crm"] .table td{padding:.35rem .5rem}
@@ -406,7 +397,6 @@ h1,h2{letter-spacing:.2px}
   .btn{padding:.5rem .8rem;font-size:.95rem}
   .btn.btn-sm{padding:.45rem .6rem;font-size:.9rem}
   .table{font-size:13px}
-  .table thead th{white-space:normal}
   .table td,.table th{vertical-align:middle}
   /* Inputs/botones con min-width en templates: que no hagan overflow en iPhone */
   .cliente-search-input,
@@ -415,8 +405,6 @@ h1,h2{letter-spacing:.2px}
   .btn-create-company{min-width:0!important; white-space:nowrap}
   /* Para tablas con inputs (status/cobranzas), usar auto layout para no recortar campos */
   .table.table-tight, .table.table-cobranzas{ table-layout:auto !important }
-  /* Asegurar visibilidad mínima de grupos de precio en mobile */
-  .js-price-group, .js-cob-price-group{ min-width:120px }
   /* Evitar superposición de títulos y acciones en headers */
   main > .d-flex.mb-4{flex-wrap:wrap; row-gap:.5rem}
   .table input.form-control, .table select.form-select{min-width:0; width:100%}
@@ -439,7 +427,6 @@ h1,h2{letter-spacing:.2px}
   .table-mobile-cards .js-cob-forma,
   .table-mobile-cards .js-cob-estimado{ margin-top:.25rem }
   .w-actions{min-width:100px}
-  .col-actions .btn-group{flex-wrap:wrap}
   /* Botonera de acciones en tablas: mantener horizontal en pantallas chicas */
   .table .btn-group{flex-wrap:nowrap}
   .table .btn-group form{display:inline-block}
@@ -466,22 +453,13 @@ h1,h2{letter-spacing:.2px}
 
   body[data-active="deudas"] .table .badge,
   body[data-active="status"] .table .badge{font-size:.95rem !important; padding:.42em .66em !important; font-weight:700 !important}
-  /* Legajo de Clientes: reducir padding extra en mobile */
-  .table-relaxed th, .table-relaxed td{padding:.35rem .5rem}
   /* Cobranzas: botones del filtro más chicos y separados del título */
   #cobFilter{ margin-top:.75rem }
   .cob-filter .btn{ padding:.32rem .56rem; font-size:.85rem; border-radius:.45rem }
-  /* Primario: mantener color pero sumar halo petróleo en hover/focus */
-  .btn-primary:hover,.btn-primary:focus{filter:brightness(.95); box-shadow:0 0 0 .25rem rgba(15,118,110,.25)!important}
-
-  /* Secundario outline: usar petróleo en hover/focus */
-  .btn-outline-secondary:hover,
-  .btn-outline-secondary:focus{
-    color:var(--teal)!important;
-    background:rgba(15,118,110,.06)!important;
-    border-color:rgba(15,118,110,.55)!important;
-    box-shadow:0 0 0 .25rem rgba(15,118,110,.2)!important;
-  }
+  /* Aca vivian copias EXACTAS de `.btn-primary:hover,:focus` y de
+     `.btn-outline-secondary:hover,:focus` que ya estan declaradas sin media
+     query mas arriba. Mismos valores, misma especificidad: la de arriba ya
+     aplicaba en 0-767.98px igual. Duplicado puro. */
 }
 
 /* XS aún más compacto.
@@ -496,17 +474,13 @@ h1,h2{letter-spacing:.2px}
   .row.g-3{ --bs-gutter-x:.6rem; --bs-gutter-y:.6rem }
   .input-group-sm .input-group-text{font-size:12px}
   .form-label{font-size:12px}
-  .form-control,.form-select{font-size:.92rem}
   .btn{padding:.42rem .64rem; font-size:12px}
   .btn.btn-sm{padding:.36rem .5rem; font-size:12px}
-  .table{font-size:12px}
-  .table th,.table td{padding:.3rem .4rem}
   .table .input-group,.table select.form-select,.table input.form-control{min-width:0; width:100%}
   .table .form-control.form-control-sm,.table .form-select.form-select-sm{padding:.22rem .45rem;height:auto;font-size:12px}
   .table .btn-group .btn{padding:.26rem .4rem;font-size:12px}
   .badge{font-size:11px; padding:.28em .42em}
   .w-actions{min-width:90px}
-  .col-actions .btn-group{flex-wrap:wrap}
   .alert{padding:.45rem .65rem; font-size:12px}
 
   /* iOS hace zoom al enfocar un input con font-size computado < 16px. El umbral es
@@ -521,8 +495,6 @@ h1,h2{letter-spacing:.2px}
 /* Muy pequeñas (ej. 360px). Ver nota H9 del bloque anterior: tamaños en px. */
 @media (max-width: 399.98px){
   html{font-size:12.75px}
-  .table{font-size:12px}
-  .table th,.table td{padding:.26rem .35rem}
   .table .btn-group .btn{padding:.24rem .36rem;font-size:12px}
   .badge{font-size:11px}
   .alert{font-size:12px}
@@ -699,8 +671,12 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
   #clientes-table td.col-client, #clientes-table td.col-company{
     max-width:150px; white-space:normal; overflow-wrap:break-word; word-break:normal;
   }
-  /* Encabezados: no reservar ancho por una sola palabra larga */
-  .table thead th{white-space:normal}
+  /* Aca vivia `.table thead th{white-space:normal}` con la intencion de que el
+     encabezado no reservara ancho por una sola palabra larga. NUNCA FUNCIONO:
+     layout.html declara `.table thead th{...white-space:nowrap}` en su <style>
+     del <head>, misma especificidad (0,1,1) y DESPUES de esta hoja, asi que
+     gana el nowrap. Si alguna vez hace falta de verdad, hay que cambiarlo en
+     layout.html o subir la especificidad; repetir la regla aca no alcanza. */
 
   /* Controles dentro de tablas: sólo tipografía y padding.
      NO se clampea el ancho de `.js-price-group` / `.js-cob-price-group` acá a
