@@ -32,7 +32,55 @@
     .notif-table--inact .notif-row{ grid-template-columns:repeat(2, minmax(120px,1fr)); row-gap:.35rem; }
     .notif-cell{ white-space:normal; overflow:visible; text-overflow:clip; }
     .notif-cell::before{ content:attr(data-label); display:block; font-size:.66rem; line-height:1.1; color:#6c757d; text-transform:uppercase; letter-spacing:.02em; margin-bottom:.15rem; font-weight:700; }
-    .notif-cell--action{ grid-column:1 / -1; justify-content:flex-end; }
+    /* EL BOTON VA A LA ESQUINA SUPERIOR DERECHA DE LA TARJETA.
+       Antes: `grid-column:1/-1` lo mandaba a una fila propia al final, o sea
+       una franja de 44px de alto y del ancho COMPLETO de la tarjeta para un
+       solo boton, y el gesto quedaba lejos del titulo de la notificacion.
+
+       TECNICA ELEGIDA: `position:absolute` sobre la fila (`position:relative`).
+       POR QUE, contra la alternativa de reubicarlo en la grilla:
+       ponerlo en la grilla obliga a darle una PISTA propia — sea una 3ra
+       columna de 44px, sea la celda (1,2) — y esa pista existe en TODAS las
+       filas del grid, no solo en la primera: se pierden 44px de ancho en
+       cada renglon de datos de una tarjeta que a 360px ya reparte 145px por
+       columna. Ademas las dos variantes de tabla tienen distinta cantidad de
+       celdas (5 y 5, pero `--main` mete un badge que crece), asi que la
+       posicion en la grilla no es la misma cuenta en las dos.
+       Sacandolo del flujo, el boton se ancla al borde de la TARJETA y no
+       depende de cuantos datos tenga: una sola regla sirve para
+       `.notif-table--main` y `.notif-table--inact`.
+
+       Se paga con dos resguardos explicitos, que es justo lo que hay que
+       cuidar al sacar algo del flujo:
+       1) RESERVA DE ESPACIO. Lo unico que queda debajo del boton es la celda
+          de la columna 2 de la primera fila (el "Nombre" en las dos
+          variantes). Se le reserva el hueco con `padding-right`, asi el
+          texto envuelve antes de llegar y NADA queda tapado. Es una reserva
+          quirurgica: cuesta 52px en UNA celda, no 44px en toda la columna.
+       2) ALTO MINIMO. `min-height` en la fila para que una tarjeta corta no
+          deje al boton sobresaliendo por abajo del borde.
+       `grid-column:auto` es necesario: con una posicion explicita de grilla,
+       el bloque contenedor del absoluto seria el AREA de grilla y no el
+       padding-box de la fila, y `top`/`right` medirian contra otra caja. */
+    .notif-row{ position:relative; min-height:60px; }
+    /* La PRIMERA fila de la grilla tiene que ser mas alta que el boton, si no
+       el boton (44px + .45rem de offset = 50.2px contra los 6.4px de
+       padding-top de la tarjeta) se derrama sobre la fila 2 de la grilla.
+       MEDIDO: en `.notif-table--inact` a 390px, con un "Nombre" de una sola
+       linea, la fila 1 medía 31px y el borde de abajo del boton pisaba 1.9px
+       de la etiqueta "EMPRESA" de la celda (2,2).
+       48px es el piso: 6.4 de padding + 48 = 54.4 > 50.2. `auto` de tope para
+       que un nombre largo siga creciendo. Vale para las dos variantes porque
+       la reserva se calcula contra el boton, no contra el contenido. */
+    .notif-table--main .notif-row,
+    .notif-table--inact .notif-row{ grid-template-rows:minmax(48px, auto); }
+    .notif-cell--action{
+      position:absolute; top:.45rem; right:.5rem;
+      grid-column:auto; margin:0; padding:0;
+      justify-content:flex-end;
+    }
+    /* El hueco que ocupa el boton, reservado en la celda que queda debajo. */
+    .notif-row > .notif-cell:nth-child(2){ padding-right:52px; }
 
     /* La celda de accion NO lleva etiqueta. El `::before` de arriba existe
        porque en modo tarjeta se pierde el `thead`: cada dato necesita decir
