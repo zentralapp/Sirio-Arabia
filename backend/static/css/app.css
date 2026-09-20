@@ -503,11 +503,12 @@ h1,h2{letter-spacing:.2px}
 /* Control responsivo para campos de precio/forma pago en tablas */
 @media (min-width: 768px){
   .js-price-group{max-width:120px; min-width:120px}
-  .js-forma{max-width:150px}
   /* Cobranzas controles desktop */
   .js-cob-price-group{max-width:180px; min-width:140px}
-  .js-cob-forma{max-width:150px}
   .js-cob-estimado{max-width:160px}
+  /* `.js-forma{max-width:150px}` y `.js-cob-forma{max-width:150px}` salieron de
+     aca: el ancho del select de forma de pago lo define `--forma-select-w`
+     (bloque FORMA DE PAGO, mas abajo) en una sola regla por banda. */
   /* Forzar ancho mínimo de columna de dinero para evitar clipping del input */
   .table-tight td.col-money, .table-tight th.col-money,
   .table-cobranzas td.col-money, .table-cobranzas th.col-money{min-width: 140px}
@@ -685,7 +686,12 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
      /status en esta banda YA entra sin scroll (846px de tabla en 846px de
      contenedor). El ancho de columna de /deudas — la única tabla que
      desbordaba fuerte — se ajusta en su propio template (cobranzas.html). */
-  .js-forma, .js-cob-forma, .js-cob-estimado{max-width:118px}
+  /* Aca vivia `.js-forma, .js-cob-forma, .js-cob-estimado{max-width:118px}`.
+     Peleaba con `.js-cob-forma{max-width:150px}` del bloque `min-width:768px`
+     (mismo selector efectivo, este va despues y ganaba) y dejaba el select de
+     forma de pago en 83px utiles de texto contra los 115px que necesita
+     "Cheque (generico)" a 12px. El ancho de ese select ahora lo define UNA
+     sola regla, `--forma-select-w`, mas abajo. Ver el bloque FORMA DE PAGO. */
   /* T1-B: los INPUTS y SELECTS de esta banda ya NO se compactan acá. Su
      tipografía se parte en dos sub-bandas justo debajo, porque 768-991.98px es
      tacto (tablet / teléfono horizontal) y 992-1199.98px es mouse. Acá quedan
@@ -799,4 +805,63 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
   overflow-wrap: normal;
   word-break: normal;
   hyphens: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FORMA DE PAGO — UN SOLO DUEÑO DEL ANCHO DEL SELECT
+   ───────────────────────────────────────────────────────────────────────────
+   SINTOMA REPORTADO (iPhone real, /deudas, columna "Forma de pago"): la opcion
+   se lee "Cheque (g" y se corta, y en la fila de "No se sabe" la flechita del
+   select se dibuja ENCIMA de la ultima letra.
+
+   DOS CAUSAS DISTINTAS, LAS DOS MEDIDAS:
+
+   1) ANCHO. La opcion mas larga es "Cheque (generico)". Medida con canvas
+      measureText contra la fuente COMPUTADA del select:
+        390px / 800px (fuente 16px) -> 154px de texto, habia 87px utiles
+        1100px        (fuente 12px) -> 115px de texto, habia 83px utiles
+        1400px        (fuente 14px) -> 134px de texto, habia 64px utiles
+      O sea estaba cortado en las CUATRO bandas, no solo en mobile.
+      La causa eran dos `max-width` para el mismo selector: 150px en
+      `min-width:768px` y 118px en `768-1199.98px`, que iba despues y ganaba;
+      abajo de 768px no habia ninguno y mandaba el `width:110px` que
+      cobranzas.html le pone a `.col-forma`.
+
+   2) CHEVRON. Bootstrap dibuja la flecha como background-image en
+      `right .75rem center`, 16px de ancho, y reserva el hueco con
+      `padding-right:2.25rem`. Los bloques de compactacion de tabla de esta
+      hoja reescriben el padding con la forma corta (`padding:.14rem .3rem`,
+      `padding:.15rem .3rem`, `padding:.24rem .4rem`), lo que deja el
+      padding-right en 3.8-6.4px MEDIDOS. Con menos hueco que el icono, la
+      flecha se pinta sobre el texto. Ensanchar no alcanza: hay que devolver
+      el hueco. 30px cubre el peor caso (root 16px: .75rem=12 + 16 del icono
+      = 28) y sobra en los roots chicos de mobile (12.75/13.25px).
+
+   ANCHO ADOPTADO = texto + padding izq (8) + hueco del chevron (30) + borde (2).
+   En px y no en rem: el `html{font-size}` baja a 13.25/12.75px en mobile y
+   cualquier rem quedaria corto justo donde mas duele.
+
+   `.js-forma` NO figura aca a proposito: la clase no existe en NINGUN
+   template (solo sobrevive un querySelectorAll muerto en status.html). Y
+   `.js-cob-estimado` TAMPOCO es un select de forma de pago: es el <input> de
+   fecha de Vencimiento de cobranzas.html, su ancho lo maneja `.col-venc`.
+   Meter las tres clases en la misma regla fue el error original.
+
+   Se usa `min-width` y no `width` porque el bloque de <768px de esta hoja trae
+   `.js-cob-forma{width:100%!important}`: `min-width` gana igual por spec
+   (el used width es max(min-width, width)) y asi no hace falta otro
+   `!important`. El selector lleva `.table select.form-select` para superar en
+   especificidad a las reglas de compactacion (0,4,2 contra 0,3,2).          */
+:root{ --forma-select-w: 196px; }                                  /* fuente 16px: 154+8+30+2 */
+@media (min-width: 992px) and (max-width: 1199.98px){
+  :root{ --forma-select-w: 156px; }                                /* fuente 12px: 115+8+30+2 */
+}
+@media (min-width: 1200px){
+  :root{ --forma-select-w: 176px; }                                /* fuente 14px: 134+8+30+2 */
+}
+
+.table select.form-select.js-cob-forma{
+  min-width: var(--forma-select-w);
+  padding-left: 8px;
+  padding-right: 30px;
 }

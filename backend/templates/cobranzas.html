@@ -189,11 +189,15 @@
       line-height: 1;
     }
 
+    /* La columna se achica a su contenido y el contenido es el select, cuyo
+       ancho lo define `--forma-select-w` en app.css (bloque FORMA DE PAGO).
+       Antes habia aca `width:110px; min-width:110px` + `.form-select{width:110px}`,
+       o sea un TERCER numero peleando con los dos `max-width` de app.css
+       (150px y 118px). Resultado medido: 87px utiles de texto contra los 154px
+       que necesita "Cheque (generico)" -> se leia "Cheque (g". Ahora hay UNO. */
     .table-cobranzas th.col-forma,
 
-    .table-cobranzas td.col-forma { width: 110px; min-width: 110px; }
-
-    .table-cobranzas td.col-forma .form-select { width: 110px; }
+    .table-cobranzas td.col-forma { width: 1%; white-space: nowrap; }
 
 
 
@@ -264,9 +268,11 @@
          .col-date (112.8px), y #cobTable en 969.3px = el baseline de H10. */
       .table-cobranzas td.col-venc .form-control { width: 80px; max-width: 80px; }
 
-      .table-cobranzas th.col-forma,
-      .table-cobranzas td.col-forma { width: 98px; min-width: 98px; }
-      .table-cobranzas td.col-forma .form-select { width: 98px; }
+      /* `.col-forma` a 98px salio de aca: apretaba el select por debajo de lo
+         que mide su opcion mas larga. La columna ahora se dimensiona sola
+         (`width:1%`) contra `--forma-select-w`. Esto suma ancho a la tabla en
+         esta banda respecto de H10, y es a proposito: el usuario acepto el
+         scroll horizontal de /deudas, no acepta texto cortado. */
 
       .table-cobranzas th.col-money,
       .table-cobranzas td.col-money { width: 106px; min-width: 106px; }
