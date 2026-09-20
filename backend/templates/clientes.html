@@ -3,8 +3,8 @@
 <style>
   /* Tabla de clientes: más espacio entre columnas */
   .table-relaxed th, .table-relaxed td { padding: .75rem 1.35rem; }
-  /* Mantener columna Acciones compacta y sin ocupar ancho extra */
-  .col-actions { white-space: nowrap; width: 1%; }
+  /* La columna Acciones se dimensiona en app.css, bloque COLUMNA DE
+     ACCIONES. Esta vista ya usaba `width:1%`; ahora lo usan todas. */
   .js-sortable-table thead th[data-sort]{ cursor:pointer; user-select:none; }
   .js-client-sort{ cursor:pointer; user-select:none; }
   /* Card de clientes: permitir que los dropdowns se vean completos */
@@ -113,6 +113,23 @@
       vertical-align: top;
       line-height: 1.28;
     }
+
+    /* La columna de acciones queda FUERA del `white-space:normal` +
+       `overflow-wrap:anywhere` de arriba. Esa regla lleva ID (1,0,1) y le gana
+       al criterio unico de app.css (`.table td.col-actions`, (0,2,1)), asi que
+       hay que repetir la excepcion aca con ID. Sin esto el min-content de la
+       celda es UN caracter y el `width:1%` la estrangula en vez de achicarla a
+       su contenido: es exactamente lo que le paso a /usuarios, que colapso a
+       41px con los botones partidos a una letra por renglon y la fila en 233px
+       de alto. Hoy no se nota porque la celda tiene un solo dropdown, que no
+       tiene donde partirse; en cuanto entre un segundo boton, si. */
+    #clientes-table th.col-actions,
+    #clientes-table td.col-actions {
+      white-space: nowrap;
+      overflow-wrap: normal;
+      word-break: normal;
+    }
+
 
     #clientes-table tbody tr:not(:has(.js-alertas-list:not(.d-none))) > td {
       vertical-align: middle;

@@ -24,7 +24,7 @@
               <th>Empresa</th>
               <th>Fecha pedido</th>
               <th>Guardado</th>
-              <th class="text-end">Acciones</th>
+              <th class="text-end col-actions">Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -34,7 +34,7 @@
                 <td>{{ it.company }}</td>
                 <td>{{ it.order_date }}</td>
                 <td>{{ it.saved_at }}</td>
-                <td class="text-end">
+                <td class="text-end col-actions">
                   <a class="btn btn-sm btn-primary" href="{{ url_for('main.nueva_cobranza', draft_id=it.draft_id) }}">Reabrir</a>
                 </td>
               </tr>

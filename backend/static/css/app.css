@@ -426,7 +426,8 @@ h1,h2{letter-spacing:.2px}
   .table-mobile-cards .js-forma,
   .table-mobile-cards .js-cob-forma,
   .table-mobile-cards .js-cob-estimado{ margin-top:.25rem }
-  .w-actions{min-width:100px}
+  /* `.w-actions{min-width:100px}` salio de aca: ver el bloque COLUMNA DE
+     ACCIONES al final de esta hoja, que unifica el criterio para todas. */
   /* Botonera de acciones en tablas: mantener horizontal en pantallas chicas */
   .table .btn-group{flex-wrap:nowrap}
   .table .btn-group form{display:inline-block}
@@ -480,7 +481,8 @@ h1,h2{letter-spacing:.2px}
   .table .form-control.form-control-sm,.table .form-select.form-select-sm{padding:.22rem .45rem;height:auto;font-size:12px}
   .table .btn-group .btn{padding:.26rem .4rem;font-size:12px}
   .badge{font-size:11px; padding:.28em .42em}
-  .w-actions{min-width:90px}
+  /* `.w-actions{min-width:90px}` salio de aca: ver el bloque COLUMNA DE
+     ACCIONES al final de esta hoja. */
   .alert{padding:.45rem .65rem; font-size:12px}
 
   /* iOS hace zoom al enfocar un input con font-size computado < 16px. El umbral es
@@ -864,4 +866,75 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
   min-width: var(--forma-select-w);
   padding-left: 8px;
   padding-right: 30px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COLUMNA DE ACCIONES — UN SOLO CRITERIO PARA TODAS LAS TABLAS
+   ───────────────────────────────────────────────────────────────────────────
+   Habia SIETE anchos distintos para la misma columna:
+     cobranzas.html  min-width:56px + width:56px   (y 54px en su bloque mobile)
+     status.html     min-width:150px               (y 90px en su bloque mobile)
+     app.css         min-width:100px (<768px) y min-width:90px (<576px)
+     empresas.html   min-width:140px
+     clientes.html   width:1%   /  layout.html  width:1%
+
+   MEDIDO a 390x844 (ancho del th contra lo que ocupa el contenido real):
+     vista       declarado        botones visibles   contenido necesita   th real
+     /clientes   width:1%         1 de 44px          57px                 87px
+     /empresas   min-width:140px  1 de 44px          57px                 147px  <- 90px muertos
+     /deudas     width:56/54px    1 de 40px          53px                 69px
+     /status     min-width:90px   2 (49 + 44px)      112px                92px   <- 20px corto
+     /usuarios   sin nada         2 (69 + 62px)      145px                152px
+
+   O sea los numeros fijos ya se habian desincronizado del contenido en los dos
+   sentidos: /empresas roba 90px a las columnas de nombres en una pantalla de
+   390px, y /status declara menos de lo que ocupa. El de /deudas entra por
+   1.25px (40 de boton + 12.75 de padding contra 54 declarados): en cuanto ese
+   boton suba al piso tactil de 44px que usa el resto, deja de entrar.
+
+   CRITERIO ADOPTADO: `width:1%` + `white-space:nowrap`.
+
+   `width:1%` en una tabla `table-layout:auto` es el idiom de "esta columna se
+   achica a su contenido": el navegador la baja hasta su ancho MIN-CONTENT y le
+   da el sobrante a las demas. Con `nowrap`, ese min-content es exactamente la
+   cuenta que habria que hacer a mano — N botones x su ancho + los gaps + el
+   padding de la celda — pero calculada sobre el contenido VIVO, y en el borde
+   inferior queda el texto "Acciones" del encabezado, que nunca es menor que un
+   target tactil. Por eso NO lleva un `min-width` de respaldo: el piso ya lo
+   pone el propio boton, que es el contenido.
+
+   Se elige sobre pixeles fijos porque:
+     - no puede recortar (min-content es un PISO, no una sugerencia),
+     - no hay que recalcularlo cuando una vista suma o saca un boton,
+     - devuelve a las columnas de nombres el ancho que hoy se desperdicia.
+
+   Las vistas que no traian clase (`/usuarios`, `/estado-clientes`,
+   `/cobranzas/pendientes`, `/pedidos`) ahora la llevan en el markup.
+   `/historial`, `/historial/eliminados`, `/comisiones` y `/crm` no tienen
+   columna de acciones.
+
+   Las reglas de `.table-mobile-cards` (mas abajo y en layout.html) siguen
+   pisando esto con !important en modo tarjeta, que es lo correcto: ahi la
+   celda ocupa el ancho completo de la tarjeta.
+
+   ── POR QUE EL SELECTOR LLEVA `.table` ADELANTE ─────────────────────────────
+   Un `.col-actions` pelado (0,1,0) NO alcanza. layout.html declara en su
+   <style> del <head>, o sea DESPUES de esta hoja:
+       .table tbody td { white-space: normal; }            (0,1,2)
+       .table th, .table td { overflow-wrap: anywhere; }   (0,1,1)
+   y la primera le gana a cualquier regla de una sola clase. Probado: con
+   `.col-actions{white-space:nowrap}` el nowrap NO se aplicaba y /usuarios
+   colapsaba a 41px, con los botones partidos a UNA LETRA POR RENGLON y la
+   fila en 233px de alto. `.table td.col-actions` es (0,2,1) y si gana.
+
+   `overflow-wrap`/`word-break` vuelven a `normal` por lo mismo: con
+   `anywhere` el min-content de la celda es un caracter y el `width:1%` la
+   estrangula en vez de achicarla a su contenido. Es el mismo pisoton que ya
+   esta documentado en el bloque de columnas de nombres propios.            */
+.table th.w-actions,  .table td.w-actions,
+.table th.col-actions, .table td.col-actions{
+  width: 1%;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
 }

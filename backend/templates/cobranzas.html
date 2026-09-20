@@ -96,9 +96,8 @@
 
     .cob-filter .btn-outline-secondary.active:hover { background:#6c757d; color:#fff; border-color:#6c757d; }
 
-    /* Asegurar espacio para Acciones */
-
-    .w-actions { min-width: 56px; width: 56px; }
+    /* El ancho de la columna de Acciones lo define app.css, bloque
+       COLUMNA DE ACCIONES. Aca habia `min-width:56px; width:56px`. */
 
     .table-cobranzas { table-layout: auto; width: 100%; }
 
@@ -571,11 +570,10 @@
         font-size: 13px;
       }
 
-      /* La columna de acciones tiene que poder alojar un target de 40px. */
-      #cobTable .w-actions {
-        min-width: 54px;
-        width: 54px;
-      }
+      /* `#cobTable .w-actions{min-width:54px; width:54px}` salio de aca. Los
+         54px entraban por 1.25px contra un boton de 40px mas 12.75 de
+         padding; con el piso tactil de 44px ya no entraban. Ahora la
+         columna se mide sola: ver COLUMNA DE ACCIONES en app.css. */
     }
 
     body[data-active="deudas"] .table-cobranzas.table-sticky thead th {
@@ -1011,7 +1009,7 @@
 
             </td>
 
-            <td class="text-end">
+            <td class="text-end w-actions">
 
               <div class="dropdown">
 

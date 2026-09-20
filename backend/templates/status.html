@@ -106,8 +106,8 @@
     .date-soft .btn-clear:hover { 
       background: #f8f9fa; 
     }
-    /* Asegurar espacio para acciones */
-    .w-actions { min-width: 150px; }
+    /* El ancho de la columna de Acciones lo define app.css, bloque
+       COLUMNA DE ACCIONES. Aca habia `min-width:150px`. */
     /* Colores de monto según tipo de comprobante */
     .monto-factura .input-group-text { background-color:var(--teal); color:#fff; border-color:var(--teal); }
     .monto-factura .form-control { border-color:var(--teal); }
@@ -195,7 +195,8 @@
         overflow-wrap: break-word;
         word-break: normal;
       }
-      #status-table .w-actions { min-width: 90px; }
+      /* `#status-table .w-actions{min-width:90px}` salio de aca: declaraba
+         90px para dos botones que miden 112px con su padding. */
       #status-table .w-actions .btn {
         padding: .28rem .42rem;
         min-height: 0;
@@ -300,7 +301,7 @@
                 <span class="badge bg-secondary">EN CAMINO</span>
               {% endif %}
             </td>
-            <td class="text-end">
+            <td class="text-end w-actions">
               <div class="d-flex justify-content-end flex-wrap gap-2">
                 <form id="upd{{ s.order.id }}" class="d-none" method="post" action="{{ url_for('main.status_update', order_id=s.order.id) }}"></form>
                 <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.pedidos', order_id=s.order.id) }}">Editar</a>

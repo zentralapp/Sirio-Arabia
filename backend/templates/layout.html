@@ -78,7 +78,9 @@
         /* Tablas en móvil: no forzar fixed (recorta columnas). */
         .table { font-size: 13px; table-layout: auto; }
         .table th, .table td { padding: .45rem .55rem; word-break: break-word; overflow-wrap: anywhere; }
-        .col-actions { width: 1%; white-space: nowrap; }
+        /* `.col-actions{width:1%; white-space:nowrap}` salio de aca: ahora es
+           la regla unica de app.css y vale en todas las bandas, no solo en
+           mobile. Ver COLUMNA DE ACCIONES. */
         /* Acciones: misma disposición y sin salto de línea */
         .col-actions .btn-group { display: inline-flex; flex-wrap: nowrap; gap: .35rem; }
         .col-actions .btn-group .btn { font-size: 13px; padding: .35rem .5rem; }

@@ -100,6 +100,23 @@
       line-height: 1.28;
     }
 
+    /* La columna de acciones queda FUERA del `white-space:normal` +
+       `overflow-wrap:anywhere` de arriba. Esa regla lleva ID (1,0,1) y le gana
+       al criterio unico de app.css (`.table td.col-actions`, (0,2,1)), asi que
+       hay que repetir la excepcion aca con ID. Sin esto el min-content de la
+       celda es UN caracter y el `width:1%` la estrangula en vez de achicarla a
+       su contenido: es exactamente lo que le paso a /usuarios, que colapso a
+       41px con los botones partidos a una letra por renglon y la fila en 233px
+       de alto. Hoy no se nota porque la celda tiene un solo dropdown, que no
+       tiene donde partirse; en cuanto entre un segundo boton, si. */
+    #empresas-table th.col-actions,
+    #empresas-table td.col-actions {
+      white-space: nowrap;
+      overflow-wrap: normal;
+      word-break: normal;
+    }
+
+
     #empresas-table tbody tr:not(:has(.js-alertas-list:not(.d-none))) > td {
       vertical-align: middle;
     }
@@ -167,8 +184,10 @@
         .table-tight td { word-break: break-word; }
         /* Forzar ancho mínimo de tabla para permitir scroll horizontal en móviles */
         .table-tight { min-width: 720px; }
-        /* Evitar wraps en columna Acciones */
-        .table-tight th.col-actions, .table-tight td.col-actions { white-space: nowrap; min-width: 140px; }
+        /* `min-width:140px` salio de aca: reservaba 140px para un boton de
+           44px (57px con padding), o sea 90px muertos robados a las columnas
+           de nombres en una pantalla de 390px. El `nowrap` tambien, porque
+           ya lo pone la regla unica. Ver COLUMNA DE ACCIONES en app.css. */
         /* Evitar wraps dentro del grupo de botones */
         .btn-group.flex-nowrap .btn { white-space: nowrap; }
       </style>
