@@ -472,13 +472,56 @@
          La celda se dimensiona sola: `width:1%` + el min-content del flex row
          = 104 (input) + .2rem (gap) + 40 (botón) + padding de la celda. No hay
          número mágico que mantener sincronizado a mano. */
+      /* El `z-index` NO es decorativo: es la red que impide que el badge de la
+         columna "Días" TAPE el botón. Ver el bloque de `min-width` de acá
+         abajo, que es el arreglo de fondo. */
       #cobTable td.col-venc .cob-venc-wrap {
         flex-direction: row;
         align-items: center;
+        position: relative;
+        z-index: 1;
       }
 
+      /* ── EL BADGE DE "DÍAS" SE DIBUJABA ENCIMA DEL BOTÓN DE TILDE ──────────
+         Reportado desde el iPhone: del botón verde sólo se veía una franja
+         abajo con el ✓. Lo introdujimos nosotros en 5224ce5, el commit que puso
+         el botón EN FILA con el input: antes el wrap era `flex-direction:
+         column` y el botón, apilado, no compartía banda vertical con la celda
+         de al lado. No pasaba antes de ese commit.
+
+         Quién invade a quién, medido a 390x844 en Chrome:
+           botón   .right = 267.8    badge .x = 280.6
+           solape vertical = 18.7px de los 40px de alto del botón
+           hueco horizontal = 12.8px  ... que son EXACTAMENTE los dos paddings
+                                          de celda (6.4 + 6.4). Slack real: CERO.
+         O sea: el botón y el badge ya comparten banda vertical y lo único que
+         los separa es el padding. El que desborda es el BOTÓN, hacia la
+         derecha, y como el `<td>` de "Días" viene DESPUÉS en el DOM, su badge
+         (que tiene fondo opaco) se pinta encima.
+
+         Por qué en Chrome no se ve y en iOS sí: la celda era `width: 1%`, o sea
+         se dimensionaba por el min-content de un CONTENEDOR FLEX metido en un
+         `<td>`. Chrome lo computa bien (159.3px = 6.4 + 104 + 3.2 + 40 + 6.4) y
+         queda justo; WebKit sub-computa el intrínseco de un flex container
+         dentro de una celda de tabla, así que el `width:1%` gana, la celda se
+         achica y los dos items -- que tienen `flex-shrink: 0` y NO pueden
+         encoger -- se derraman a la derecha.
+
+         Arreglo: no depender del intrínseco. Se declara el presupuesto real de
+         la celda, que es la misma cuenta de arriba y sale de valores que ya
+         están escritos acá al lado:
+           6.4 (padding) + 104 (input) + 3.2 (.2rem de gap) + 40 (botón) + 6.4
+           = 160px
+         Con eso la celda mide lo mismo en todos los motores. Cuesta 0.7px de
+         scroll horizontal contra los 159.3 que medía antes.
+
+         El `z-index: 1` del wrap es el cinturón además del tirante: no se pudo
+         probar en WebKit (no hay WebKit instalado y no se corre `playwright
+         install`), así que si algún motor igual achica la celda, el botón queda
+         ARRIBA del badge y se puede tocar, en vez de desaparecer debajo. */
       #cobTable td.col-date.col-venc {
         width: 1%;
+        min-width: 160px;
         white-space: nowrap;
       }
 
