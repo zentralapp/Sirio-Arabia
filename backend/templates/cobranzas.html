@@ -394,6 +394,32 @@
         vertical-align: top;
       }
 
+      /* ── EL THEAD SE ALINEA AL MEDIO, NO ARRIBA ───────────────────────────
+         Síntoma: "Vencimiento ⇕" y "Entrega efectiva ⇕" caían más abajo que
+         "Forma de pago", "Monto" y "Días".
+
+         Causa medida a 390x844 (posición del primer glifo respecto del tope
+         del th, con un Range sobre el nodo de texto):
+           th de texto plano          -> 2.5px
+           th con `.cob-sort-link`    -> 15.1px     => 12.6px de desfase
+
+         No es un salto de línea ni un `vertical-align` distinto entre th: los
+         once th computan lo mismo. Es que `.cob-sort-link` es un
+         `inline-flex` con `min-height:40px` y `align-items:center` (piso
+         táctil de H9), así que su texto va CENTRADO en una caja de 40px;
+         puesta arriba de todo en un th de 48.9px, su texto cae 12.6px más
+         abajo que el texto suelto de los demás.
+
+         El arreglo no es un margin-top a ojo: es dejar de alinear el thead
+         arriba. Con `middle` el centro de la caja de 40px y el centro del
+         texto plano coinciden por construcción, y sigue valiendo si mañana
+         otro th se convierte en link o cambia el alto de la fila. El `top` de
+         la regla de arriba se queda donde hacía falta: en las celdas del
+         tbody, que sí tienen nombres de cliente en varias líneas. */
+      #cobTable thead th {
+        vertical-align: middle;
+      }
+
       /* `anywhere` -> `break-word`: ver layout.html, "COLUMNAS DE NOMBRES
          PROPIOS". Esta regla lleva ID y esta en un <style> del <body>, o sea
          que le gana por especificidad Y por orden a `.table td.col-nombre`;
