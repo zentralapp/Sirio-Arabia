@@ -57,6 +57,40 @@
       -webkit-overflow-scrolling: touch;
     }
     #empresas-table { min-width: 640px; }
+    /* ── EL AIRE VERTICAL DE LAS FILAS ─────────────────────────────────────
+       SINTOMA MEDIDO a 390x844: el texto pegado al techo de la celda y ~30px
+       de vacio debajo, en TODAS las filas.
+
+       DIAGNOSTICO (scratchpad/diag_aire.py, celda por celda):
+         alto de fila = 52.9px
+         padding      = 4.46 + 4.46 = 8.9px
+         quien manda  = la celda "Alertas", con un <button> de 44px de alto
+         texto real   = 15.4px (una linea, line-height 1.28)
+         => 52.9 - 8.9 - 15.4 = 28.6px de aire en las celdas de texto.
+
+       NO ERA EL PADDING. `.table-relaxed th,td{padding:.75rem 1.35rem}` de
+       arriba esta pisado en mobile: el padding computado es 4.46px, o sea casi
+       nada. Y la fila NO se puede achicar: 44 + 8.9 = 52.9 es exactamente el
+       piso tactil de 44px del boton de alertas mas el padding. Apretarla mas
+       habria sido romper ese piso.
+
+       LA CAUSA ES EL `vertical-align: top` DE ESTE MISMO BLOQUE. La tabla pide
+       `align-middle` en su propio markup y app.css dice
+       `.table td,.table th{vertical-align:middle}`, pero este selector con ID
+       le gana a los dos. Con la altura de la fila fijada por el boton de 44px,
+       `top` amontona TODO el sobrante abajo del texto en vez de repartirlo. El
+       vacio es el mismo; lo que cambia es que asi se lee como un error de
+       maquetado en vez de como padding.
+
+       POR QUE NO SE PONE `middle` A SECAS: el `top` tenia una razon. La primera
+       celda contiene el panel de alertas (.js-alertas-list), que el JS
+       despliega sacandole `d-none`. Desplegado, la fila pasa de 52.9px a varios
+       cientos, y ahi centrar "Marcelo" o "Buenos Aires" en el medio de ese
+       bloque es peor que pegarlo arriba. Por eso se centra SOLO con el panel
+       colapsado, que es el 100% del tiempo hasta que alguien toca el boton.
+       `:has()` es Safari 15.4+ / Chrome 105+ y ya se usa en
+       _blindaje_mobile.html; si un navegador viejo lo ignora, la regla se
+       descarta y volvemos al `top` de siempre.                                */
     #empresas-table th,
     #empresas-table td {
       white-space: normal;
@@ -64,6 +98,10 @@
       word-break: break-word;
       vertical-align: top;
       line-height: 1.28;
+    }
+
+    #empresas-table tbody tr:not(:has(.js-alertas-list:not(.d-none))) > td {
+      vertical-align: middle;
     }
     #empresas-table td:nth-child(1),
     #empresas-table td:nth-child(2) {
