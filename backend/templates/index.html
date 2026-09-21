@@ -104,6 +104,52 @@
     .db-range .form-control{ min-height:40px; }
     .db-filter-bar .form-select, .db-filter-bar .form-control{ min-height:40px; }
     .db-link{ display:inline-block; min-height:40px; padding-top:.5rem; padding-bottom:.5rem; }
+
+    /* ── EL CODIGO DE PEDIDO SE APILABA EN 3 Y 4 RENGLONES ──────────────────
+       "PED-000152" es un codigo, no una frase: partirlo no ayuda a leerlo, y
+       el `overflow-wrap:anywhere` que layout.html le pone a `.table td` lo
+       dejaba cortar en cualquier letra. Medido, 6 links por pagina:
+
+                     Chrome              WebKit
+         360x740     44.1 x 46.3  3 lin  39.9 x 46.3-63.1  3 y 4 lineas
+         390x844     48.1 x 46.3  3 lin  44.6 x 46.3       3 lineas
+       O sea: se veia mal en LOS DOS motores y TAMBIEN a 390px, no solo en
+       Safari a 360. Ademas en WebKit a 360 el ancho caia a 39.9px, por debajo
+       del piso tactil de 44: son los 6 hallazgos `small_touch_targets` que
+       aparecian SOLO en WebKit en toda la auditoria de 23 rutas.
+
+       `white-space:nowrap` y no `min-width:44px`: probado el min-width, deja
+       el target en 44.0px justo justo y el codigo SIGUE en 3 renglones, o sea
+       tapa la metrica sin arreglar lo que se ve. Con nowrap el min-content de
+       la celda pasa a ser el codigo entero, que es el ancho que la columna
+       siempre necesito, y los dos motores convergen:
+         360 y 390   69 - 72.4 x 40px, UNA linea, en Chrome y en WebKit
+         <body> @360  WebKit 2060.9 -> 2001.2, identico al de Chrome
+         800x1000     sin cambios (ahi ya entraba en una linea)
+       La tabla vive en un `.table-responsive`, asi que el ancho extra se
+       resuelve con scroll del contenedor: el `h_scroll` del body sigue en 0
+       en los tres viewports y en los dos motores.
+
+       EL SELECTOR LLEVA `td` ADELANTE A PROPOSITO: `.db-link` tambien son los
+       dos pies de panel ("Ver todos los pedidos del día", "Ver todas las
+       empresas"), que son FRASES de 144-175px y con nowrap se saldrian de la
+       tarjeta. Medido: con esta regla esos dos quedan intactos.
+
+       EL `min-height:44px` VA JUNTO Y NO ES DECORATIVO. Al pasar de 3 lineas a
+       1, el alto del link cae del 46.3px que le daban los tres renglones al
+       `min-height:40px` de la regla de arriba, y 40 < 44: el link salia de la
+       lista de targets chicos por ANCHO y volvia a entrar por ALTO. Medido con
+       el JS del harness sobre `/`, con nowrap SOLO:
+         small_touch_targets  13 por viewport, 8 de ellos `.db-link`
+       Con nowrap + min-height:44px:
+         360x740 y 390x844    13 -> 7, y los `.db-link` 8 -> 2
+       en LOS DOS motores. Los 2 que quedan son los dos pies de panel, que
+       siguen en los 40px que esta vista eligio para toda su barra de filtros
+       (chips, botones y controles): no se tocan en esta tanda.
+       El selector (0,2,1) le gana al `.db-link{min-height:40px}` (0,1,0) de
+       mas arriba sin `!important`. Verificado: con un selector pelado la regla
+       NO tenia efecto.                                                     */
+    .db-table td .db-link{ white-space:nowrap; min-height:44px; }
   }
 
   /* ── T1-B: ANTI-ZOOM DE iOS EN LA BARRA DE FILTROS ─────────────────────────
