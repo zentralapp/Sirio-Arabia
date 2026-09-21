@@ -105,6 +105,58 @@
     .cob-cal-host .flatpickr-calendar.arrowBottom::before,
     .cob-cal-host .flatpickr-calendar.arrowBottom::after { display: none !important; }
 
+    /* ── LO MISMO PARA LOS TRES DATEPICKERS DE FILA ──────────────────────────
+       .js-cob-entrega, .js-cob-estimado y .js-cob-cobro flotaban igual que el
+       de filtros y tapaban 6-8 controles cada uno (los dos buscadores, "Limpiar
+       filtros", Factura/Remito y el input de fecha de otra fila). Medido igual
+       en WebKit y en Chrome a 390x844 y 360x740: no es divergencia de motor.
+       Y estos SI escriben: un toque en un dia manda POST /cobranzas/<id>/update.
+
+       Aca el host NO puede ser uno global: el calendario tiene que salir al
+       lado de la fila que se esta editando. Se inserta un <tr class="cob-cal-row">
+       justo debajo de la fila, con un unico <td colspan> que aloja el host. Se
+       crea al abrir y se saca al cerrar, asi que EN REPOSO la tabla queda byte
+       por byte como estaba: mismo alto de fila, mismos anchos de columna, mismo
+       colspan. No se toca ninguna celda existente.
+
+       El host va `sticky` horizontalmente: la tabla scrollea en horizontal y la
+       columna de Vencimiento vive a la derecha, asi que sin esto el calendario
+       quedaba en el borde izquierdo de la TABLA, fuera de pantalla. */
+    .cob-row-cal-host {
+      position: sticky;
+      left: .5rem;
+      width: 307.875px;
+      max-width: calc(100vw - 1.5rem);
+    }
+
+    /* `relative` y NO `static`, por el mismo motivo que arriba: las flechas
+       .flatpickr-prev-month / .flatpickr-next-month son absolute con top/left/
+       right 0 y si el calendario no es su bloque contenedor se escapan a la
+       esquina superior de la pagina. */
+    .cob-row-cal-host .flatpickr-calendar {
+      position: relative !important;
+      top: auto !important;
+      left: auto !important;
+      right: auto !important;
+      margin: .25rem 0 .35rem;
+      box-shadow: 0 0 0 1px #e5e7eb;
+    }
+
+    .cob-row-cal-host .flatpickr-calendar:not(.open) { display: none !important; }
+
+    .cob-row-cal-host .flatpickr-calendar.open { display: block !important; }
+
+    .cob-row-cal-host .flatpickr-calendar.arrowTop::before,
+    .cob-row-cal-host .flatpickr-calendar.arrowTop::after,
+    .cob-row-cal-host .flatpickr-calendar.arrowBottom::before,
+    .cob-row-cal-host .flatpickr-calendar.arrowBottom::after { display: none !important; }
+
+    /* la fila portadora no participa del hover ni pinta bordes de datos */
+    #cobTable tbody tr.cob-cal-row,
+    #cobTable tbody tr.cob-cal-row:hover { background: #fff; --bs-table-accent-bg: transparent; }
+
+    #cobTable tbody tr.cob-cal-row > td { border-top: 0; background: #fff; }
+
     /* Colores activos */
 
     .cob-filter .btn-outline-primary:hover,
@@ -1471,6 +1523,10 @@
 
   function sortByDateColumn(colIndex, direction){
 
+    // una fila portadora de calendario es un <tr> con un solo <td colspan>:
+    // `children[colIndex]` daria undefined. Se cierra el calendario primero.
+    try { if (typeof window.cobCloseRowCalendars === 'function') window.cobCloseRowCalendars(); } catch(e) {}
+
     var rows = Array.from(tbody.querySelectorAll('tr'));
 
     rows.sort(function(a, b){
@@ -1496,6 +1552,9 @@
 
 
   function sortByTextColumn(colIndex, direction){
+
+    // idem sortByDateColumn
+    try { if (typeof window.cobCloseRowCalendars === 'function') window.cobCloseRowCalendars(); } catch(e) {}
 
     var rows = Array.from(tbody.querySelectorAll('tr'));
 
@@ -2702,6 +2761,60 @@
 
 (function(){
 
+  /* ── HOST EN FLUJO, UNO POR FILA (ver el bloque CSS .cob-row-cal-host) ──────
+     Cada datepicker de fila recibe como `appendTo` un div propio que vive
+     DESACONECTADO del documento. Al abrir se inserta un <tr class="cob-cal-row">
+     debajo de la fila que se esta editando y el host se cuelga ahi; al cerrar se
+     saca. En reposo la tabla no tiene ni un nodo de mas, asi que el alto de fila
+     (56px), los anchos de columna y el badge de "Dias" quedan como estaban.
+     Beneficio extra: antes flatpickr dejaba los 60 calendarios (3 x 20 filas)
+     colgando de <body>; ahora no hay ninguno suelto. */
+  function rowCalShow(el, host){
+    try {
+      var tr = el.closest ? el.closest('tr') : null;
+      if (!tr || !tr.parentNode) {
+        // fuera de una tabla (p. ej. si el input terminara dentro de un modal
+        // movido a body): igual en flujo, pegado abajo del propio input.
+        if (el.parentNode) el.parentNode.insertBefore(host, el.nextSibling);
+        host._cobHolder = null;
+        return;
+      }
+      var holder = document.createElement('tr');
+      holder.className = 'cob-cal-row';
+      var td = document.createElement('td');
+      td.colSpan = Math.max(1, tr.children.length);
+      td.appendChild(host);
+      holder.appendChild(td);
+      tr.parentNode.insertBefore(holder, tr.nextSibling);
+      host._cobHolder = holder;
+    } catch(e) {}
+  }
+
+  function rowCalHide(host){
+    try {
+      var holder = host && host._cobHolder;
+      if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
+      else if (host && host.parentNode && !holder) host.parentNode.removeChild(host);
+      if (host) host._cobHolder = null;
+    } catch(e) {}
+  }
+
+  /* Cierra todos los calendarios de fila y barre filas portadoras huerfanas.
+     Lo llaman los dos ordenadores de columna (:1474 y :1500), que hacen
+     `tbody.querySelectorAll('tr')` + `children[colIndex]` y se confundirian con
+     una fila de colspan. En la practica flatpickr ya cerro por su `touchstart`
+     antes de que llegue el click del <th>, pero esto lo deja garantizado. */
+  window.cobCloseRowCalendars = function(){
+    try {
+      document.querySelectorAll('input[data-datepicker]').forEach(function(el){
+        try { if (el._flatpickr && el._flatpickr.isOpen) el._flatpickr.close(); } catch(e) {}
+      });
+      document.querySelectorAll('tr.cob-cal-row').forEach(function(r){
+        if (!r.querySelector('.flatpickr-calendar.open') && r.parentNode) r.parentNode.removeChild(r);
+      });
+    } catch(e) {}
+  };
+
   function mountFlatpickr(){
 
     var nodes = document.querySelectorAll('input[data-datepicker]');
@@ -2712,7 +2825,17 @@
 
       try { if (el && el._flatpickr) return; } catch(e) {}
 
+      var rowHost = document.createElement('div');
+
+      rowHost.className = 'cob-row-cal-host';
+
       var fpInst = flatpickr(el, {
+
+        // EN FLUJO, debajo de la propia fila: asi el calendario no le roba el
+        // toque a ningun control. Ver rowCalShow / rowCalHide.
+        appendTo: rowHost,
+
+        onOpen: function(){ rowCalShow(el, rowHost); },
 
         altInput: true,
 
@@ -2786,6 +2909,8 @@
            la fecha no cambio. Solo sincroniza si el usuario tipeo algo, que es
            lo que iba a pasar igual al salir del campo. */
         onClose: function(selectedDates, dateStr, inst){
+
+          rowCalHide(rowHost);
 
           try {
 
