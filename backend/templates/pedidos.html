@@ -39,7 +39,7 @@
               <tr>
                 <th>Cliente</th>
                 <th>Empresa</th>
-                <th class="text-end">Acciones</th>
+                <th class="text-end col-actions">Acciones</th>
               </tr>
             </thead>
             <tbody id="drafts-tbody">
@@ -1503,12 +1503,12 @@
         mount();
       } else {
         var s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/flatpickr';
+        s.src = '{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.js') }}';
         s.onload = mount;
         document.head.appendChild(s);
         var l = document.createElement('link');
         l.rel = 'stylesheet';
-        l.href = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css';
+        l.href = '{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.css') }}';
         document.head.appendChild(l);
       }
     })();

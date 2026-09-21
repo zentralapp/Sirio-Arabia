@@ -82,9 +82,18 @@
     .date-soft .input-group-text { 
       background: #f3f4f6; border: 1px solid #e5e7eb; 
     }
-    .date-soft .form-control { 
-      background: #fafafa; border: 1px solid #e5e7eb; 
-      min-height: 36px; font-size: .9rem; 
+    .date-soft .form-control {
+      background: #fafafa; border: 1px solid #e5e7eb;
+      min-height: 36px; font-size: .9rem;
+    }
+    /* T1-B — `.9rem` NO alcanza en mobile. `html{font-size}` baja a 13.25px
+       (<=576px) y 12.75px (<=400px) en app.css, asi que ese `.9rem` computaba
+       11.5-11.9px REALES y iOS Safari hace zoom al enfocar cualquier input por
+       debajo de 16px. Y el `min-height:36px` de arriba tiene mas especificidad
+       que el piso tactil `.form-control{min-height:44px}` de layout.html, o sea
+       que tambien lo estaba pisando: se repone aca. */
+    @media (max-width: 991.98px) {
+      .date-soft .form-control { font-size: 16px; min-height: 44px; }
     }
     .date-soft .form-control:focus { 
       background: #fff; border-color: #86b7fe; box-shadow: 0 0 0 .2rem rgba(13,110,253,.15);
@@ -97,11 +106,11 @@
     .date-soft .btn-clear:hover { 
       background: #f8f9fa; 
     }
-    /* Asegurar espacio para acciones */
-    .w-actions { min-width: 150px; }
+    /* El ancho de la columna de Acciones lo define app.css, bloque
+       COLUMNA DE ACCIONES. Aca habia `min-width:150px`. */
     /* Colores de monto según tipo de comprobante */
-    .monto-factura .input-group-text { background-color:#0d6efd; color:#fff; border-color:#0d6efd; }
-    .monto-factura .form-control { border-color:#0d6efd; }
+    .monto-factura .input-group-text { background-color:var(--teal); color:#fff; border-color:var(--teal); }
+    .monto-factura .form-control { border-color:var(--teal); }
     .monto-remito .input-group-text { background-color:#dc3545; color:#fff; border-color:#dc3545; }
     .monto-remito .form-control { border-color:#dc3545; }
 
@@ -124,16 +133,27 @@
         align-items: stretch !important;
         gap: .45rem !important;
       }
+      /* Mismo grid que los filtros de /deudas (ver el comentario largo en
+         cobranzas.html). Aca HOY no hay sintoma: son 3 botones de estado y 2
+         de tipo, y a 390px ya salian a 33.1% y 48.9% del viewport. El cambio
+         es un no-op visual medido (mismas 3 columnas, mismos anchos) y saca de
+         encima la bomba de tiempo: en cuanto alguien agregue un cuarto estado,
+         `flex-wrap` + `flex-grow:1` le da la fila entera al que baje solo, que
+         es exactamente lo que pasaba en /deudas con el quinto. */
       .status-filter .btn-group {
         width: 100%;
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(var(--status-filtro-cols, 2), minmax(0, 1fr));
+        gap: .3rem;
         margin-left: 0 !important;
       }
-      .status-filter .btn-group .btn {
-        flex: 1 1 auto;
-        min-width: 98px;
-        padding: .38rem .5rem;
+      .status-filter .status-estado-group { --status-filtro-cols: 3; } /* 3 estados */
+      .status-filter .status-type-group { --status-filtro-cols: 2; }   /* Factura / Remito */
+      .status-filter .btn-group > .btn {
+        min-width: 0;
+        margin-left: 0;
+        border-radius: .3rem;
+        padding: .38rem .35rem;
         font-size: .86rem;
       }
       .status-date-range {
@@ -166,24 +186,27 @@
         vertical-align: top;
         line-height: 1.25;
       }
+      /* `anywhere` -> `break-word`: ver layout.html, "COLUMNAS DE NOMBRES
+         PROPIOS". Medido a 800px: 11 celdas de Cliente picadas, hasta 6 lineas. */
       #status-table td.col-client,
       #status-table td.col-company {
         max-width: 190px;
         white-space: normal;
-        overflow-wrap: anywhere;
-        word-break: break-word;
+        overflow-wrap: break-word;
+        word-break: normal;
       }
-      #status-table .w-actions { min-width: 90px; }
+      /* `#status-table .w-actions{min-width:90px}` salio de aca: declaraba
+         90px para dos botones que miden 112px con su padding. */
       #status-table .w-actions .btn {
         padding: .28rem .42rem;
         min-height: 0;
       }
     }
   </style>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.css') }}">
+  <script src="{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.js') }}"></script>
   <form id="statusFilter" class="status-filter d-flex align-items-end gap-2 flex-wrap" method="get">
-    <div class="btn-group filter-group" role="group" aria-label="Filtros de estado">
+    <div class="btn-group filter-group status-estado-group" role="group" aria-label="Filtros de estado">
       <button type="button" class="btn btn-sm btn-outline-secondary {{ 'active' if 'EN_CAMINO' in request.args.getlist('status') else '' }}" data-status="EN_CAMINO" aria-pressed="{{ 'true' if 'EN_CAMINO' in request.args.getlist('status') else 'false' }}">En camino</button>
       <button type="button" class="btn btn-sm btn-outline-danger {{ 'active' if 'ATRASADO' in request.args.getlist('status') else '' }}" data-status="ATRASADO" aria-pressed="{{ 'true' if 'ATRASADO' in request.args.getlist('status') else 'false' }}">Atrasado</button>
       <button type="button" class="btn btn-sm btn-outline-success {{ 'active' if 'ENTREGADO' in request.args.getlist('status') else '' }}" data-status="ENTREGADO" aria-pressed="{{ 'true' if 'ENTREGADO' in request.args.getlist('status') else 'false' }}">Entregado</button>
@@ -191,7 +214,7 @@
     {% for st in request.args.getlist('status') %}
       <input type="hidden" name="status" value="{{ st }}">
     {% endfor %}
-    <div class="btn-group filter-group ms-2" role="group" aria-label="Tipo de comprobante">
+    <div class="btn-group filter-group status-type-group ms-2" role="group" aria-label="Tipo de comprobante">
       {% set tipos_sel = request.args.getlist('tipo') %}
       <button type="button" class="btn btn-sm btn-outline-primary {{ 'active' if 'FACTURA' in tipos_sel else '' }}" data-tipo="FACTURA" aria-pressed="{{ 'true' if 'FACTURA' in tipos_sel else 'false' }}">Factura</button>
       <button type="button" class="btn btn-sm btn-outline-danger {{ 'active' if 'REMITO' in tipos_sel else '' }}" data-tipo="REMITO" aria-pressed="{{ 'true' if 'REMITO' in tipos_sel else 'false' }}">Remito</button>
@@ -229,8 +252,8 @@
         <table class="table table-hover align-middle mb-0 table-tight table-sticky" id="status-table">
         <thead class="table-light">
           <tr>
-            <th class="col-client">Cliente</th>
-            <th class="col-company">Empresa</th>
+            <th class="col-client col-nombre">Cliente</th>
+            <th class="col-company col-nombre">Empresa</th>
             <th class="d-none d-md-table-cell js-sort-date" data-sort-type="date" style="cursor:pointer;">Fecha compra</th>
             <th class="d-none d-md-table-cell js-sort-date" data-sort-type="date" style="cursor:pointer;">Entrega</th>
             <th>Monto</th>
@@ -241,8 +264,8 @@
         <tbody id="status-tbody">
         {% for s in items %}
           <tr data-cliente="{{ (s.order.client.apellido or '')|lower }}" data-empresa="{{ (s.order.company.nombre or '')|lower }}" data-demora="{{ (s.order.demora_despacho_promedio_dias or 0) }}">
-            <td class="col-client">{{ s.order.client.apellido }}</td>
-            <td class="col-company">{{ s.order.company.nombre }}</td>
+            <td class="col-client col-nombre">{{ s.order.client.apellido }}</td>
+            <td class="col-company col-nombre">{{ s.order.company.nombre }}</td>
             <td class="d-none d-md-table-cell">
               <input name="fecha_compra" form="upd{{ s.order.id }}" type="text" data-datepicker class="form-control form-control-sm js-compra status-date"
                      value="{{ s.fecha_compra|fecha_iso }}">
@@ -278,7 +301,7 @@
                 <span class="badge bg-secondary">EN CAMINO</span>
               {% endif %}
             </td>
-            <td class="text-end">
+            <td class="text-end w-actions">
               <div class="d-flex justify-content-end flex-wrap gap-2">
                 <form id="upd{{ s.order.id }}" class="d-none" method="post" action="{{ url_for('main.status_update', order_id=s.order.id) }}"></form>
                 <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.pedidos', order_id=s.order.id) }}">Editar</a>
@@ -750,12 +773,12 @@
       mount();
     } else {
       var s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/flatpickr';
+      s.src = '{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.js') }}';
       s.onload = mount;
       document.head.appendChild(s);
       var l = document.createElement('link');
       l.rel = 'stylesheet';
-      l.href = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css';
+      l.href = '{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.css') }}';
       document.head.appendChild(l);
     }
   })();
@@ -980,6 +1003,6 @@
   })();
 </script>
 <!-- Bootstrap Icons -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/1.11.3/bootstrap-icons.min.css') }}">
 {% endblock %}
 

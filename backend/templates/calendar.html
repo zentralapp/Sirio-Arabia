@@ -432,8 +432,8 @@
   <span class="d-inline-flex align-items-center gap-1"><span class="sirio-sev-dot"><i style="background:{{ calendario_color_severidad['baja'] }}"></i></span> Baja (en camino)</span>
   <span class="d-inline-flex align-items-center gap-1"><span class="sirio-sev-dot"><i style="background:{{ calendario_color_severidad['ninguna'] }}"></i></span> Sin acción</span>
 </div>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/main.min.css" />
-<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+<!-- FullCalendar v6 inyecta su CSS desde el bundle JS: el main.min.css de v6.1.11 no existe (404 en el CDN). -->
+<script src="{{ url_for('static', filename='vendor/fullcalendar/6.1.11/index.global.min.js') }}"></script>
 <script>
 (function(){
   var calendarEl = document.getElementById('sirioCalendar');

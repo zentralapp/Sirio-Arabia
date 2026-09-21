@@ -26,7 +26,7 @@
         <label class="form-label">Período</label>
         <div class="input-group">
           <input type="text" class="form-control" id="mpDateRange" readonly value="{{ (from_val ~ ' to ' ~ to_val) if from_val and to_val else '' }}">
-          <button class="btn btn-outline-secondary" type="button" id="mpClearRange">×</button>
+          <button class="btn btn-outline-secondary" type="button" id="mpClearRange" aria-label="Limpiar el rango de fechas"><i class="bi bi-x-lg"></i></button>
         </div>
       </div>
 
@@ -125,12 +125,12 @@
   } else {
     try {
       var s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/flatpickr';
+      s.src = '{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.js') }}';
       s.onload = mountRange;
       document.head.appendChild(s);
       var l = document.createElement('link');
       l.rel = 'stylesheet';
-      l.href = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css';
+      l.href = '{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.css') }}';
       document.head.appendChild(l);
     } catch(e2) {}
   }

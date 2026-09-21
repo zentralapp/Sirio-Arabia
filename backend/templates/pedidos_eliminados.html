@@ -18,8 +18,8 @@
           <tr>
             <th>#</th>
             <th>Fecha pedido</th>
-            <th>Cliente</th>
-            <th>Empresa</th>
+            <th class="col-nombre">Cliente</th>
+            <th class="col-nombre">Empresa</th>
             <th>Tipo</th>
             <th class="text-end">Monto</th>
             <th>Entrega</th>
@@ -34,8 +34,8 @@
           <tr>
             <td>{{ o.id }}</td>
             <td>{{ o.created_at|fecha('-') }}</td>
-            <td>{{ (o.client.apellido ~ ' ' ~ o.client.nombre) if o.client else '-' }}</td>
-            <td>{{ o.company.nombre if o.company else '-' }}</td>
+            <td class="col-nombre">{{ (o.client.apellido ~ ' ' ~ o.client.nombre) if o.client else '-' }}</td>
+            <td class="col-nombre">{{ o.company.nombre if o.company else '-' }}</td>
             <td>{{ o.tipo_comprobante or '-' }}</td>
             <td class="text-end">
               {% set amt = (o.precio_final if o.precio_final is not none else (o.logistics.precio if o.logistics and o.logistics.precio is not none else (o.collection.monto if o.collection and o.collection.monto is not none else none))) %}
