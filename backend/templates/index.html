@@ -31,6 +31,13 @@
   .db-chip{ border:1px solid #d6dde6; background:#fff; color:#334155; border-radius:7px; font-size:.74rem; line-height:1; padding:.18rem .5rem; white-space:nowrap; flex:0 0 auto; }
   .db-chip.active{ background:#0f766e; border-color:#0f766e; color:#fff; }
   .db-filter-bar .form-select-sm{ width:100%; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* El overflow:hidden de arriba es para elipsar nombres largos en el <select>
+     nativo. Tom Select COPIA las clases del <select> a su wrapper, y dibuja el
+     desplegable como position:absolute adentro de ese wrapper: con overflow
+     hidden el dropdown quedaba recortado y NO se veia (regresion de d3cc259).
+     El recorte va en el control, que es el que muestra el texto. */
+  .db-filter-bar .ts-wrapper.form-select-sm{ overflow:visible; }
+  .db-filter-bar .ts-wrapper.form-select-sm .ts-control{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .db-scope-wrap{ width:100%; }
   .db-scope-grid{ display:grid; grid-template-columns:minmax(108px, .9fr) minmax(0, 1.1fr); gap:.5rem; width:100%; }
   .db-scope-field{ min-width:0; }
@@ -65,6 +72,36 @@
     .db-kpi{ padding:.75rem; }
     .db-kpi-value{ font-size:1.45rem; }
     .db-chart-wrap{ height:220px; }
+
+    /* ── H9: piso de legibilidad en mobile ───────────────────────────────
+       Todo el dashboard está en rem y `html{font-size}` cae a 13.25px
+       (<=576px) y 12.75px (<=400px) en app.css, así que el "zoom out" global
+       arrastraba texto real a 7.9-8.8px. Medido a 390px de viewport ANTES
+       del fix: 67 elementos con texto por debajo de 12px, mínimo 7.9px
+       (.badge) — ilegible. Piso: 12px para contenido, 11px para etiquetas
+       auxiliares y chips. En px, no en rem, para que no vuelva a escalar
+       con el html{font-size}. Sólo mobile: en escritorio los rem quedan. */
+    .db-table thead th{ font-size:12px; }
+    .db-table tbody td{ font-size:12px; }
+    .db-link{ font-size:12px; }
+    .db-range .form-control{ font-size:12px; }
+    .db-filter-bar .btn-sm{ font-size:12px; }
+    .db-kpi-title{ font-size:11px; }
+    .db-filter-label{ font-size:11px; }
+    .db-range-state{ font-size:11px; }
+    .db-range-sep{ font-size:11px; }
+    .db-mini-note{ font-size:11px; }
+    .db-chip{ font-size:11px; padding:.3rem .55rem; }
+
+    /* Área táctil: los chips de preset y los links del dashboard son los
+       targets más chicos de la pantalla (9.9px de fuente, ~24px de alto). */
+    .db-chip, .db-filter-bar .btn-sm{ min-height:40px; min-width:40px; }
+    .db-actions .btn{ min-height:40px; }
+    /* Los controles del filtro estaban fijados en 26-30px de alto. min-height
+       gana sobre height, así que alcanza con declararlo acá. */
+    .db-range .form-control{ min-height:40px; }
+    .db-filter-bar .form-select, .db-filter-bar .form-control{ min-height:40px; }
+    .db-link{ display:inline-block; min-height:40px; padding-top:.5rem; padding-bottom:.5rem; }
   }
 </style>
 
@@ -109,13 +146,13 @@
             </div>
             <div class="db-scope-field">
             <label class="form-label db-filter-label" id="dashboardScopeLabel">{{ 'Cliente' if (f.view_mode or 'company') == 'client' else 'Empresa' }}</label>
-            <select class="form-select form-select-sm" name="company_id" id="dashboardCompany" {{ 'disabled' if (f.view_mode or 'company') == 'client' else '' }}>
+            <select class="form-select form-select-sm" name="company_id" id="dashboardCompany" data-searchable {{ 'disabled' if (f.view_mode or 'company') == 'client' else '' }}>
               <option value="">Todas</option>
               {% for c in f.company_options or [] %}
                 <option value="{{ c.id }}" {{ 'selected' if (f.company_id and c.id == f.company_id) else '' }} title="{{ c.name }}">{{ c.name }}</option>
               {% endfor %}
             </select>
-            <select class="form-select form-select-sm {{ '' if (f.view_mode or 'company') == 'client' else 'd-none' }}" name="client_id" id="dashboardClient" {{ '' if (f.view_mode or 'company') == 'client' else 'disabled' }}>
+            <select class="form-select form-select-sm {{ '' if (f.view_mode or 'company') == 'client' else 'd-none' }}" name="client_id" id="dashboardClient" data-searchable {{ '' if (f.view_mode or 'company') == 'client' else 'disabled' }}>
               <option value="">Todos</option>
               {% for c in f.client_options or [] %}
                 <option value="{{ c.id }}" {{ 'selected' if (f.client_id and c.id == f.client_id) else '' }} title="{{ c.name }}">{{ c.name }}</option>
@@ -316,11 +353,9 @@
     toggleScopeFilter(viewModeInput.value || 'company');
   }
 
+  // Formateo unificado: SirioFechas (static/js/fechas.js).
   function fmtIso(d){
-    var y = d.getFullYear();
-    var m = String(d.getMonth() + 1).padStart(2, '0');
-    var dd = String(d.getDate()).padStart(2, '0');
-    return y + '-' + m + '-' + dd;
+    return window.SirioFechas.toIso(d);
   }
 
   function monthRange(refDate){

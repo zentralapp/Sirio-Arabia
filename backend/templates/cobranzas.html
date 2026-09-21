@@ -138,6 +138,45 @@
 
     .table-cobranzas td.col-date .form-control { width: 120px; }
 
+    /* Vencimiento + botón de tilde (copia la fecha a "Cobro efectivo").
+       La columna NO se ensancha: el input cede el espacio del botón.
+
+       OJO: `width: auto` acá NO sirve. En un <input> resuelve al ancho
+       INTRÍNSECO (~137px), y como la tabla es `table-layout: auto` el min-content
+       de la celda es lo que manda: el `width:104px/120px` de .col-date pasa a ser
+       una sugerencia y la celda crece igual. Medido en /deudas con `auto`:
+       #cobTable pasó de 969.3px a 1030.9px en la banda 768–1199 (+61.6px) y de
+       1360.8px a 1429.6px en ≥1200 (+68.8px), o sea el doble del scroll que
+       arregló H10. Con el input en ancho FIJO la celda vuelve a entrar en el
+       presupuesto: 969.3px en 768–1199 (idéntico al baseline) y 1354.8px en ≥1200.
+
+       Los 90px/80px son el mínimo medido para que "07/09/2026" NO se corte
+       (clientWidth necesario: 88px en ≥1200 con fuente 13px, 78px en 768–1199 con
+       fuente 12px). Si bajás de ahí el input scrollea y la fecha queda tapada.
+       El padding lateral va a .2rem por lo mismo: cada 1px que le sacás al
+       padding es 1px de fecha visible. */
+    .table-cobranzas td.col-venc .cob-venc-wrap {
+      display: flex;
+      align-items: center;
+      gap: .2rem;
+      flex-wrap: nowrap;
+    }
+
+    .table-cobranzas td.col-venc .form-control {
+      flex: 1 1 auto;
+      width: 90px;
+      min-width: 0;
+      max-width: 90px;
+      padding-left: .2rem;
+      padding-right: .2rem;
+    }
+
+    .table-cobranzas td.col-venc .js-copy-venc {
+      flex: 0 0 auto;
+      padding: .12rem .15rem;
+      line-height: 1;
+    }
+
     .table-cobranzas th.col-forma,
 
     .table-cobranzas td.col-forma { width: 110px; min-width: 110px; }
@@ -169,6 +208,70 @@
     .cob-sort-link.active .cob-sort-arrow { opacity:.95; }
 
     .cob-search-input { min-height: 40px; }
+
+    /* ── H10: la banda 768–1199.98px no tenía dueño ────────────────────────
+       Medido en /deudas a 900px de viewport ANTES del fix: #cobTable = 1361px
+       de ancho natural dentro de un contenedor de 850px => 519px de scroll
+       horizontal. La causa son los anchos fijos de arriba
+       (.col-date 120px, .col-forma 110px, .col-money 118px, padding .65rem por
+       lado, badge de "Días" en nowrap): están calculados para escritorio y en
+       esta banda son justamente los que estiran la tabla.
+
+       H10b — techo subido de 991.98px a 1199.98px. Arriba de 992px aparece el
+       sidebar (~200px), así que el contenedor SE ENCOGE al cruzar 992 (medido:
+       941px a 991 -> 777px a 992) mientras la tabla volvía a su ancho natural
+       de 1361px: 584px de scroll, peor que la banda que se había arreglado.
+       El techo en 1199.98 hace que la compactación cubra 992–1199 también.
+       A partir de 1200px no cambia NADA.
+
+       Los anchos de columna de este bloque están elegidos para el borde
+       INFERIOR de la banda (768–991, sin sidebar), que es donde la tabla tiene
+       que quedar legible; en 992–1199 el contenedor es más chico que a 991
+       (sidebar) así que ahí queda scroll residual a propósito — acortarlo más
+       requeriría apretar también 768–991, que hoy ya entra casi justo.
+
+       Fix conservador y H2-SAFE: NO cambia de estrategia (sigue siendo tabla
+       real con scroll horizontal, no pasa a tarjetas ni toca
+       `table-mobile-cards`); sólo baja el ancho que la tabla NECESITA para que
+       el scroll sea corto en vez de brutal.                                  */
+    @media (min-width: 768px) and (max-width: 1199.98px) {
+      .table-cobranzas thead th,
+      .table-cobranzas tbody td { padding-left: .3rem; padding-right: .3rem; }
+
+      .table-cobranzas th.col-date,
+      .table-cobranzas td.col-date,
+      .table-cobranzas th.col-entrega,
+      .table-cobranzas td.col-entrega { width: 104px; min-width: 104px; }
+
+      .table-cobranzas td.col-date .form-control,
+      .table-cobranzas td.col-entrega .form-control { width: 118px; max-width: 118px; }
+
+      /* El input de vencimiento comparte celda con el botón de tilde, así que
+         no puede llevarse los 104px de .col-date: 80 + gap .2rem + botón 20.8
+         = 104. Medido: td.col-venc queda en 113.6px, igual que las otras
+         .col-date (112.8px), y #cobTable en 969.3px = el baseline de H10. */
+      .table-cobranzas td.col-venc .form-control { width: 80px; max-width: 80px; }
+
+      .table-cobranzas th.col-forma,
+      .table-cobranzas td.col-forma { width: 98px; min-width: 98px; }
+      .table-cobranzas td.col-forma .form-select { width: 98px; }
+
+      .table-cobranzas th.col-money,
+      .table-cobranzas td.col-money { width: 106px; min-width: 106px; }
+      .table-cobranzas td.col-money input.js-cob-monto { width: 80px; max-width: 80px; flex: 0 0 80px; }
+      /* `@media (min-width:768px)` de app.css le pone min-width:140px al grupo
+         de monto (ancho de escritorio) y eso pisaba el width:106px de la
+         columna: medido, la tabla volvía de 983px a 1011px. */
+      .table-cobranzas td.col-money .js-cob-price-group { min-width: 0 !important; max-width: 100% !important; }
+
+      /* "Atraso 55 día(s)" venía en nowrap y reservaba 111px medidos para una
+         columna titulada "Días". Que parta en dos líneas. */
+      #cobTable tbody td .badge { white-space: normal; }
+
+      /* Cliente/Empresa: partir en vez de estirar la columna. */
+      #cobTable td.col-client,
+      #cobTable td.col-company { max-width: 130px; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+    }
 
     @media (max-width: 767.98px) {
       .cob-toolbar {
@@ -266,10 +369,32 @@
         width: 104px;
       }
 
-      #cobTable .w-actions {
-        min-width: 50px;
-        width: 50px;
+      /* Acá el botón va DEBAJO del input, no al lado. El piso táctil de 40px
+         (H9, abajo) más los 104px del input no entran en el ancho de la celda:
+         medido con los dos en fila, `flex-shrink` le comía el input hasta 62px
+         (clientWidth 60 contra 99 que necesita la fecha) y "07/09/2026" salía
+         cortado. Apilados, el input recupera sus ~105px, el botón mantiene los
+         40x40 y la columna NO crece: td.col-venc = 120px y #cobTable = 1195.1px
+         a 576px de viewport, los mismos números que antes del botón. */
+      #cobTable td.col-venc .cob-venc-wrap {
+        flex-direction: column;
+        align-items: flex-start;
       }
+
+      #cobTable td.col-venc .form-control {
+        width: 104px;
+        max-width: 104px;
+      }
+
+      /* Mismo piso táctil de 40px que el resto de los controles de la tabla
+         (H9). El ícono no cambia de tamaño, sólo el área. */
+      #cobTable td.col-venc .js-copy-venc {
+        min-width: 40px;
+        min-height: 40px;
+        padding: .35rem;
+        line-height: 1;
+      }
+
 
       #cobPagination {
         flex-direction: column;
@@ -291,6 +416,62 @@
       #cobPagination #cobPerPage {
         width: 100% !important;
         max-width: 140px;
+      }
+
+      /* ── H9: piso de área táctil y de legibilidad en mobile ───────────────
+         Medido en /deudas a 390px de viewport ANTES del fix: 57 controles con
+         menos de 40px de alto (42 de ellos dentro de #cobTable) y texto de
+         hasta 9.2px (.cob-sort-arrow). Se agranda el AREA (padding +
+         min-height/min-width), nunca el tamaño visual del ícono.
+         Va acá y no en app.css porque el <style> del template se resuelve
+         después de la hoja global y así no hace falta pelear con !important
+         contra `body[data-active="deudas"] .table .btn{min-height:0}`.        */
+      .cob-filter-wrap .btn-group .btn,
+      .cob-type-group .btn,
+      .cob-search-bar .btn,
+      #cobPagination .btn {
+        min-height: 40px;
+        font-size: 12px;
+      }
+
+      .date-soft .btn-clear {
+        min-width: 40px;
+        min-height: 40px;
+        padding: .25rem .5rem;
+        font-size: 12px;
+      }
+
+      /* Link de orden del thead: 14.6px de alto medidos. */
+      #cobTable thead th .cob-sort-link {
+        min-height: 40px;
+        padding-top: .25rem;
+        padding-bottom: .25rem;
+      }
+
+      .cob-sort-arrow {
+        font-size: 12px;
+      }
+
+      /* Único disparador de acciones de la fila: 25x26.9px medidos.
+         El ícono no cambia de tamaño, sólo el área del botón. */
+      #cobTable tbody td .dropdown > .btn {
+        min-width: 40px;
+        min-height: 40px;
+        padding: .35rem;
+        line-height: 1;
+      }
+
+      #cobTable tbody td .dropdown-menu .dropdown-item {
+        min-height: 40px;
+        display: flex;
+        align-items: center;
+        font-size: 13px;
+      }
+
+      /* La columna de acciones tiene que poder alojar un target de 40px. */
+      #cobTable .w-actions {
+        min-width: 54px;
+        width: 54px;
       }
     }
 
@@ -443,7 +624,7 @@
 
             <th class="col-forma">Forma de pago</th>
 
-            <th class="col-date">
+            <th class="col-date col-venc">
               <a class="cob-sort-link {{ 'active' if _venc_active else '' }}" href="{{ sort_vencimiento_url }}" aria-label="Ordenar por vencimiento">
                 <span>Vencimiento</span>
                 <span class="cob-sort-arrow" aria-hidden="true">
@@ -472,7 +653,32 @@
 
         {% for c in items %}
 
-          <tr data-cliente="{{ ((c.order.client.apellido or '') ~ ' ' ~ (c.order.client.nombre or ''))|lower }}" data-empresa="{{ (c.order.company.nombre or '')|lower }}">
+          {#
+            FUENTE ÚNICA DE VERDAD (backend/models.py). Este template NO deriva
+            ni el vencimiento ni el estado: los consume ya resueltos por el
+            backend, con el mismo "hoy" (hora de Argentina) que usaron los
+            filtros SQL. Si te da ganas de escribir acá un
+            "entrega + plazo_pago_dias", NO: ese cálculo vive en models.py, y
+            duplicarlo es exactamente el bug que esto vino a arreglar.
+          #}
+          {% set entrega_input = c.entrega_efectiva %}
+
+          {% set venc_value = c.vencimiento_efectivo %}
+
+          {% set estado = estado_cobranza(c) %}
+
+          {#
+            OJO con la semántica INVERTIDA de las columnas (backend/models.py):
+              Client.apellido = RAZÓN SOCIAL  (Client.nombre = nombre de fantasía)
+              Company.nombre  = RAZÓN SOCIAL  (Company.marca  = marca)
+            El texto que se copia al portapapeles es "Dep {razón social del
+            cliente} - {razón social de la empresa}", o sea apellido - nombre.
+            Si acá alguien "arregla" esto a c.order.client.nombre no explota:
+            copia el nombre de fantasía en silencio. NO lo toques.
+            Tampoco va client.display_name: eso devuelve "Apellido (Nombre)".
+          #}
+          {% set dep_text = 'Dep ' ~ (c.order.client.apellido or '') ~ ' - ' ~ (c.order.company.nombre or '') %}
+          <tr data-cliente="{{ ((c.order.client.apellido or '') ~ ' ' ~ (c.order.client.nombre or ''))|lower }}" data-empresa="{{ (c.order.company.nombre or '')|lower }}" data-dep="{{ dep_text }}">
 
             <td class="col-client">{{ c.order.client.apellido }}
 
@@ -483,25 +689,13 @@
             <td class="col-company">{{ c.order.company.nombre }}</td>
 
             {% set fecha_compra_ref = (c.order.logistics.fecha_compra if c.order and c.order.logistics and c.order.logistics.fecha_compra else (c.order.created_at if c.order and c.order.created_at else None)) %}
-            <td class="d-none d-md-table-cell col-orderdate">{{ fecha_compra_ref.strftime('%d/%m/%Y') if fecha_compra_ref else '' }}</td>
+            <td class="d-none d-md-table-cell col-orderdate">{{ fecha_compra_ref|fecha }}</td>
 
             <td class="d-none d-md-table-cell col-date col-entrega">
 
-              {% set lg_entrega_input = (c.order.logistics.fecha_entrega_efectiva if c.order and c.order.logistics else None) %}
-
-              {% set lg_entrega_est = (c.order.logistics.fecha_entrega_estimada if c.order and c.order.logistics else None) %}
-
-              {% set entrega_input = (lg_entrega_input if lg_entrega_input else (c.fecha_entrega_efectiva if c and c.fecha_entrega_efectiva else None)) %}
-
-              {% if not entrega_input %}
-
-                {% set entrega_input = (lg_entrega_est if lg_entrega_est else None) %}
-
-              {% endif %}
-
               <input name="fecha_entrega_efectiva" type="text" data-datepicker class="form-control form-control-sm js-cob-entrega"
 
-                     value="{{ entrega_input.strftime('%Y-%m-%d') if entrega_input else '' }}" form="upd{{ c.order.id }}">
+                     value="{{ entrega_input|fecha_iso }}" form="upd{{ c.order.id }}">
 
             </td>
 
@@ -567,37 +761,35 @@
 
             </td>
 
-            <td class="col-date">
+            <td class="col-date col-venc">
 
-                {% set venc_value = (c.fecha_pago_estimada if c and c.fecha_pago_estimada else None) %}
-
-                {% if not venc_value and entrega_input %}
-
-                  {% set plazo_dias = (c.order.plazo_pago_dias if c.order and c.order.plazo_pago_dias is not none else (c.order.company.plazo_pago_promedio_dias if c.order and c.order.company and c.order.company.plazo_pago_promedio_dias is not none else 30)) %}
-
-                  {% set venc_value = (entrega_input + timedelta(days=plazo_dias|int)) %}
-
-                {% endif %}
-
-                <input name="pago_estimado" type="text" data-datepicker class="form-control form-control-sm js-cob-estimado" placeholder="Vencimiento" value="{{ venc_value.strftime('%Y-%m-%d') if venc_value else '' }}" form="upd{{ c.order.id }}">
+                {# venc_value ya viene de c.vencimiento_efectivo (fuente única). #}
+                {#
+                  El botón de tilde NO va dentro de un .input-group a propósito:
+                  flatpickr (altInput:true) inserta su input visible DESPUÉS del
+                  original y deja el original en type=hidden, así que el
+                  :first-child de Bootstrap caería sobre el input oculto y
+                  rompería los bordes. Un flex a mano no tiene ese problema.
+                #}
+                <div class="cob-venc-wrap">
+                  <input name="pago_estimado" type="text" data-datepicker class="form-control form-control-sm js-cob-estimado" placeholder="Vencimiento" value="{{ venc_value|fecha_iso }}" form="upd{{ c.order.id }}">
+                  <button type="button" class="btn btn-sm btn-outline-success js-copy-venc" title="Copiar el vencimiento a cobro efectivo" aria-label="Copiar el vencimiento a cobro efectivo">
+                    <i class="bi bi-check-lg" aria-hidden="true"></i>
+                  </button>
+                </div>
 
             </td>
 
             <td>
 
-              {% set lg_entrega_dias = (c.order.logistics.fecha_entrega_efectiva if c.order and c.order.logistics else None) %}
+              {# Todo sale de la fuente única: entrega_input, venc_value y estado. #}
+              {% set entrega_dias = entrega_input %}
 
-              {% set coll_entrega_dias = (c.fecha_entrega_efectiva if c and c.fecha_entrega_efectiva else None) %}
+              {% set due_days = venc_value %}
 
-              {% set entrega_dias = (entrega_input if entrega_input else (lg_entrega_dias if lg_entrega_dias else coll_entrega_dias)) %}
+              {% set is_a_cobrar_days = (estado == 'A_COBRAR') %}
 
-              {% set due_days = (venc_value if venc_value else None) %}
-
-              {% set is_overdue_days = (not c.fecha_cobro_efectiva and due_days and now_date and (due_days.date() < now_date)) %}
-
-              {% set is_a_cobrar_days = (not c.fecha_cobro_efectiva and (not is_overdue_days) and entrega_dias and now_date and (entrega_dias.date() <= now_date)) %}
-
-              {% set is_en_camino_days = (not c.fecha_cobro_efectiva and (not is_overdue_days) and ((not entrega_dias) or (entrega_dias.date() > now_date))) %}
+              {% set is_en_camino_days = (estado == 'EN_CAMINO') %}
 
               {% if is_en_camino_days %}
 
@@ -677,27 +869,16 @@
 
               <input name="fecha_cobro_efectiva" type="text" data-datepicker class="form-control form-control-sm js-cob-cobro"
 
-                     value="{{ c.fecha_cobro_efectiva.strftime('%Y-%m-%d') if c.fecha_cobro_efectiva else '' }}" form="upd{{ c.order.id }}">
+                     value="{{ c.fecha_cobro_efectiva|fecha_iso }}" form="upd{{ c.order.id }}">
 
             </td>
 
             <td class="col-status">
 
+              {# PARCIAL es ortogonal: se pinta ADEMÁS del estado, no en vez de. #}
               {% set is_partial = (partial_order_ids is defined and c.order and (c.order.id in partial_order_ids)) %}
 
-              {% set due_status = (venc_value if venc_value else None) %}
-
-              {% set lg_entrega_status = (c.order.logistics.fecha_entrega_efectiva if c.order and c.order.logistics else None) %}
-
-              {% set coll_entrega_status = (c.fecha_entrega_efectiva if c and c.fecha_entrega_efectiva else None) %}
-
-              {% set entrega_efectiva_status = (entrega_input if entrega_input else (lg_entrega_status if lg_entrega_status else coll_entrega_status)) %}
-
-              {% set is_overdue = (not c.fecha_cobro_efectiva and due_status and now_date and (due_status.date() < now_date)) %}
-
-              {% set is_a_cobrar_status = (not c.fecha_cobro_efectiva and (not is_overdue) and entrega_efectiva_status and now_date and (entrega_efectiva_status.date() <= now_date)) %}
-
-              {% if c.fecha_cobro_efectiva %}
+              {% if estado == 'COBRADO' %}
 
                 <span class="badge bg-success js-status-badge">COBRADO</span>
 
@@ -709,11 +890,11 @@
 
                 {% endif %}
 
-                {% if is_overdue %}
+                {% if estado == 'ATRASADO' %}
 
                   <span class="badge bg-danger js-status-badge">ATRASADO</span>
 
-                {% elif is_a_cobrar_status %}
+                {% elif estado == 'A_COBRAR' %}
 
                   <span class="badge bg-info text-dark js-status-badge">A COBRAR</span>
 
@@ -766,6 +947,15 @@
                     </form>
 
                   {% endif %}
+
+                  <div class="dropdown-divider"></div>
+
+                  {# El texto que se copia sale de data-dep en el <tr> (fuente
+                     única); acá sólo se muestra el FORMATO, y el valor real va
+                     en el title para no romper el ancho del menú. #}
+                  <button type="button" class="dropdown-item js-copy-dep" title="{{ dep_text }}">
+                    <i class="bi bi-clipboard me-1" aria-hidden="true"></i>Copiar “Dep cliente - empresa”
+                  </button>
 
                   <div class="dropdown-divider"></div>
 
@@ -1067,6 +1257,12 @@
 
 
 
+  // Parseo unificado: SirioFechas (static/js/fechas.js). Antes esto repetia
+
+  // los regex de ISO y DD/MM/AAAA a mano y caia en Date.parse, que interpreta
+
+  // una fecha ISO sin hora como UTC y corre el orden un dia.
+
   function parseDateValue(cell){
 
     if (!cell) return null;
@@ -1079,49 +1275,7 @@
 
     else v = (cell.textContent || '').trim();
 
-    if (!v) return null;
-
-    var mIso = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-
-    if (mIso) {
-
-      var yy0 = parseInt(mIso[1], 10);
-
-      var mm0 = parseInt(mIso[2], 10) - 1;
-
-      var dd0 = parseInt(mIso[3], 10);
-
-      var dt0 = new Date(yy0, mm0, dd0);
-
-      var tt0 = dt0.getTime();
-
-      return isNaN(tt0) ? null : tt0;
-
-    }
-
-    var m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-
-    if (m) {
-
-      var dd = parseInt(m[1], 10);
-
-      var mm = parseInt(m[2], 10) - 1;
-
-      var yy = parseInt(m[3], 10);
-
-      var dt = new Date(yy, mm, dd);
-
-      var tt = dt.getTime();
-
-      return isNaN(tt) ? null : tt;
-
-    }
-
-    var t = Date.parse(v);
-
-    if (!isNaN(t)) return t;
-
-    return null;
+    return window.SirioFechas.time(v);
 
   }
 
@@ -2501,7 +2655,7 @@
 
     l.rel = 'stylesheet';
 
-    l.href = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css';
+    l.crossOrigin = 'anonymous'; l.href = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css';
 
     document.head.appendChild(l);
 
@@ -2515,17 +2669,35 @@
 
 (function(){
 
+  // "Hoy" del NEGOCIO (hora de Argentina), calculado por el backend con la
+  // FUENTE ÚNICA DE VERDAD (backend/models.py -> hoy_negocio()).
+  // Antes el JS usaba new Date() del navegador: si el usuario tenía otro huso
+  // (o la máquina mal configurada), veía un estado distinto al del servidor.
+  var HOY_NEGOCIO_ISO = '{{ now_date|fecha_iso }}';
+
+  // Se le pasa a SirioFechas para que TODA la pagina (y no solo este bloque)
+
+  // use el hoy del negocio en vez del reloj del navegador.
+
+  window.SirioFechas.setHoyNegocio(HOY_NEGOCIO_ISO);
+
   function isoToday(){
 
-    var d = new Date();
+    return HOY_NEGOCIO_ISO;
 
-    var y = d.getFullYear();
+  }
 
-    var m = String(d.getMonth() + 1).padStart(2, '0');
+  // Devuelve SIEMPRE una Date nueva a medianoche: los callers le hacen
+  // setHours()/getTime(), así que no se puede compartir una sola instancia.
+  function todayNegocio(){
 
-    var dd = String(d.getDate()).padStart(2, '0');
+    var d = parseIsoDate(HOY_NEGOCIO_ISO);
 
-    return y + '-' + m + '-' + dd;
+    if (!d) d = new Date();
+
+    d.setHours(0,0,0,0);
+
+    return d;
 
   }
 
@@ -2593,29 +2765,13 @@
 
 
 
+  // Parseo unificado: SirioFechas (static/js/fechas.js). Misma convencion que
+
+  // antes (fecha sin hora = medianoche LOCAL), ahora en un solo lugar.
+
   function parseIsoDate(s){
 
-    s = (s || '').trim();
-
-    if (!s) return null;
-
-    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-
-    if (m) {
-
-      var yy = parseInt(m[1], 10);
-
-      var mm = parseInt(m[2], 10) - 1;
-
-      var dd = parseInt(m[3], 10);
-
-      return new Date(yy, mm, dd);
-
-    }
-
-    var t = Date.parse(s);
-
-    return isNaN(t) ? null : new Date(t);
+    return window.SirioFechas.parse(s);
 
   }
 
@@ -2635,13 +2791,14 @@
 
     var entrega = tr.querySelector('input.js-cob-entrega');
 
+    // OJO: el input de vencimiento YA trae el vencimiento efectivo resuelto
+    // por el backend (fuente única). Acá NO se re-deriva "entrega + plazo":
+    // sólo se re-evalúa el estado cuando el usuario edita las fechas a mano.
     var vencDt = venc ? parseIsoDate(venc.value) : null;
 
     var entregaDt = entrega ? parseIsoDate(entrega.value) : null;
 
-    var today = new Date();
-
-    today.setHours(0,0,0,0);
+    var today = todayNegocio();
 
     if (vencDt) {
 
@@ -2691,9 +2848,7 @@
 
     var status = computeStatusFromRow(tr);
 
-    var today = new Date();
-
-    today.setHours(0,0,0,0);
+    var today = todayNegocio();
 
     if (status === 'EN_CAMINO') {
 
@@ -2941,6 +3096,164 @@
 
 
 
+  /* ══════════════════════════════════════════════════════════════════════
+     Portapapeles: "Dep {razón social del cliente} - {razón social de la empresa}"
+
+     El texto NO se arma acá: viene ya resuelto en data-dep del <tr>, que lo
+     renderiza Jinja desde Client.apellido y Company.nombre. La semántica de
+     esas columnas está INVERTIDA respecto de los labels de la UI (ver el
+     comentario del <tr> y backend/models.py): armarlo en JS leyendo las celdas
+     sería una segunda fuente de verdad que puede divergir en silencio.
+
+     OJO con el orden de scripts de layout.html (el bloque `content` se resuelve
+     ANTES de bootstrap.bundle.js): acá no se resuelve ninguna global de
+     librería a nivel de IIFE, todo se lee adentro de los handlers.
+     ══════════════════════════════════════════════════════════════════════ */
+
+  function depTextFromRow(tr){
+    if (!tr || !tr.getAttribute) return '';
+    return (tr.getAttribute('data-dep') || '').trim();
+  }
+
+  /* Copia legacy: textarea fuera de pantalla + execCommand('copy').
+     Necesita gesto de usuario vigente, así que puede fallar; devuelve boolean
+     y el caller avisa. */
+  function legacyCopy(value){
+    var ta = null;
+    try {
+      ta = document.createElement('textarea');
+      ta.value = value;
+      ta.setAttribute('readonly', 'readonly');
+      ta.setAttribute('aria-hidden', 'true');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { ta.setSelectionRange(0, value.length); } catch(e_sel) {}
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch(e_cmd) { ok = false; }
+      return !!ok;
+    } catch(e) {
+      return false;
+    } finally {
+      try { if (ta && ta.parentNode) ta.parentNode.removeChild(ta); } catch(e_rm) {}
+    }
+  }
+
+  /* Promise<boolean>. navigator.clipboard SOLO existe en secure context
+     (https, localhost y 127.0.0.1); fuera de ahí, o con el permiso denegado,
+     cae a execCommand. Si tampoco se puede, resuelve false: nunca se le miente
+     al usuario diciendo que copió. */
+  function copyToClipboard(text){
+    var value = String(text == null ? '' : text);
+    if (!value) return Promise.resolve(false);
+
+    try {
+      var nav = window.navigator;
+      if (nav && nav.clipboard && nav.clipboard.writeText && window.isSecureContext) {
+        return nav.clipboard.writeText(value).then(function(){
+          return true;
+        }).catch(function(){
+          return legacyCopy(value);
+        });
+      }
+    } catch(e) {}
+
+    return Promise.resolve(legacyCopy(value));
+  }
+
+  /* Feedback SIEMPRE. Si falla, el toast muestra el texto completo para que se
+     pueda copiar a mano: un fallo silencioso deja al usuario pegando lo que
+     tenía antes en el portapapeles sin enterarse. */
+  function copyDepFromRow(tr){
+    var text = depTextFromRow(tr);
+    if (!text) {
+      if (window.showToast) window.showToast('No se pudo armar el texto para copiar', 'danger');
+      return Promise.resolve(false);
+    }
+    return copyToClipboard(text).then(function(ok){
+      if (window.showToast) {
+        if (ok) window.showToast('Copiado: ' + text, 'success');
+        else window.showToast('No se pudo copiar. Copialo a mano: ' + text, 'danger');
+      }
+      return ok;
+    });
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     Botón de tilde: copia el Vencimiento de la fila a Cobro efectivo.
+
+     Atajo para el caso normal (se cobró el día que vencía). NO abre una
+     segunda ruta de persistencia: setea la fecha igual que el AJAX de
+     /cobrar (flatpickr.setDate con triggerChange=false) y después llama UNA
+     vez a syncAndSubmit. Si se disparara el evento 'change' saldrían dos
+     submits, porque los inputs de fecha tienen el listener bindeado dos veces
+     (cobMountAll y el bloque suelto de más arriba).
+     ══════════════════════════════════════════════════════════════════════ */
+
+  function formOfInput(el){
+    if (!el) return null;
+    if (el.form) return el.form;
+    try {
+      var fid = el.getAttribute && el.getAttribute('form');
+      return fid ? document.getElementById(fid) : null;
+    } catch(e) { return null; }
+  }
+
+  function copyVencToCobro(tr){
+    if (!tr) return;
+    /* querySelector devuelve el input ORIGINAL, no el altInput de flatpickr:
+       flatpickr copia el className al altInput pero lo inserta DESPUÉS, y el
+       original (type=hidden) es el que tiene el valor en formato Y-m-d. */
+    var venc = tr.querySelector('input.js-cob-estimado');
+    var cobro = tr.querySelector('input.js-cob-cobro');
+    if (!venc || !cobro) return;
+
+    var val = (venc.value || '').trim();
+    if (!val) {
+      if (window.showToast) window.showToast('Esta deuda no tiene vencimiento cargado', 'warning');
+      return;
+    }
+    if ((cobro.value || '').trim() === val) {
+      if (window.showToast) window.showToast('El cobro efectivo ya es el vencimiento', 'secondary');
+      return;
+    }
+
+    if (cobro._flatpickr) {
+      try { cobro._flatpickr.setDate(val, false, 'Y-m-d'); } catch(e_fp) {}
+    }
+    cobro.value = val;
+
+    var f = formOfInput(cobro);
+    if (f && typeof window.syncAndSubmit === 'function') {
+      window.syncAndSubmit(f);
+    } else if (f) {
+      (f.requestSubmit ? f.requestSubmit() : f.submit());
+    }
+  }
+
+  /* Delegado en document a propósito: el tbody se reemplaza entero por AJAX
+     (cobFetchAndReplace) y un listener por botón habría que re-montarlo. */
+  document.addEventListener('click', function(e){
+    var t = e.target;
+    if (!t || !t.closest) return;
+
+    var btnVenc = t.closest('.js-copy-venc');
+    if (btnVenc) {
+      e.preventDefault();
+      copyVencToCobro(btnVenc.closest('tr'));
+      return;
+    }
+
+    var btnDep = t.closest('.js-copy-dep');
+    if (btnDep) {
+      e.preventDefault();
+      copyDepFromRow(btnDep.closest('tr'));
+      return;
+    }
+  });
+
   document.addEventListener('submit', function(e){
 
     var form = e.target;
@@ -3063,7 +3376,27 @@
 
     e.preventDefault();
 
+    /* OJO: form.closest('tr') NO alcanza. moveActionModalsToBody() (más
+       arriba en este mismo template) mueve los modales markPaid, delOrder y
+       editOrder a <body> para sacarlos del contexto de scroll de
+       .table-responsive, así que el form de "Confirmar cobro" YA NO cuelga de
+       la fila y closest('tr') devuelve null. Medido en /deudas: marcar COBRADO
+       hacía el POST bien, pero todo el bloque de abajo que refresca la fila
+       (badge, fecha de cobro, "Desmarcar") corría con tr = null y no hacía
+       nada; la fila quedaba en ATRASADO hasta recargar.
+       Fallback: resolver la fila por el id de pedido de la URL de la acción,
+       que es el mismo id del form `upd{id}` que vive DENTRO del <tr>. */
     var tr = form.closest ? form.closest('tr') : null;
+
+    if (!tr) {
+      try {
+        var mOid = String(action).match(/\/cobranzas\/(\d+)\//);
+        if (mOid) {
+          var updForm = document.getElementById('upd' + mOid[1]);
+          if (updForm && updForm.closest) tr = updForm.closest('tr');
+        }
+      } catch(e_tr) { tr = null; }
+    }
 
     var btn = null;
 
@@ -3231,6 +3564,14 @@
 
         hideContainingModal(form);
 
+        // Pedido del cliente (11/09/2026): al marcar COBRADO se copia solo al
+        // portapapeles "Dep {razón social cliente} - {razón social empresa}".
+        // Va DESPUÉS de confirmar que el backend guardó: copiar algo que no se
+        // guardó es peor que no copiar. El feedback (verde/rojo) lo da
+        // copyDepFromRow; el toast 'Actualizado' de más abajo no alcanza para
+        // saber si el portapapeles quedó cargado.
+        try { copyDepFromRow(tr); } catch(e_dep) {}
+
       } else if (action.indexOf('/desmarcar') !== -1) {
 
         // Quitar COBRADO
@@ -3380,6 +3721,29 @@
         setBadge(tr, status3);
 
         updateDiasBadge(tr);
+
+        /* Pedido del cliente (11/09/2026): el copiado de "Dep cliente -
+           empresa" lo dispara la TRANSICIÓN a COBRADO, no el mecanismo que la
+           causa. Este branch cubre el botón de tilde (.js-copy-venc), que
+           escribe fecha_cobro_efectiva por /cobranzas/{id}/update y con eso la
+           cobranza pasa a COBRADO.
+
+           Quién decide: el BACKEND. `paso_a_cobrado` lo calcula
+           /cobranzas/{id}/update comparando estado_cobranza_de() antes y
+           después del commit (models.py, fuente única). Acá NO se mira
+           fecha_cobro_efectiva ni se compara nada: si el front derivara el
+           estado por su cuenta sería la implementación #12 de una regla que
+           b5a5434 unificó justamente para que dejara de divergir.
+
+           Por eso NO alcanza con `resp.fecha_cobro_efectiva`: ese campo viene
+           lleno también cuando ya estaba cobrado y sólo se editó el monto, y
+           copiar ahí le pisaría el portapapeles al usuario en cada edición. */
+        if (resp && resp.paso_a_cobrado) {
+          /* Mismo helper que usa /cobrar (navigator.clipboard con fallback a
+             legacyCopy + toast verde/rojo). No hay un segundo mecanismo de
+             copiado. */
+          try { copyDepFromRow(tr); } catch(e_dep2) {}
+        }
 
       }
 

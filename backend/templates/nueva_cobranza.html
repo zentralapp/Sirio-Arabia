@@ -16,17 +16,17 @@
       <div class="row g-3">
         <div class="col-12 col-lg-4">
           <label class="form-label">Cliente</label>
-          <select class="form-select" name="client_id" id="clientSelect" required>
+          <select class="form-select" name="client_id" id="clientSelect" required data-searchable>
             <option value="">Seleccionar...</option>
             {% for c in clientes %}
-              <option value="{{ c.id }}">{{ c.apellido }}</option>
+              <option value="{{ c.id }}">{{ c.display_name }}</option>
             {% endfor %}
           </select>
         </div>
 
         <div class="col-12 col-lg-4">
           <label class="form-label">Empresa</label>
-          <select class="form-select" name="company_id" id="companySelect" required>
+          <select class="form-select" name="company_id" id="companySelect" required data-searchable>
             <option value="">Seleccionar...</option>
           </select>
         </div>
@@ -126,7 +126,7 @@
               </div>
               <div class="col-12">
                 <label class="form-label mb-1">Fecha</label>
-                <input class="form-control" name="pm_efectivo_date" type="text" data-datepicker placeholder="DD-MM-AAAA" autocomplete="off" disabled>
+                <input class="form-control" name="pm_efectivo_date" type="text" data-datepicker placeholder="DD/MM/AAAA" autocomplete="off" disabled>
               </div>
             </div>
             <div class="pm-extras mt-2" data-prefix="pm_efectivo">
@@ -152,7 +152,7 @@
               </div>
               <div class="col-12">
                 <label class="form-label mb-1">Fecha</label>
-                <input class="form-control" name="pm_transferencia_date" type="text" data-datepicker placeholder="DD-MM-AAAA" autocomplete="off" disabled>
+                <input class="form-control" name="pm_transferencia_date" type="text" data-datepicker placeholder="DD/MM/AAAA" autocomplete="off" disabled>
               </div>
               <div class="col-12">
                 <label class="form-label mb-1">Adjunto</label>
@@ -182,7 +182,7 @@
               </div>
               <div class="col-12">
                 <label class="form-label mb-1">Fecha</label>
-                <input class="form-control" name="pm_echeq_date" type="text" data-datepicker placeholder="DD-MM-AAAA" autocomplete="off" disabled>
+                <input class="form-control" name="pm_echeq_date" type="text" data-datepicker placeholder="DD/MM/AAAA" autocomplete="off" disabled>
               </div>
               <div class="col-12">
                 <label class="form-label mb-1">Adjunto</label>
@@ -212,7 +212,7 @@
               </div>
               <div class="col-12">
                 <label class="form-label mb-1">Fecha</label>
-                <input class="form-control" name="pm_cheque_terceros_date" type="text" data-datepicker placeholder="DD-MM-AAAA" autocomplete="off" disabled>
+                <input class="form-control" name="pm_cheque_terceros_date" type="text" data-datepicker placeholder="DD/MM/AAAA" autocomplete="off" disabled>
               </div>
               <div class="col-12">
                 <label class="form-label mb-1">Imagen (opcional)</label>
@@ -242,7 +242,7 @@
               </div>
               <div class="col-12">
                 <label class="form-label mb-1">Fecha</label>
-                <input class="form-control" name="pm_cheque_propio_date" type="text" data-datepicker placeholder="DD-MM-AAAA" autocomplete="off" disabled>
+                <input class="form-control" name="pm_cheque_propio_date" type="text" data-datepicker placeholder="DD/MM/AAAA" autocomplete="off" disabled>
               </div>
               <div class="col-12">
                 <label class="form-label mb-1">Imagen (opcional)</label>
@@ -1827,11 +1827,8 @@
       // Default fecha: hoy al habilitar (solo si está vacía)
       if (enabled) {
         try {
-          const today = new Date();
-          const y = today.getFullYear();
-          const m = String(today.getMonth() + 1).padStart(2, '0');
-          const d = String(today.getDate()).padStart(2, '0');
-          const iso = `${y}-${m}-${d}`;
+          // Formateo unificado: SirioFechas (static/js/fechas.js).
+          const iso = window.SirioFechas.hoyIso();
           const dateInp = document.querySelector(`[name="${prefix}_date"][data-datepicker]`);
           if (dateInp && !String(dateInp.value || '').trim()) {
             // asegurar flatpickr

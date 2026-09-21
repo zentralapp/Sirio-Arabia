@@ -116,6 +116,10 @@
       <input type="text" id="clienteSearch" name="q" value="{{ q or '' }}" class="form-control form-control-sm cliente-search-input" placeholder="Buscar por razón social o nombre">
       <input type="hidden" name="page" value="1">
       <input type="hidden" name="per_page" value="{{ per_page or 10 }}">
+      {# El backend arranca en all=1 ("Ver todos"). Este hidden viaja en cada
+         filtro para no perder el modo elegido: sin el, buildUrl borraba `all` y
+         cualquier busqueda pateaba al usuario de vuelta al default. #}
+      <input type="hidden" id="clientesAllInput" name="all" value="{{ '1' if show_all else '0' }}">
     </form>
   </div>
   <div class="clientes-toolbar-actions d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center gap-2 flex-wrap justify-content-end">
@@ -342,7 +346,7 @@
                     <div class="modal-body">
                       <form class="row g-2 mb-2" method="post" action="{{ url_for('main.clientes_link_add', client_id=c.id) }}">
                         <div class="col-md-5">
-                          <select class="form-select js-company-select" name="company_id" required>
+                          <select class="form-select js-company-select" name="company_id" required data-searchable>
                             <option value="">Seleccionar empresa...</option>
                           </select>
                         </div>
@@ -471,10 +475,20 @@
           </div>
           <div class="d-flex gap-2">
             <a class="btn btn-sm btn-outline-secondary {{ 'disabled' if not has_prev else '' }}"
-               href="{{ url_for('main.clientes', q=q, prov=prov, alertas=alertas, page=(page-1), per_page=per_page) }}">Anterior</a>
+               href="{{ url_for('main.clientes', q=q, prov=prov, alertas=alertas, page=(page-1), per_page=per_page, all=0) }}">Anterior</a>
             <a class="btn btn-sm btn-outline-secondary {{ 'disabled' if not has_next else '' }}"
-               href="{{ url_for('main.clientes', q=q, prov=prov, alertas=alertas, page=(page+1), per_page=per_page) }}">Siguiente</a>
+               href="{{ url_for('main.clientes', q=q, prov=prov, alertas=alertas, page=(page+1), per_page=per_page, all=0) }}">Siguiente</a>
             <a class="btn btn-sm btn-outline-dark" href="{{ url_for('main.clientes', q=q, prov=prov, alertas=alertas, all=1) }}">Ver todos</a>
+          </div>
+        </div>
+        {% else %}
+        {# "Ver todos" es el modo por defecto; esta es la unica salida hacia el
+           paginado, asi que el id tiene que seguir siendo clientesPagination
+           para que el JS de filtros lo reemplace igual que al otro pie. #}
+        <div id="clientesPagination" class="d-flex justify-content-between align-items-center px-3 py-2 border-top">
+          <div class="text-muted small">Mostrando todos los clientes</div>
+          <div class="d-flex gap-2">
+            <a class="btn btn-sm btn-outline-dark" href="{{ url_for('main.clientes', q=q, prov=prov, alertas=alertas, all=0) }}">Paginar</a>
           </div>
         </div>
         {% endif %}
@@ -868,6 +882,7 @@
   var provSelect = document.getElementById('provSelect');
   var alertasSelect = document.getElementById('alertasSelect');
   var pageInput = form ? form.querySelector('input[name="page"]') : null;
+  var allInput = form ? form.querySelector('input[name="all"]') : null;
   var table = document.getElementById('clientes-table');
   var tbody = table ? table.querySelector('tbody') : null;
   var pagination = document.getElementById('clientesPagination');
@@ -880,6 +895,8 @@
       var parsed = new URL(url, window.location.origin);
       var params = parsed.searchParams;
       if (pageInput) pageInput.value = params.get('page') || '1';
+      // El default del backend es all=1; si la URL no lo trae, es "Ver todos".
+      if (allInput) allInput.value = params.get('all') || '1';
       if (searchInput) searchInput.value = params.get('q') || '';
       if (provSelect) provSelect.value = params.get('prov') || '';
       if (alertasSelect) alertasSelect.value = (params.get('alertas') || '').toUpperCase();
@@ -891,7 +908,9 @@
     var params = new URLSearchParams(new FormData(form));
     if (resetPage) params.set('page', '1');
     if (!params.get('per_page')) params.set('per_page', '10');
-    params.delete('all');
+    // NO BORRAR `all`: antes se hacia params.delete('all') y cada tecla en el
+    // buscador devolvia al usuario al modo por defecto, pisando el "Paginar"
+    // que acababa de elegir. Ahora viaja como hidden del form.
     var q = (params.get('q') || '').trim();
     if (!q) params.delete('q');
     if (!params.get('prov')) params.delete('prov');
@@ -1069,8 +1088,21 @@
     var modalEl = document.getElementById('confirmRemoveModal');
     var msgEl = document.getElementById('confirmRemoveMsg');
     var confirmBtn = document.getElementById('confirmRemoveBtn');
-    var ModalCtor = window.bootstrap && window.bootstrap.Modal;
-    var modal = (modalEl && ModalCtor) ? ModalCtor.getOrCreateInstance(modalEl) : null;
+
+    // NO BORRAR: bootstrap.bundle.min.js se carga DESPUES de este bloque
+    // (layout.html: el bloque "content" esta en la linea 227 y el <script> de
+    // bootstrap en la 240). Resolver window.bootstrap.Modal aca arriba, en tiempo de
+    // parseo, daba SIEMPRE undefined: `modal` quedaba null para toda la vida de
+    // la pagina y cada confirmacion caia en el fallback manual, que inyecta un
+    // .modal-backdrop#confirmRemoveBackdrop que nadie remueve (el boton
+    // "Cancelar" tiene data-bs-dismiss y lo atiende bootstrap, que para ese
+    // momento SI esta cargado pero tiene _isShown=false, asi que hide() sale por
+    // el early-return y no hace nada). Resultado en mobile: pantalla tapada por
+    // el velo, imposible de cerrar. Resolver el constructor SIEMPRE al usarlo.
+    function getModal(){
+      var ModalCtor = window.bootstrap && window.bootstrap.Modal;
+      return (modalEl && ModalCtor) ? ModalCtor.getOrCreateInstance(modalEl) : null;
+    }
 
     document.addEventListener('submit', function(e){
       var form = e.target;
@@ -1079,6 +1111,7 @@
         pendingForm = form;
         var text = form.getAttribute('data-confirm') || '¿Confirmar acción?';
         if (msgEl) msgEl.textContent = text;
+        var modal = getModal();
         if (modal) {
           modal.show();
         } else if (modalEl) {
@@ -1092,10 +1125,29 @@
       }
     });
 
+    // Cancelar / cerrar: cerrar tambien si se abrio por el fallback manual, y
+    // limpiar pendingForm para no reenviar un form viejo.
+    if (modalEl){
+      modalEl.addEventListener('click', function(e){
+        var t = e.target;
+        var dismissBtn = (t && t.getAttribute && t.getAttribute('data-bs-dismiss') === 'modal') ? t : (t && t.closest ? t.closest('[data-bs-dismiss="modal"]') : null);
+        if (!dismissBtn) return;
+        pendingForm = null;
+        var modal = getModal();
+        if (modal) { modal.hide(); return; }
+        modalEl.classList.remove('show');
+        modalEl.style.display = 'none';
+        var bd = document.getElementById('confirmRemoveBackdrop');
+        if (bd) bd.remove();
+      });
+      modalEl.addEventListener('hidden.bs.modal', function(){ pendingForm = null; });
+    }
+
     if (confirmBtn){
       confirmBtn.addEventListener('click', function(){
         if (pendingForm){
           // Cerrar modal antes de enviar
+          var modal = getModal();
           if (modal) modal.hide();
           else {
             modalEl.classList.remove('show'); modalEl.style.display='none';
@@ -1181,24 +1233,84 @@
   }
   function safeHideDropdown(fromEl){
     try {
-      var dd = closest(fromEl, '.dropdown');
-      if (!dd) return;
-      var toggle = dd.querySelector('[data-bs-toggle="dropdown"]');
+      // Con el menu portalizado a <body> (bloque E de app.js) el boton ya NO
+      // tiene un `.dropdown` de ancestro, asi que primero se pregunta al portal
+      // por el toggle y recien despues se cae al camino de siempre.
+      var toggle = (window.SirioMenuPortal && window.SirioMenuPortal.toggleDe)
+        ? window.SirioMenuPortal.toggleDe(fromEl) : null;
+      if (!toggle){
+        var dd = closest(fromEl, '.dropdown');
+        if (!dd) return;
+        toggle = dd.querySelector('[data-bs-toggle="dropdown"]');
+      }
       if (!toggle) return;
+      // getInstance y NO getOrCreateInstance: crear la instancia aca la crearia
+      // SIN el popperConfig de `fijarMenusDeTabla` (app.js), y
+      // `getOrCreateInstance` despues devuelve esa e IGNORA el config, o sea el
+      // menu quedaria position:absolute y lo clipearia el .table-responsive.
+      // Si no hay instancia, el menu no esta abierto y no hay nada que cerrar.
       if (window.bootstrap && window.bootstrap.Dropdown){
-        try { window.bootstrap.Dropdown.getOrCreateInstance(toggle).hide(); } catch(e0) {}
+        var inst = window.bootstrap.Dropdown.getInstance(toggle);
+        if (inst) { try { inst.hide(); } catch(e0) {} }
       }
     } catch(e) {}
   }
-  function moveModalToBody(modalEl){
+  /* ═════════════════════════════════════════════════════════════════════════
+     Los modales `links{id}` se sacan del `<td>` y se cuelgan de <body>.
+     ─────────────────────────────────────────────────────────────────────────
+     NO BORRAR, y sobre todo NO volver a colgarlo solo de DOMContentLoaded.
+     Mismo problema y misma solucion que en empresas.html (ver el comentario
+     largo de alla). Resumen: el modal vive dentro de `<td class="col-actions">`,
+     o sea dentro de `#clientes-table` y de `.table-responsive.table-mobile-cards`,
+     donde le pegan selectores que no son para el (`#clientes-table th,td` de
+     este archivo ~:75 y las reglas de `.table-mobile-cards` de layout.html).
+
+     `replaceListFromHtml()` hace `tbody.innerHTML = ...` en cada tecla del
+     buscador y en cada cambio de filtro, o sea vuelve a crear los modales
+     DENTRO del `<td>`. Con el move corriendo una sola vez quedaban IDs
+     DUPLICADOS y bootstrap abria el de la tabla, porque resuelve
+     `data-bs-target` con `document.querySelector` (primero en orden de
+     documento).
+
+     TRAMPA: el duplicado viejo NO se busca con `document.getElementById`, que
+     devuelve justamente el de la tabla. Se indexa recorriendo
+     `document.body.children`, que son los que ya fueron movidos.             */
+  function indexarLinkModalesDeBody(){
+    var porId = {};
     try {
-      if (!modalEl || modalEl.parentElement === document.body) return;
+      Array.prototype.forEach.call(document.body.children, function(el){
+        if (!el.id || el.id.indexOf('links') !== 0) return;
+        if (!el.classList || !el.classList.contains('modal')) return;
+        porId[el.id] = el;
+      });
+    } catch(e) {}
+    return porId;
+  }
+  function moveModalToBody(modalEl, yaEnBody){
+    try {
+      // La NodeList de querySelectorAll es ESTATICA: sigue teniendo los
+      // duplicados viejos que esta misma pasada ya saco del DOM. Sin este
+      // chequeo los volviamos a colgar de <body> y no se limpiaba nada.
+      if (!modalEl || modalEl.isConnected === false) return;
+      if (modalEl.parentElement === document.body) return;
+      var indice = yaEnBody || indexarLinkModalesDeBody();
+      var viejo = indice[modalEl.id];
+      if (viejo && viejo !== modalEl){
+        // Un modal abierto no se toca: se deja el duplicado y lo limpia la
+        // proxima pasada.
+        if (viejo.classList.contains('show')) return;
+        try { viejo.remove(); } catch(e0) {}
+        delete indice[modalEl.id];
+      }
       document.body.appendChild(modalEl);
     } catch(e) {}
   }
   function moveAllLinkModalsToBody(){
     try {
-      document.querySelectorAll('.modal[id^="links"]').forEach(moveModalToBody);
+      var yaEnBody = indexarLinkModalesDeBody();
+      document.querySelectorAll('.modal[id^="links"]').forEach(function(modalEl){
+        moveModalToBody(modalEl, yaEnBody);
+      });
     } catch(e) {}
   }
 
@@ -1216,10 +1328,23 @@
     } catch(e) {}
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', moveAllLinkModalsToBody);
-  } else {
+  // `window.SirioList` lo define js/app.js, que se carga en el PIE de
+  // layout.html: cuando corre este script inline todavia no existe. Por eso la
+  // suscripcion se difiere a DOMContentLoaded, momento en el que app.js ya se
+  // ejecuto. El consumidor es idempotente, que es lo que SirioList exige.
+  function engancharListado(){
     moveAllLinkModalsToBody();
+    try {
+      if (window.SirioList && window.SirioList.onChange){
+        window.SirioList.onChange(moveAllLinkModalsToBody);
+      }
+    } catch(e) {}
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', engancharListado);
+  } else {
+    engancharListado();
   }
 
   if (document.readyState === 'complete'){

@@ -6,10 +6,23 @@
     <title>Sirio Arabia - CRM</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" crossorigin="anonymous">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" crossorigin="anonymous">
+    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.6.2/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet" crossorigin="anonymous">
     <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
+    <!-- SirioFechas: fuente unica de verdad de fechas en el frontend.
+         Va en el head a proposito: los scripts de cada pagina viven dentro
+         del bloque content, o sea ANTES de js/app.js, y necesitan que
+         window.SirioFechas ya exista. -->
+    <script src="{{ url_for('static', filename='js/fechas.js') }}"></script>
+    <!-- Tom Select: campo con busqueda + dropdown sobre los <select> que ya
+         existen. Va en el head por el MISMO motivo que fechas.js: los scripts
+         inline de cada vista corren dentro del bloque content, o sea ANTES de
+         los <script> del pie, asi que no pueden depender de nada que se cargue
+         abajo. Version pineada a proposito, igual que bootstrap y bootstrap-icons. -->
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.6.2/dist/js/tom-select.complete.min.js"></script>
+    <script src="{{ url_for('static', filename='js/searchable-select.js') }}"></script>
     <style>
       /* Encabezados de tablas con tono azul/verdoso petróleo en toda la app */
       .table thead tr,
@@ -75,36 +88,125 @@
         .table-mobile-cards .table tbody tr > td::before, .table-mobile-cards .table tbody tr > th::before { content: attr(data-label); font-weight: 600; color: #6b7280; display: block; margin-bottom: .15rem; }
         .table-mobile-cards .col-actions { width: 100% !important; text-align: left !important; }
         .table-mobile-cards .col-actions .btn-group { display: flex; flex-wrap: wrap; gap: .5rem; }
-        /* Modales fullscreen en móvil */
-        .modal-dialog { width: 100% !important; max-width: none !important; margin: 0 !important; }
-        .modal-content { min-height: 100vh; border-radius: 0; }
 
         /* Scroll horizontal suave para tablas en landscape (y cuando haga falta) */
         .table-responsive{ -webkit-overflow-scrolling: touch; }
         .table-responsive > .table{ min-width: 720px; }
       }
 
+      /* ═══════════════════════════════════════════════════════════════════════
+         Modales fullscreen en móvil Y TABLET.
+         ───────────────────────────────────────────────────────────────────────
+         NO BORRAR el layout flex. Antes esto era solo
+         `.modal-content{min-height:100vh}`, y con eso el UNICO elemento que
+         scrolleaba era el propio `.modal` (el overlay position:fixed, que trae
+         overflow-y:auto de bootstrap). Dos consecuencias medidas a 390px:
+           1) el contenido que no entra queda fuera del pliegue y el header se
+              va de pantalla al scrollear (no hay header fijo);
+           2) en iOS scrollear un overlay fixed sin
+              -webkit-overflow-scrolling anda pesimo: hay que mantener el dedo
+              apretado para que arranque. Es el sintoma que reporto el cliente.
+         Ademas 100vh en iOS Safari es el viewport GRANDE (sin barra de URL),
+         asi que el .modal-content siempre quedaba mas alto que el area
+         visible y el footer (Guardar/Cancelar) caia debajo del pliegue.
+         Con 100dvh + flex column el que scrollea es `.modal-body`, header y
+         footer quedan fijos, y el scroll tactil es el nativo del navegador.
+         `height:100vh` va primero como fallback para navegadores sin dvh.
+
+         ── H12: POR QUE ESTE BLOQUE ES `max-width:991.98px` Y NO `767.98px` ──
+         Estas reglas vivian adentro del bloque `max-width:767.98px` de arriba.
+         Consecuencia: la banda 768-991.98px (iPad vertical, tablets Android,
+         telefono en horizontal) NO las recibia y caia en el default de
+         bootstrap. Medido con el CSS real de la app en el modal de clientes de
+         /empresas:
+           viewport 768 -> .modal-dialog w=500px, margin 28px 134px  (268px perdidos)
+           viewport 820 -> .modal-dialog w=500px, margin 28px 160px  (320px perdidos)
+           .modal-body  -> overflow visible                => NO scrollea
+           .modal       -> clientHeight 700 / scrollHeight 2636
+                        => el UNICO scroller era el overlay fixed, o sea el
+                           sintoma (2) de arriba, EN TABLET.
+         `.modal-lg` no tapaba el agujero: sus 800px recien entran en 992px.
+
+         Es un bloque HERMANO y no se subio el techo del bloque de 767.98px a
+         proposito: ahi viven reglas que deben seguir siendo solo-movil (pisos
+         de area tactil `min-height:44px`, `font-size:16px`, compactacion de
+         tipografia de tabla, `table-mobile-cards`). Arrastrarlas al tablet
+         seria un efecto colateral no pedido.
+
+         Techo en 991.98px: desde 992px entra el sidebar y el modal centrado de
+         bootstrap ya entra comodo. Escritorio INTACTO.                        */
+      @media (max-width: 991.98px) {
+        .modal-dialog {
+          width: 100% !important; max-width: none !important; margin: 0 !important;
+          height: 100vh; height: 100dvh;
+        }
+        .modal-dialog-centered { align-items: stretch; }
+        .modal-content {
+          border-radius: 0;
+          height: 100vh; height: 100dvh;
+          max-height: 100vh; max-height: 100dvh;
+          display: flex; flex-direction: column;
+        }
+        .modal-header, .modal-footer { flex: 0 0 auto; }
+        .modal-body {
+          flex: 1 1 auto;
+          min-height: 0;           /* sin esto el flex item no encoge y no scrollea */
+          overflow-y: auto;
+          overflow-x: hidden;
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior: contain;
+        }
+      }
+
+      /* ═══════════════════════════════════════════════════════════════════════
+         H12b — NO VOLVER A PONER `touch-action` EN EL `.table-responsive` DE LOS
+         MODALES. Aca hubo una regla `touch-action: pan-x pinch-zoom` y era EL
+         BUG, no el fix. El cliente reporto: "no puedo scrollear cuando mi dedo
+         esta sobre la tabla, solo me deja scrollear horizontalmente".
+         ───────────────────────────────────────────────────────────────────────
+         La justificacion con la que se agrego decia que `pan-x` "delega" el
+         arrastre vertical al ancestro scrolleable. Es FALSO: `touch-action` no
+         delega nada. Por spec, al empezar un touch el navegador computa la
+         INTERSECCION de los `touch-action` de la cadena de ancestros. Medido en
+         el modal `links{id}` de /empresas a 390px:
+           .table-responsive -> touch-action: pan-x pinch-zoom
+           .modal-body / .modal-content / .modal-dialog / .modal / body / html
+                             -> touch-action: auto
+           interseccion => pan-x pinch-zoom, que NO incluye pan-y
+         O sea le prohibimos al navegador el paneo vertical en toda esa zona. El
+         gesto no "se perdia" en un scroller anidado: estaba haciendo exactamente
+         lo que le pedimos.
+
+         Y el `pan-x` no protegia nada: medido en ese mismo modal, el
+         `.table-responsive` tiene scrollHeight === clientHeight (1291 === 1291),
+         o sea extent vertical CERO. No hay scroll vertical propio que defender.
+
+         El encadenamiento al `.modal-body` YA FUNCIONA SOLO. Verificado con
+         rueda de mouse (que por spec NO esta sujeta a `touch-action`, asi que
+         mide la cadena de scroll sin la mascara): rueda sobre la tabla ->
+         .modal-body.scrollTop 0 -> 244 (su maximo) y .table-responsive.scrollTop
+         se queda en 0. La estructura esta sana; lo unico que bloqueaba el dedo
+         era esta regla.
+
+         El sintoma original que se quiso arreglar (en iOS habia que mantener el
+         dedo apretado para que arrancara el scroll) ya lo resuelve la OTRA mitad
+         del bloque H12 de arriba: el `.modal-body{flex:1; min-height:0;
+         overflow-y:auto}` convierte al body en el scroller real, en vez de
+         depender del overlay `position:fixed` de bootstrap. Esta regla era
+         redundante ademas de danina.
+
+         LECCION: `touch-action` es la unica propiedad de todo este laburo que no
+         se puede verificar sin dedo real o emulacion tactil. Medir el computed
+         value NO alcanza: el valor aplicado ERA el bug.                        */
+
       /* En portrait (celular vertical), se prioriza el modo cards (se genera via JS) */
       @media (max-width: 767.98px) and (orientation: portrait) {
         .table-responsive > .table{ min-width: 0; }
-      }
-      /* Bloqueo de orientación: overlay controlado por clase require-rotate */
-      #orientationLock { display: none; position: fixed; inset: 0; z-index: 2000; background: #0b1721; color: #fff; align-items: center; justify-content: center; text-align: center; padding: 2rem; }
-      #orientationLock .inner { max-width: 520px; margin: 0 auto; }
-      #orientationLock .icon { font-size: 64px; line-height: 1; opacity: .9; margin-bottom: 1rem; }
-      #orientationLock h2 { font-size: 1.25rem; margin-bottom: .5rem; }
-      #orientationLock p { color: #cbd5e1; margin: 0; }
-      @media (max-width: 767.98px) and (orientation: portrait) {
-        body.require-rotate-disabled #orientationLock { display: flex; }
-        body.require-rotate-disabled { overflow: hidden; }
       }
       /* Navbar mobile links hover/focus con acento petróleo/verde */
       .navbar-dark .navbar-nav .nav-link:hover,
       .navbar-dark .navbar-nav .nav-link:focus { background: rgba(15,118,110,.18); border-radius:.5rem; color:#e6fffb!important }
       .navbar-dark .navbar-nav .nav-link.active { background: rgba(25,135,84,.22); border-radius:.5rem }
-      /* Overlay: link a Pedidos más discreto e inline */
-      #orientationLock .orientation-link{ display:inline; padding:0; font-size:.95rem; color:#0ea5a3; text-decoration:underline; background:transparent; border:0 }
-      #orientationLock .orientation-link:hover{ color:#0f766e }
       /* Logout links en navbar y sidebar */
       .logout-link:hover, .logout-link:focus { background: rgba(220,53,69,.18) !important; color: #fff !important; border-radius: .5rem; outline: 2px solid rgba(220,53,69,.35); outline-offset: 2px; }
       /* Ajuste global: margen superior moderado en vista de Clientes */
@@ -117,6 +219,9 @@
       body.sidebar-collapsed #appSidebar { display: none !important; }
       body.sidebar-collapsed #sidebarShowBtn { display: inline-flex !important; }
       #sidebarShowBtn { display: none; }
+
+      /* NO BORRAR: sin min-width:0 el flex item no puede encogerse por debajo de su min-content (tablas anchas) y la .row se envuelve, mandando el main debajo del sidebar */
+      main.col { min-width: 0; }
 
       @media (max-width: 991.98px) {
         #topMenu {
@@ -142,13 +247,13 @@
         <div class="collapse navbar-collapse d-lg-none" id="topMenu">
           <ul class="navbar-nav ms-auto mt-2 mt-lg-0">
             {% if can_view is not defined or can_view('dashboard') %}<li class="nav-item"><a class="nav-link {% if active=='dashboard' %}active{% endif %}" href="{{ url_for('main.index') }}"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a></li>{% endif %}
-            {% if can_view is not defined or can_view('calendario') %}<li class="nav-item"><a class="nav-link {% if active=='calendario' %}active{% endif %}" href="{{ url_for('main.calendario') }}"><i class="bi bi-calendar3 me-2"></i>Calendario</a></li>{% endif %}
-            {% if can_view is not defined or can_view('clientes') %}<li class="nav-item"><a class="nav-link {% if active=='clientes' %}active{% endif %}" href="{{ url_for('main.clientes') }}"><i class="bi bi-people me-2"></i>Clientes</a></li>{% endif %}
-            {% if can_view is not defined or can_view('empresas') %}<li class="nav-item"><a class="nav-link {% if active=='empresas' %}active{% endif %}" href="{{ url_for('main.empresas') }}"><i class="bi bi-building me-2"></i>Empresas</a></li>{% endif %}
+            {% if can_view is not defined or can_view('calendario') %}<li class="nav-item"><a class="nav-link {% if active=='calendario' %}active{% endif %}" href="{{ nav_url('main.calendario') }}"><i class="bi bi-calendar3 me-2"></i>Calendario</a></li>{% endif %}
+            {% if can_view is not defined or can_view('clientes') %}<li class="nav-item"><a class="nav-link {% if active=='clientes' %}active{% endif %}" href="{{ nav_url('main.clientes') }}"><i class="bi bi-people me-2"></i>Clientes</a></li>{% endif %}
+            {% if can_view is not defined or can_view('empresas') %}<li class="nav-item"><a class="nav-link {% if active=='empresas' %}active{% endif %}" href="{{ nav_url('main.empresas') }}"><i class="bi bi-building me-2"></i>Empresas</a></li>{% endif %}
             {% if can_view is not defined or can_view('pedidos') %}<li class="nav-item"><a class="nav-link {% if active=='pedidos' %}active{% endif %}" href="{{ url_for('main.pedidos') }}"><i class="bi bi-bag-check me-2"></i>Pedidos</a></li>{% endif %}
-            {% if can_view is not defined or can_view('status') %}<li class="nav-item"><a class="nav-link {% if active=='status' %}active{% endif %}" href="{{ url_for('main.status') }}"><i class="bi bi-truck me-2"></i>Status Mercadería</a></li>{% endif %}
+            {% if can_view is not defined or can_view('status') %}<li class="nav-item"><a class="nav-link {% if active=='status' %}active{% endif %}" href="{{ nav_url('main.status') }}"><i class="bi bi-truck me-2"></i>Status Mercadería</a></li>{% endif %}
             {% if can_view is not defined or can_view('nueva_cobranza') %}<li class="nav-item"><a class="nav-link {% if active=='nueva_cobranza' %}active{% endif %}" href="{{ url_for('main.nueva_cobranza') }}"><i class="bi bi-plus-circle me-2"></i>Nuevas cobranzas</a></li>{% endif %}
-            {% if can_view is not defined or can_view('deudas') %}<li class="nav-item"><a class="nav-link {% if active=='deudas' %}active{% endif %}" href="{{ url_for('main.deudas_pendientes') }}"><i class="bi bi-cash-coin me-2"></i>Deudas pendientes</a></li>{% endif %}
+            {% if can_view is not defined or can_view('deudas') %}<li class="nav-item"><a class="nav-link {% if active=='deudas' %}active{% endif %}" href="{{ nav_url('main.deudas_pendientes') }}"><i class="bi bi-cash-coin me-2"></i>Deudas pendientes</a></li>{% endif %}
             {% if can_view is not defined or can_view('historial') %}<li class="nav-item"><a class="nav-link {% if active=='historial' %}active{% endif %}" href="{{ url_for('main.historial') }}"><i class="bi bi-archive me-2"></i>Historial</a></li>{% endif %}
             {% if can_view is not defined or can_view('crm') %}<li class="nav-item"><a class="nav-link {% if active=='crm' %}active{% endif %}" href="{{ url_for('main.crm') }}"><i class="bi bi-graph-up-arrow me-2"></i>CRM</a></li>{% endif %}
             {% if can_view is not defined or can_view('comisiones') %}<li class="nav-item"><a class="nav-link {% if active=='comisiones' %}active{% endif %}" href="{{ url_for('main.comisiones') }}"><i class="bi bi-cash-stack me-2"></i>Comisiones</a></li>{% endif %}
@@ -178,13 +283,13 @@
             </div>
             <ul class="nav nav-pills flex-column gap-2 mt-2">
               {% if can_view is not defined or can_view('dashboard') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='dashboard' %}active{% endif %}" href="{{ url_for('main.index') }}"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a></li>{% endif %}
-              {% if can_view is not defined or can_view('calendario') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='calendario' %}active{% endif %}" href="{{ url_for('main.calendario') }}"><i class="bi bi-calendar3 me-2"></i>Calendario</a></li>{% endif %}
-              {% if can_view is not defined or can_view('clientes') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='clientes' %}active{% endif %}" href="{{ url_for('main.clientes') }}"><i class="bi bi-people me-2"></i>Clientes</a></li>{% endif %}
-              {% if can_view is not defined or can_view('empresas') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='empresas' %}active{% endif %}" href="{{ url_for('main.empresas') }}"><i class="bi bi-building me-2"></i>Empresas</a></li>{% endif %}
+              {% if can_view is not defined or can_view('calendario') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='calendario' %}active{% endif %}" href="{{ nav_url('main.calendario') }}"><i class="bi bi-calendar3 me-2"></i>Calendario</a></li>{% endif %}
+              {% if can_view is not defined or can_view('clientes') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='clientes' %}active{% endif %}" href="{{ nav_url('main.clientes') }}"><i class="bi bi-people me-2"></i>Clientes</a></li>{% endif %}
+              {% if can_view is not defined or can_view('empresas') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='empresas' %}active{% endif %}" href="{{ nav_url('main.empresas') }}"><i class="bi bi-building me-2"></i>Empresas</a></li>{% endif %}
               {% if can_view is not defined or can_view('pedidos') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='pedidos' %}active{% endif %}" href="{{ url_for('main.pedidos') }}"><i class="bi bi-bag-check me-2"></i>Pedidos</a></li>{% endif %}
-              {% if can_view is not defined or can_view('status') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='status' %}active{% endif %}" href="{{ url_for('main.status') }}"><i class="bi bi-truck me-2"></i>Status Mercadería</a></li>{% endif %}
+              {% if can_view is not defined or can_view('status') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='status' %}active{% endif %}" href="{{ nav_url('main.status') }}"><i class="bi bi-truck me-2"></i>Status Mercadería</a></li>{% endif %}
               {% if can_view is not defined or can_view('nueva_cobranza') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='nueva_cobranza' %}active{% endif %}" href="{{ url_for('main.nueva_cobranza') }}"><i class="bi bi-plus-circle me-2"></i>Nuevas cobranzas</a></li>{% endif %}
-              {% if can_view is not defined or can_view('deudas') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='deudas' %}active{% endif %}" href="{{ url_for('main.deudas_pendientes') }}"><i class="bi bi-cash-coin me-2"></i>Deudas pendientes</a></li>{% endif %}
+              {% if can_view is not defined or can_view('deudas') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='deudas' %}active{% endif %}" href="{{ nav_url('main.deudas_pendientes') }}"><i class="bi bi-cash-coin me-2"></i>Deudas pendientes</a></li>{% endif %}
               {% if can_view is not defined or can_view('historial') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='historial' %}active{% endif %}" href="{{ url_for('main.historial') }}"><i class="bi bi-archive me-2"></i>Historial</a></li>{% endif %}
               {% if can_view is not defined or can_view('crm') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='crm' %}active{% endif %}" href="{{ url_for('main.crm') }}"><i class="bi bi-graph-up-arrow me-2"></i>CRM</a></li>{% endif %}
               {% if can_view is not defined or can_view('comisiones') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='comisiones' %}active{% endif %}" href="{{ url_for('main.comisiones') }}"><i class="bi bi-cash-stack me-2"></i>Comisiones</a></li>{% endif %}
@@ -209,7 +314,8 @@
             <a href="{{ url_for('main.notificaciones') }}" class="btn btn-light position-relative" aria-label="Centro de notificaciones" title="Notificaciones">
               <i class="bi bi-bell"></i>
               {% if notif_active_count is defined and notif_active_count|int > 0 %}
-                <span id="notifBellCount" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">{{ notif_active_count }}</span>
+                {# end-0 + translate-middle-y en vez de start-100 + translate-middle: el badge queda contenido horizontalmente dentro del botón (sin importar cuántos dígitos tenga) y no genera scroll horizontal de página en viewports chicos #}
+                <span id="notifBellCount" class="position-absolute top-0 end-0 translate-middle-y badge rounded-pill bg-danger">{{ notif_active_count }}</span>
               {% endif %}
             </a>
           </div>
@@ -230,14 +336,6 @@
           {% endif %}
           {% block content %}{% endblock %}
         </main>
-      </div>
-    </div>
-    <div id="orientationLock" aria-hidden="true" role="dialog">
-      <div class="inner">
-        <div class="icon">🔁</div>
-        <h2>Girá el celular</h2>
-        <p>Para ver las tablas completas, usá el teléfono en posición horizontal.</p>
-        <p class="mt-3">Si preferís, podés usar <a id="orientationPedidosLink" href="{{ url_for('main.pedidos') }}" class="orientation-link">Pedidos</a> sin girar el celular.</p>
       </div>
     </div>
     <!-- Toast container global para alertas estéticas -->
@@ -315,38 +413,226 @@
           }
         }
 
+        // ----------------------------------------------------------------
+        // Máscara progresiva DD/MM/AAAA para los altInput de flatpickr.
+        //
+        // flatpickr con altInput mantiene DOS inputs por campo:
+        //   - altInput: el VISIBLE (formato d/m/Y) y SIN atributo name
+        //   - input:    el ORIGINAL, que queda type=hidden, con el name y en
+        //               formato Y-m-d. ESE es el que viaja en el POST.
+        // Por eso shouldBind() no lo engancha: el altInput no tiene name.
+        //
+        // Qué hace esto:
+        //   1) formatea mientras se tipea (1-2 -> DD, 3-4 -> DD/MM, 5-8 -> DD/MM/AAAA)
+        //   2) cuando la fecha está completa y es válida la empuja con
+        //      fp.setDate(date, true): eso reescribe el input oculto en Y-m-d
+        //      y dispara onChange (hay lógica de cobranzas colgada de ahí)
+        //   3) descarta texto incompleto o imposible ANTES de que flatpickr lo
+        //      parsee, porque su handler de blur borra el valor sin avisar.
+        // ----------------------------------------------------------------
+        function pad2(n){ return (n < 10 ? '0' : '') + n; }
+        function isDigit(ch){ return ch >= '0' && ch <= '9'; }
+
+        // Distribuye lo tipeado en [DD, MM, AAAA] dígito por dígito.
+        // Autocompleta el 0 que falta (5122026 o 5/12/2026 -> 05/12/2026) y
+        // descarta el dígito que haría un día > 31 o un mes > 12.
+        function parseDateSegments(raw){
+          var s = (raw == null ? '' : String(raw));
+          var segs = ['', '', ''];
+          var idx = 0;
+          for (var i = 0; i < s.length; i++){
+            var ch = s.charAt(i);
+            if (!isDigit(ch)){
+              // separador tipeado por el usuario: cierra día o mes
+              if (idx < 2 && segs[idx].length === 1){
+                segs[idx] = '0' + segs[idx];
+                idx++;
+              }
+              continue;
+            }
+            if (idx > 2) continue;                 // tope de 8 dígitos
+            if (idx === 2){
+              segs[2] += ch;
+              if (segs[2].length === 4) idx = 3;
+              continue;
+            }
+            if (segs[idx].length === 0){
+              if (parseInt(ch, 10) > (idx === 0 ? 3 : 1)){
+                segs[idx] = '0' + ch;              // día 5 -> 05, mes 9 -> 09
+                idx++;
+              } else {
+                segs[idx] = ch;
+              }
+              continue;
+            }
+            var candidate = segs[idx] + ch;
+            if (parseInt(candidate, 10) > (idx === 0 ? 31 : 12)) continue;
+            segs[idx] = candidate;
+            idx++;
+          }
+          return segs;
+        }
+
+        function renderDateSegments(segs, trailingSep){
+          var parts = [];
+          for (var i = 0; i < 3; i++){
+            if (!segs[i]) break;
+            parts.push(segs[i]);
+          }
+          var out = parts.join('/');
+          if (trailingSep && parts.length > 0 && parts.length < 3) out += '/';
+          return out;
+        }
+
+        function maskDateText(raw){
+          var s = (raw == null ? '' : String(raw));
+          var endsWithSep = s.length > 0 && !isDigit(s.charAt(s.length - 1));
+          return renderDateSegments(parseDateSegments(s), endsWithSep);
+        }
+
+        // Cursor anclado a la derecha: contamos los dígitos que quedan después
+        // del caret y lo reponemos con esa misma cantidad detrás. Así el
+        // backspace y el autocompletado del 0 no lo mandan a lugares raros.
+        function digitsAfter(s, pos){
+          var n = 0;
+          for (var i = pos; i < s.length; i++){ if (isDigit(s.charAt(i))) n++; }
+          return n;
+        }
+        function caretAfterDigits(s, pending){
+          if (pending <= 0) return s.length;
+          var seen = 0;
+          for (var i = s.length - 1; i >= 0; i--){
+            if (!isDigit(s.charAt(i))) continue;
+            seen++;
+            if (seen === pending) return i;
+          }
+          return 0;
+        }
+        function applyDateMask(el){
+          var before = (el.value == null ? '' : String(el.value));
+          var start = (el.selectionStart == null) ? before.length : el.selectionStart;
+          var pending = digitsAfter(before, start);
+          var after = maskDateText(before);
+          if (after === before) return;
+          el.value = after;
+          if (el === document.activeElement){
+            var pos = caretAfterDigits(after, pending);
+            el.setSelectionRange(pos, pos);
+          }
+        }
+
+        function dateFromSegments(segs){
+          if (!segs || segs[0].length !== 2 || segs[1].length !== 2 || segs[2].length !== 4) return null;
+          var dd = parseInt(segs[0], 10);
+          var mm = parseInt(segs[1], 10);
+          var yy = parseInt(segs[2], 10);
+          if (dd < 1 || dd > 31 || mm < 1 || mm > 12 || yy < 1900 || yy > 2100) return null;
+          var d = new Date(yy, mm - 1, dd);
+          // 31/02/2026 lo corre JS a marzo: lo rechazamos en vez de aceptar otra fecha
+          if (d.getFullYear() !== yy || d.getMonth() !== (mm - 1) || d.getDate() !== dd) return null;
+          return d;
+        }
+        function sameDay(a, b){
+          return !!a && !!b && a.getFullYear() === b.getFullYear()
+                 && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+        }
+        function formatDMY(d){
+          return pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1) + '/' + d.getFullYear();
+        }
+
+        // Única vía de sincronización con el input oculto: el 2do argumento en
+        // true hace que flatpickr reescriba el input real (Y-m-d) y dispare
+        // onChange. El sameDay evita re-disparar onChange en cada tecla.
+        function pushDateToFlatpickr(fp, d){
+          if (sameDay(fp.selectedDates && fp.selectedDates[0], d)) return;
+          fp.setDate(d, true);
+        }
+
+        // Sólo enmascaramos pickers de una fecha, sin hora y con altFormat d/m/Y.
+        // Los de rango (mode: 'range') quedan afuera a propósito.
+        function maskableFlatpickr(el){
+          var fp = el && el._flatpickr;
+          if (!fp || !fp.altInput || !fp.config) return null;
+          if (fp.config.mode && fp.config.mode !== 'single') return null;
+          if (fp.config.enableTime) return null;
+          if (String(fp.config.altFormat) !== 'd/m/Y') return null;
+          return fp;
+        }
+
+        // Deja el campo visible en un estado que SIEMPRE coincide con el input
+        // oculto. Corre antes que los handlers de flatpickr (ver más abajo).
+        function normalizeAltInput(alt){
+          var fp = alt && alt._dateMaskFp;
+          if (!fp) return;
+          var raw = (alt.value == null ? '' : String(alt.value));
+          var segs = parseDateSegments(raw);
+          // año de 2 dígitos al salir del campo: 15/09/26 -> 15/09/2026
+          if (segs[0].length === 2 && segs[1].length === 2 && segs[2].length === 2){
+            segs[2] = '20' + segs[2];
+          }
+          var d = dateFromSegments(segs);
+          if (d){
+            alt.value = formatDMY(d);
+            pushDateToFlatpickr(fp, d);
+            return;
+          }
+          if (!/[0-9]/.test(raw)){
+            // el usuario borró todo: dejamos vacío y que flatpickr limpie el oculto
+            if (raw !== '') alt.value = '';
+            return;
+          }
+          // Incompleta (05/12) o imposible (31/02/2026): descartamos lo tipeado y
+          // mostramos el último valor válido, que es el que tiene el input oculto.
+          var cur = fp.selectedDates && fp.selectedDates[0];
+          alt.value = cur ? formatDMY(cur) : '';
+        }
+
         function bindFlatpickrAltInputs(root){
-          // flatpickr con altInput: el usuario escribe en altInput (d/m/Y) y el value real queda en Y-m-d.
-          // Si el usuario tipea 8 dígitos, flatpickr puede interpretarlo mal (ej 10102026 -> 10/02/2026).
-          // Acá forzamos el ISO correcto.
           (root || document).querySelectorAll('input').forEach(function(el){
-            try {
-              var fp = el._flatpickr;
-              if (!fp || !fp.altInput) return;
-              var alt = fp.altInput;
-              if (alt._dateMaskBound) return;
-              if (alt.disabled || alt.readOnly) return;
-
-              var handler = function(){
-                var raw = (alt.value || '').toString().trim();
-                // Si ya está en d/m/Y no lo tocamos; solo usamos esto para inputs “rápidos”
-                var digits = digitsFromSpacedOrSlashed(raw);
-                if (!digits || digits.length !== 8) return;
-                var iso = toIsoFromDDMMYYYY(digits);
-                if (!iso) return;
-                try {
-                  fp.setDate(iso, true, 'Y-m-d');
-                } catch(e) {
-                  try { fp.setDate(iso, true); } catch(e2) {}
-                }
-              };
-
-              alt.addEventListener('input', handler);
-              alt.addEventListener('blur', handler);
-              alt._dateMaskBound = true;
-            } catch(e) {}
+            var fp = maskableFlatpickr(el);
+            if (!fp) return;
+            var alt = fp.altInput;
+            if (!alt || alt._dateMaskFp || alt.readOnly) return;
+            alt._dateMaskFp = fp;
+            alt._dateMaskBound = true;   // que el binder genérico no lo enganche también
+            if (!alt.getAttribute('placeholder')) alt.setAttribute('placeholder', 'DD/MM/AAAA');
+            alt.setAttribute('autocomplete', 'off'); // el autofill del browser tapa el calendario
+            alt.addEventListener('input', function(){
+              applyDateMask(alt);
+              var d = dateFromSegments(parseDateSegments(alt.value));
+              if (d) pushDateToFlatpickr(fp, d);
+            });
+            // clickOpens ya abre el calendario al click y al focus; esto es el
+            // respaldo por si algo se comió el evento. No re-abre si ya está
+            // abierto, así no duplicamos onOpen ni peleamos con el tipeo.
+            alt.addEventListener('click', function(){
+              if (!fp.isOpen) fp.open();
+            });
           });
         }
+
+        // Los tres handlers de flatpickr que parsean el texto a mano son:
+        // blur y keydown(Enter) sobre el propio input, y mousedown en document.
+        // Los nuestros van en fase de CAPTURA sobre document, así corren antes
+        // y flatpickr nunca ve texto a medio escribir (si lo ve, lo borra).
+        function normalizeFocusedAltInput(){
+          var el = document.activeElement;
+          if (el && el._dateMaskFp) normalizeAltInput(el);
+        }
+        document.addEventListener('blur', function(e){
+          if (e.target && e.target._dateMaskFp) normalizeAltInput(e.target);
+        }, true);
+        document.addEventListener('mousedown', function(e){
+          var el = document.activeElement;
+          if (!el || !el._dateMaskFp) return;
+          if (e.target === el) return;   // click dentro del mismo campo: sigue escribiendo
+          var fp = el._dateMaskFp;
+          if (fp.calendarContainer && fp.calendarContainer.contains(e.target)) return;
+          normalizeAltInput(el);
+        }, true);
+        document.addEventListener('keydown', function(e){
+          if (e.key === 'Enter' || e.keyCode === 13) normalizeFocusedAltInput();
+        }, true);
         function bind(root){
           (root || document).querySelectorAll('input').forEach(function(el){
             if (!shouldBind(el) || el._dateMaskBound) return;
@@ -387,7 +673,9 @@
           if (!badge){
             badge = document.createElement('span');
             badge.id = 'notifBellCount';
-            badge.className = 'position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger';
+            // Mismas clases que el badge renderizado en el markup: end-0 + translate-middle-y
+            // lo mantiene contenido dentro del botón y evita scroll horizontal de página.
+            badge.className = 'position-absolute top-0 end-0 translate-middle-y badge rounded-pill bg-danger';
             a.appendChild(badge);
           }
           badge.textContent = String(n);
@@ -513,6 +801,38 @@
     </script>
     <script>
       (function(){
+        // Un registro de los clones creados, para poder actualizarlos/apagarlos
+        // a todos desde afuera de setup().
+        var clones = [];
+
+        /* El clon es `position:fixed` con `z-index:1500` inline (mas abajo), y
+           eso lo pone POR ENCIMA del modal de bootstrap (1055) y de su backdrop
+           (1050) en todos los breakpoints donde app.css no sube esos valores:
+           app.css:337-340 los sube a 3000/2990 SOLO en
+           `(max-width:767.98px) and (orientation:portrait)`, asi que en
+           landscape de telefono y en 768-991.98px (tablet) el clon tapaba el
+           modal. Ademas `update()` solo esta atado a scroll/resize, y con un
+           modal abierto el body tiene `overflow:hidden` y la ventana no
+           scrollea: el clon se quedaba congelado en `display:block` durante
+           todo el modal.
+
+           Se apaga con un chequeo propio en vez de depender de los z-index
+           porque asi el arreglo no se cae si alguien toca app.css.
+           `.modal.show` a secas alcanza y sobra ACA: el peor caso de un falso
+           positivo es un clon oculto de mas, que es inofensivo. (El caso
+           contrario — un modal "pegado" con la clase puesta para siempre — lo
+           limpia el bloque de mas abajo, que le saca la clase.) */
+        function hayModalVisible(){
+          try { return !!document.querySelector('.modal.show'); }
+          catch(e){ return false; }
+        }
+
+        function actualizarClones(){
+          for (var i = 0; i < clones.length; i++){
+            try { clones[i](); } catch(e) { /* uno roto no frena a los demas */ }
+          }
+        }
+
         function topOffset(){
           var top = 0;
           try {
@@ -532,7 +852,21 @@
             } catch(e_a0) {}
             var nav = document.querySelector('nav.navbar.d-lg-none');
             if (nav && window.getComputedStyle(nav).display !== 'none'){
-              top = Math.round(nav.getBoundingClientRect().height || 0);
+              if (active0 === 'clientes' || active0 === 'empresas'){
+                // A — el navbar movil (mas abajo en este archivo) NO es fixed-top
+                // ni sticky-top: se va con el scroll. Usar su ALTO fija el header
+                // clonado 45-56px mas abajo del borde de la pantalla y por ese
+                // hueco se ve pasar el contenido por detras (era parte del
+                // "contenido colandose" que reporto el cliente).
+                // `bottom` clampeado a 0 da el valor correcto en los dos casos:
+                // vale el alto mientras el navbar se ve, y baja a 0 cuando se fue.
+                // Scopeado a estas 2 vistas para no tocar a /status, /deudas,
+                // /cobranzas e /historial, que salen por la rama de arriba o
+                // dependen de este mismo valor con su propio ajuste.
+                top = Math.max(0, Math.round(nav.getBoundingClientRect().bottom || 0));
+              } else {
+                top = Math.round(nav.getBoundingClientRect().height || 0);
+              }
             }
           } catch(e) {}
           return top;
@@ -600,6 +934,13 @@
           }
 
           function update(){
+            // Con un modal a la vista el clon NO se dibuja: es fixed contra el
+            // viewport y se le pondria encima (ver el comentario del tope).
+            if (hayModalVisible()){
+              wrap.style.display = 'none';
+              try { cloneTable.style.transform = ''; } catch(e_m) {}
+              return;
+            }
             var top = topOffset();
             var rect = table.getBoundingClientRect();
             var thHeight = thead.getBoundingClientRect().height || 0;
@@ -632,6 +973,7 @@
           window.addEventListener('resize', update);
           var resp = table.closest('.table-responsive');
           if (resp) resp.addEventListener('scroll', update, { passive: true });
+          clones.push(update);
           update();
         }
 
@@ -643,6 +985,31 @@
           } catch(e) {}
 
           try { window.addEventListener('resize', function(){ try { applyCssStickyTop(); } catch(e_top2) {} }); } catch(e_top3) {}
+
+          // Abrir/cerrar modal. `show.bs.modal` y `hidden.bs.modal` burbujean
+          // hasta document. Al cerrar se difiere un tick para que bootstrap ya
+          // le haya sacado la clase `show` al modal antes de que `update()`
+          // vuelva a preguntar si hay alguno visible.
+          try {
+            document.addEventListener('show.bs.modal', actualizarClones);
+            document.addEventListener('hidden.bs.modal', function(){
+              setTimeout(actualizarClones, 0);
+            });
+          } catch(e_modal) {}
+
+          /* Remedir despues de cada repintado del listado.
+             `sync()` copia el ancho de cada `th` real al clon y le pone
+             `table-layout:fixed`, pero solo corre desde `update()`, que estaba
+             atado unicamente a scroll/resize. Los listados de /empresas y
+             /clientes se repintan por AJAX en cada tecla del buscador
+             (`tbody.innerHTML = ...`), y como la tabla es `table-layout:auto`
+             los anchos de columna se recalculan por CONTENIDO: el clon quedaba
+             con los anchos de antes de filtrar, desalineado contra la tabla. */
+          try {
+            if (window.SirioList && window.SirioList.onChange){
+              window.SirioList.onChange(actualizarClones);
+            }
+          } catch(e_list) {}
         }
 
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
@@ -651,18 +1018,121 @@
     </script>
     <script>
       (function(){
+        // NO BORRAR: `.modal.show` NO alcanza para decir "hay un modal a la
+        // vista". Un modal puede quedar con la clase `show` pero con
+        // display:none o con el _isShown de bootstrap en false (pasa cuando algo
+        // lo abrio a mano y despues bootstrap intenta cerrarlo: hide() sale por
+        // el early-return y la clase queda pegada). Con el chequeo viejo eso
+        // bloqueaba la limpieza para siempre y el velo se quedaba tapando la
+        // pantalla, sin forma de cerrarlo desde el celular.
+        function isReallyVisible(el){
+          try {
+            if (!el || !el.classList.contains('show')) return false;
+            var cs = window.getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+            var r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0;
+          } catch(e) { return false; }
+        }
+
+        function hasVisibleModal(){
+          var modals = document.querySelectorAll('.modal.show');
+          for (var i = 0; i < modals.length; i++){
+            if (isReallyVisible(modals[i])) return true;
+          }
+          return false;
+        }
+
         function cleanupOrphanModalState(){
           try {
-            var hasVisibleModal = !!document.querySelector('.modal.show');
-            if (hasVisibleModal) return;
+            if (hasVisibleModal()) return;
             document.querySelectorAll('.modal-backdrop').forEach(function(bd){
               try { bd.remove(); } catch(e0) {}
+            });
+            // Modales "pegados": limpiar el estado que quedo a medias.
+            document.querySelectorAll('.modal.show').forEach(function(m){
+              try {
+                m.classList.remove('show');
+                m.style.display = 'none';
+                m.setAttribute('aria-hidden', 'true');
+                m.removeAttribute('aria-modal');
+              } catch(e1) {}
             });
             document.body.classList.remove('modal-open');
             document.body.style.removeProperty('overflow');
             document.body.style.removeProperty('padding-right');
           } catch(e) {}
         }
+
+        // Un modal esta "pegado" cuando se ve en pantalla pero bootstrap no lo
+        // tiene por abierto: o nunca tuvo instancia (lo abrio codigo a mano) o
+        // su _isShown quedo en false. En ese estado hide() sale por el
+        // early-return y el modal NO se puede cerrar con Cancelar ni con la X.
+        function isStuckModal(el){
+          try {
+            if (!isReallyVisible(el)) return false;
+            var Ctor = window.bootstrap && window.bootstrap.Modal;
+            if (!Ctor) return false;
+            var inst = Ctor.getInstance(el);
+            if (!inst) return true;              // visible sin instancia = abierto a mano
+            return inst._isShown === false;      // bootstrap lo cree cerrado
+          } catch(e) { return false; }
+        }
+
+        function forceHide(el){
+          try {
+            el.classList.remove('show');
+            el.style.display = 'none';
+            el.setAttribute('aria-hidden', 'true');
+            el.removeAttribute('aria-modal');
+          } catch(e) {}
+        }
+
+        // Escotilla de emergencia: en mobile no hay ESC. Si el usuario toca el
+        // velo y (a) no hay ningun modal visible, o (b) los que se ven estan
+        // pegados, hay que devolverle la pantalla si o si.
+        function onBackdropTap(e){
+          try {
+            var t = e.target;
+            if (!t || !t.classList || !t.classList.contains('modal-backdrop')) return;
+            if (hasVisibleModal()) {
+              var stuck = [];
+              document.querySelectorAll('.modal.show').forEach(function(m){
+                if (isStuckModal(m)) stuck.push(m);
+                });
+              // Si algun modal visible NO esta pegado, bootstrap se encarga.
+              var visibles = 0;
+              document.querySelectorAll('.modal.show').forEach(function(m){
+                if (isReallyVisible(m)) visibles++;
+              });
+              if (!stuck.length || stuck.length !== visibles) return;
+              stuck.forEach(forceHide);
+            }
+            cleanupOrphanModalState();
+          } catch(err) {}
+        }
+        document.addEventListener('click', onBackdropTap, true);
+        document.addEventListener('touchend', onBackdropTap, true);
+
+        // En mobile el modal es fullscreen: NO hay velo visible para tocar, asi
+        // que la escotilla de arriba no alcanza. El unico camino de salida son
+        // "Cancelar" / la X. Si despues de que bootstrap atendio el click el
+        // modal SIGUE visible y pegado, lo cerramos a mano. Esto corre en
+        // bubble + setTimeout a proposito: primero que intente bootstrap.
+        document.addEventListener('click', function(e){
+          try {
+            var btn = e.target && e.target.closest ? e.target.closest('[data-bs-dismiss="modal"]') : null;
+            if (!btn) return;
+            var modalEl = btn.closest('.modal');
+            if (!modalEl) return;
+            setTimeout(function(){
+              if (isStuckModal(modalEl)) {
+                forceHide(modalEl);
+                cleanupOrphanModalState();
+              }
+            }, 200);
+          } catch(err) {}
+        });
 
         document.addEventListener('hidden.bs.modal', function(){
           setTimeout(cleanupOrphanModalState, 0);
@@ -717,64 +1187,6 @@
         enhanceTables();
         var mo = new MutationObserver(enhanceTables);
         mo.observe(document.body, { childList:true, subtree:true });
-        var topMenu = document.getElementById('topMenu');
-        // Requerir girar el celular para todas las secciones excepto Pedidos
-        (function rotateGate(){
-          return;
-          function isMobilePortrait(){ return window.innerWidth < 768 && window.matchMedia('(orientation: portrait)').matches; }
-          // bandera inicial según ruta activa
-          var isPedidos = '{{ active }}' === 'pedidos';
-          var isClientes = '{{ active }}' === 'clientes';
-          // No exigir giro en Clientes ni en Pedidos
-          document.body.classList.toggle('require-rotate', !(isPedidos || isClientes));
-          // Interceptar clicks del menú (mobile) excepto Pedidos y Clientes
-          var menu = document.getElementById('topMenu');
-          var pendingHref = null;
-          function handleClick(ev){
-            var a = ev.currentTarget;
-            // No interceptar logout: lo maneja el modal específico
-            if (a.classList && a.classList.contains('logout-link')) {
-              return; // permitir que el otro handler abra el modal
-            }
-            var href = a.getAttribute('href');
-            var txt = (a.textContent||'').toLowerCase();
-            var isPedidosLink = txt.includes('pedidos');
-            var isClientesLink = txt.includes('clientes');
-            if (!(isPedidosLink || isClientesLink) && isMobilePortrait()){
-              ev.preventDefault();
-              pendingHref = href;
-              document.body.classList.add('require-rotate');
-              // Navegar automáticamente cuando pase a landscape
-              var mm = window.matchMedia('(orientation: landscape)');
-              var go = function(){ if (pendingHref){ window.location.href = pendingHref; pendingHref=null; mm.removeEventListener('change', go);} };
-              mm.addEventListener('change', go);
-            } else {
-              document.body.classList.remove('require-rotate');
-              // Cerrar el menú hamburguesa si está abierto
-              var el = document.getElementById('topMenu');
-              if (el && el.classList.contains('show') && window.bootstrap && window.bootstrap.Collapse) {
-                var c = window.bootstrap.Collapse.getOrCreateInstance(el);
-                c.hide();
-              }
-            }
-          }
-          if (menu){
-            menu.querySelectorAll('.nav-link').forEach(function(a){ a.addEventListener('click', handleClick); });
-          }
-          // CTA del overlay: ir a Pedidos sin girar
-          var cta = document.getElementById('orientationPedidosLink');
-          if (cta){
-            cta.addEventListener('click', function(ev){
-              document.body.classList.remove('require-rotate');
-              // cerrar menú si estuviera abierto
-              var el = document.getElementById('topMenu');
-              if (el && el.classList.contains('show') && window.bootstrap && window.bootstrap.Collapse) {
-                var c = window.bootstrap.Collapse.getOrCreateInstance(el);
-                c.hide();
-              }
-            });
-          }
-        })();
         // Logout links: modal de confirmación estético (Bootstrap)
         (function setupLogoutModal(){
           var pendingLogoutHref = null;

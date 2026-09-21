@@ -23,7 +23,7 @@
           <tr>
             <td>{{ r.cliente }}</td>
             <td>{{ r.empresa }}</td>
-            <td>{{ r.ultima_compra.strftime('%d/%m/%Y') if r.ultima_compra else '-' }}</td>
+            <td>{{ r.ultima_compra|fecha('-') }}</td>
             <td>{{ r.cobradas }}</td>
             <td>{{ ('$' + ('%.2f' % r.promedio)) if r.promedio is not none else '-' }}</td>
             <td class="text-truncate" style="max-width: 260px">{{ r.categ }}</td>

@@ -9,6 +9,209 @@
     </div>
   </div>
 </div>
+
+{#
+  FILTROS DEL CALENDARIO
+  ----------------------
+  Es un <form method="get"> de verdad, no un widget de JS. Sin JS, tildar y
+  apretar "Aplicar" recarga la pagina con la querystring y el server ya filtra:
+  el filtro FUNCIONA igual. El JS es una mejora encima (actualiza sin recargar),
+  no el mecanismo.
+
+  El estado vive en la QUERYSTRING. Por eso sobrevive al refresh, el
+  back/forward del browser anda solo, y el link copiado reproduce la vista.
+
+  Los <input type="hidden" name="tipo" value=""> NO son un adorno: si no
+  quedara ningun checkbox tildado, el browser no mandaria la clave `tipo` y el
+  server lo leeria como "sin filtro" = TODOS (ver _lista_filtrada). Con el
+  hidden la clave viaja siempre, no pasa la whitelist, y "ningun tipo tildado"
+  significa efectivamente NINGUNO.
+#}
+{#
+  DOS EJES, DOS PESOS VISUALES
+  ---------------------------
+  TIPO y ESTADO responden preguntas distintas ("¿que clase de evento?" vs
+  "¿en que punto del cobro esta?") y antes se veian IGUAL: ocho checkboxes
+  grises en fila. Ahora TIPO es el eje primario (chip mas grande, titulo en
+  petroleo) y ESTADO el secundario (chip mas chico, titulo gris, separado por
+  una linea). El color deja de ser exclusivo de TIPO: ESTADO tambien lo lleva.
+
+  CHIPS QUE SIGUEN SIENDO CHECKBOXES
+  ----------------------------------
+  Cada chip es un <label> con un <input type="checkbox"> REAL adentro, oculto
+  a la vista pero NO al navegador: sigue en el tab order, sigue anunciandose
+  como casilla al lector de pantalla, y la barra espaciadora lo tilda. No hay
+  ningun <div> clickeable. El estado tampoco depende solo del color: el chip
+  apagado tiene el punto hueco y el texto en gris.
+#}
+{% set ESTADO_LABEL = {
+     'EN_CAMINO': 'En camino',
+     'A_COBRAR': 'A cobrar',
+     'ATRASADO': 'Atrasado',
+     'COBRADO': 'Cobrado',
+     'SIN_COBRANZA': 'Sin cobranza'
+   } %}
+{% set TIPO_LABEL = {
+     'entrega': 'Entregas',
+     'cobranza': 'Cobranzas',
+     'cumpleanos': 'Cumpleaños'
+   } %}
+{#
+  EL AVISO DE ENTREGAS ESTIMADAS, EN UN SOLO LUGAR
+  -----------------------------------------------
+  El texto va escrito UNA vez y se usa en los dos canales (tooltip del mouse y
+  descripcion para lector de pantalla), asi no pueden divergir.
+
+  Empezo siendo un banner amarillo a todo el ancho, despues una nota al lado
+  del chip, y las dos versiones costaban filas de alto para decir algo que
+  aplica a UN filtro. Ahora es un icono dentro del chip: costo visual cero, la
+  fila de TIPO queda con los tres chips y nada intercalado, y la informacion
+  sigue estando (el cliente fue enfatico con que esas fechas son zona gris).
+#}
+{% set AVISO_ENTREGAS = 'Las entregas son estimadas: salen del plazo usual y de la demora de despacho, no de una confirmación del transporte. No son fechas comprometidas.' %}
+<form id="calFiltro" method="get" action="{{ url_for('main.calendario') }}" class="card calendar-card mb-3">
+  <div class="card-body cal-filtro-body">
+
+    {#
+      DISPARADOR DEL COLAPSABLE (mobile y tablet vertical, <768px).
+      Nace con `hidden` y lo muestra el JS. Es a proposito: sin JS no hay forma
+      de desplegar nada, asi que sin JS no tiene que haber NADA plegado.
+
+      EL BREAKPOINT ES 768, NO 575.98, Y ES DELIBERADO. El matchMedia de mas
+      abajo usa 575.98 para otra cosa: la toolbar del FullCalendar. Son dos
+      preguntas distintas. Medido: a 576px de viewport la barra desplegada mide
+      368px — los chips ocupan mas que los checkboxes de antes, y ahi el ancho
+      todavia no alcanza para acomodar los dos ejes en una fila. Plegada mide
+      65px. Atar el plegado a 575.98 hubiera dejado la banda 576-767 con el
+      peor de los dos mundos. De 768 para arriba la barra entra en 276px y se
+      deja desplegada.
+    #}
+    <button type="button" class="cal-filtro-toggle d-md-none" hidden
+            data-js="cal-toggle" aria-expanded="true" aria-controls="calFiltroCuerpo">
+      <span class="cal-filtro-toggle-txt">
+        <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+        Filtros
+        <span class="cal-filtro-activos" data-js="cal-activos" hidden></span>
+      </span>
+      <i class="bi bi-chevron-down cal-filtro-chevron" aria-hidden="true"></i>
+    </button>
+
+    <div id="calFiltroCuerpo" class="cal-filtro-cuerpo">
+
+      <fieldset class="cal-grupo cal-grupo--tipo">
+        <legend class="cal-grupo-titulo">Tipo</legend>
+        <input type="hidden" name="tipo" value="">
+        <div class="cal-chips">
+          {% for t in calendario_tipos %}
+          <label class="cal-chip cal-chip--tipo" style="--cal-chip-color:{{ calendario_color_tipo[t] }}">
+            {# aria-label sale del MISMO TIPO_LABEL que el texto visible, asi
+               que no pueden divergir. Es redundante con el <label> que
+               envuelve al input (verificado: input.labels.length === 1), y va
+               igual para que el nombre accesible no dependa de como cada
+               herramienta resuelva la etiqueta implicita. #}
+            <input class="cal-chip-input" type="checkbox" name="tipo" value="{{ t }}"
+                   id="calTipo-{{ t }}" aria-label="{{ TIPO_LABEL[t] }}"
+                   {% if t == 'entrega' %}aria-describedby="calAvisoEntregas"{% endif %}
+                   {% if t in filtro_tipos %}checked{% endif %}>
+            <span class="cal-chip-cara">
+              <span class="cal-chip-punto" aria-hidden="true"></span>
+              <span class="cal-chip-txt">{{ TIPO_LABEL[t] }}</span>
+              {% if t == 'entrega' %}
+              {#
+                DOS CANALES, NINGUNO OCUPA LUGAR:
+                  - mouse  -> title nativo. Es el patron que ya usa el
+                    proyecto (no hay un solo tooltip de Bootstrap en la app, y
+                    el propio eventDidMount de este calendario setea title).
+                    Ademas no depende de JS, asi que esquiva de raiz la trampa
+                    del orden de scripts: window.bootstrap todavia no existe
+                    cuando corre el <script> de esta vista.
+                  - lector de pantalla -> aria-describedby al <span> de abajo.
+                    El icono va aria-hidden porque es decoracion: si llevara
+                    aria-label, al estar DENTRO del <label> del checkbox el
+                    lector lo saltearia igual.
+              #}
+              <i class="bi bi-info-circle cal-chip-info" aria-hidden="true"
+                 data-js="cal-aviso-entregas" title="{{ AVISO_ENTREGAS }}"
+                 {% if 'entrega' not in filtro_tipos %}hidden{% endif %}></i>
+              {% endif %}
+            </span>
+          </label>
+          {% if t == 'entrega' %}
+          {# Ponerle `hidden` lo saca del arbol de accesibilidad, y con eso se
+             cae tambien la descripcion del checkbox: es justo lo que se quiere
+             cuando las entregas no se estan mostrando. #}
+          <span id="calAvisoEntregas" class="visually-hidden" data-js="cal-aviso-entregas"
+                {% if 'entrega' not in filtro_tipos %}hidden{% endif %}>{{ AVISO_ENTREGAS }}</span>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <fieldset class="cal-grupo cal-grupo--estado">
+        <legend class="cal-grupo-titulo">
+          Estado
+          <span class="cal-grupo-nota">(no aplica a cumpleaños)</span>
+        </legend>
+        <input type="hidden" name="estado" value="">
+        <div class="cal-chips">
+          {#
+            El color del chip sale de la SEVERIDAD que el backend ya deriva
+            para el punto del evento, no de un mapa nuevo estado -> color.
+            EN_CAMINO y SIN_COBRANZA comparten color porque comparten
+            severidad ("baja"): asi se ven HOY en el calendario, y el texto del
+            chip es el que los distingue.
+          #}
+          {% for e in calendario_estados %}
+          <label class="cal-chip cal-chip--estado"
+                 style="--cal-chip-color:{{ calendario_color_severidad[calendario_estado_severidad[e]] }}">
+            <input class="cal-chip-input" type="checkbox" name="estado" value="{{ e }}"
+                   id="calEstado-{{ e }}" aria-label="{{ ESTADO_LABEL.get(e, e) }}"
+                   {% if e in filtro_estados %}checked{% endif %}>
+            <span class="cal-chip-cara">
+              <span class="cal-chip-punto" aria-hidden="true"></span>
+              <span class="cal-chip-txt">{{ ESTADO_LABEL.get(e, e) }}</span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <fieldset class="cal-grupo cal-grupo--busca">
+        <legend class="cal-grupo-titulo">Cliente / Empresa</legend>
+        <div class="cal-busca">
+          {#
+            OJO: esto NO es un select de id. `client_q` / `company_q` viajan
+            como TEXTO LIBRE en la querystring y el backend los resuelve con
+            backend/utils/search.py (parcial, sin acentos). Pasarlos a
+            client_id/company_id romperia la propagacion entre pantallas de
+            nav_url(), la busqueda parcial y el link copiable.
+
+            El <datalist> da sugerencias nativas si el JS no llega a correr, y
+            es la MISMA lista que lee Tom Select en modo texto.
+          #}
+          <input type="search" class="form-control cal-filtro-q" name="client_q"
+                 value="{{ filtro_client_q }}" placeholder="Cliente" aria-label="Filtrar por cliente"
+                 list="calClienteSug" autocomplete="off" data-searchable-text>
+          <input type="search" class="form-control cal-filtro-q" name="company_q"
+                 value="{{ filtro_company_q }}" placeholder="Empresa" aria-label="Filtrar por empresa"
+                 list="calEmpresaSug" autocomplete="off" data-searchable-text>
+        </div>
+        <datalist id="calClienteSug">
+          {% for n in calendario_client_sug %}<option value="{{ n }}"></option>{% endfor %}
+        </datalist>
+        <datalist id="calEmpresaSug">
+          {% for n in calendario_company_sug %}<option value="{{ n }}"></option>{% endfor %}
+        </datalist>
+      </fieldset>
+
+      <div class="cal-acciones">
+        <button type="submit" class="btn btn-sm btn-primary" data-js="cal-aplicar">Aplicar</button>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('main.calendario') }}">Limpiar</a>
+      </div>
+    </div>
+  </div>
+</form>
+
 <style>
   .fc .fc-toolbar-title { font-size: 1.2rem; color:#0f766e; font-weight:600; text-transform: capitalize; }
   .fc .fc-button-primary { background:#0f766e; border-color:#0f766e; }
@@ -27,6 +230,180 @@
   .fc .fc-list-event-title { padding-left: 0; }
   .calendar-card { border-radius:.75rem; box-shadow:0 8px 24px rgba(0,0,0,.08); border:1px solid #e5e7eb; overflow:hidden; }
 
+  /* DOBLE CODIFICACION DE COLOR: dos canales visuales independientes.
+     - fondo/borde del evento -> TIPO (entrega / cobranza / cumpleanos)
+     - este punto             -> SEVERIDAD (derivada de la fuente unica)
+     El punto lleva anillo blanco para que se lea sobre cualquier fondo. */
+  .sirio-ev { display:flex; align-items:center; gap:.35rem; min-width:0; }
+  .sirio-ev-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* El punto va sobre un "plato" BLANCO fijo. Sin el plato, el canal de
+     severidad se pierde cuando su tono coincide con el fondo del tipo
+     (ej: punto ambar "media" sobre el ambar de Cobranza): se leia como un
+     anillo vacio. Con el plato, la severidad siempre se lee contra blanco,
+     independiente del color del tipo. */
+  .sirio-sev-dot {
+    flex: 0 0 auto;
+    width:.85rem; height:.85rem; border-radius:50%;
+    background:#fff;
+    display:inline-flex; align-items:center; justify-content:center;
+    box-shadow:0 0 0 1px rgba(15,23,42,.35);
+  }
+  .sirio-sev-dot > i { display:block; width:.45rem; height:.45rem; border-radius:50%; }
+
+  .sirio-leyenda { font-size:.78rem; color:#475569; }
+  .sirio-leyenda-tipo { display:inline-block; width:.7rem; height:.7rem; border-radius:.2rem; }
+
+  /* ─────────────────────────── FILTROS ───────────────────────────────────
+     TODO EN px, NO EN rem, A PROPOSITO.
+     app.css baja html{font-size} a 13.25px (<=576) y 12.75px (<=400) — es el
+     zoom-out global del arreglo H9. Con tipografia en rem, un `.72rem` que en
+     escritorio mide 11.5px en un celular mide 9.2px: exactamente el agujero
+     que H9 vino a tapar. Los tamanos de esta barra estan en px para que no
+     vuelvan a escalar hacia abajo. Pisos que respeta: 12px de contenido,
+     11px de etiqueta, 40px de area tactil, 16px en los inputs (abajo de 16
+     iOS hace zoom solo al enfocar).
+     Ese es tambien el motivo de que el `1rem` del input anterior NO fueran
+     "16px reales" como decia su comentario: en mobile eran 12.75px.        */
+
+  /* Tom Select dibuja su dropdown DENTRO del wrapper, en position:absolute.
+     .calendar-card trae overflow:hidden (para redondear las esquinas del
+     calendario) y eso lo recortaba: la lista de clientes quedaba decapitada.
+     La tarjeta de filtros no necesita el recorte. */
+  #calFiltro.calendar-card { overflow: visible; }
+  .cal-filtro-body { padding: 10px 12px; }
+
+  .cal-filtro-cuerpo { display:flex; flex-wrap:wrap; align-items:flex-start; gap:10px 18px; }
+  .cal-grupo { border:0; padding:0; margin:0; min-width:0; }
+  .cal-grupo-titulo {
+    float:none; width:auto; margin:0 0 6px;
+    text-transform:uppercase; letter-spacing:.03em; line-height:1.2;
+  }
+  /* JERARQUIA: el titulo del eje primario pesa; el del secundario no compite. */
+  .cal-grupo--tipo > .cal-grupo-titulo { font-size:12px; font-weight:700; color:#0f766e; }
+  .cal-grupo--estado > .cal-grupo-titulo,
+  .cal-grupo--busca > .cal-grupo-titulo { font-size:11px; font-weight:600; color:#94a3b8; }
+  .cal-grupo-nota { font-weight:400; text-transform:none; letter-spacing:0; color:#94a3b8; }
+
+  .cal-chips { display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; }
+
+  /* CHIP. El <input> real queda invisible pero VIVO: sigue en el tab order y
+     el lector de pantalla lo sigue anunciando como casilla de verificacion.
+
+     ES LA RECETA DE .visually-hidden (clip + 1px), NO `opacity:0`, Y ESTA
+     MEDIDO: con opacity:0 los ocho checkbox DESAPARECIAN del arbol de
+     accesibilidad — el volcado de la pagina saltaba del boton "Lista" directo
+     al buscador de cliente. Con clip aparecen los ocho como `checkbox`.
+     Tampoco sirve display:none ni visibility:hidden: esos ademas los sacan
+     del tab order.
+
+     pointer-events:none manda el click al <label>, que es quien lo tilda: sin
+     eso, un click justo sobre el input tildaria y el label destildaria. */
+  .cal-chip { position:relative; display:inline-flex; margin:0; cursor:pointer; }
+  .cal-chip-input {
+    position:absolute;
+    width:1px; height:1px; margin:-1px; padding:0; border:0;
+    overflow:hidden; clip:rect(0,0,0,0); clip-path:inset(50%);
+    white-space:nowrap; pointer-events:none;
+  }
+  .cal-chip-cara {
+    display:inline-flex; align-items:center; gap:7px;
+    min-height:40px; padding:6px 14px;
+    border:1px solid #e2e8f0; border-radius:999px; background:#fff;
+    color:#64748b; font-size:14px; font-weight:500; line-height:1.2;
+    white-space:nowrap;
+  }
+  .cal-chip-punto {
+    flex:0 0 auto; width:11px; height:11px; border-radius:50%;
+    background:var(--cal-chip-color, #94a3b8);
+  }
+
+  /* APAGADO: el color NO es el unico canal. El punto queda hueco y el texto
+     gris, asi que el estado se lee sin distinguir colores. */
+  .cal-chip-input:not(:checked) + .cal-chip-cara .cal-chip-punto {
+    background:#fff; box-shadow: inset 0 0 0 2px var(--cal-chip-color, #94a3b8); opacity:.55;
+  }
+  /* PRENDIDO. El fallback gris va PRIMERO: los browsers sin color-mix() se
+     quedan con el, en vez de con nada. */
+  .cal-chip-input:checked + .cal-chip-cara { background:#f1f5f9; border-color:#cbd5e1; color:#0f172a; font-weight:600; }
+  .cal-chip-input:checked + .cal-chip-cara {
+    border-color: var(--cal-chip-color, #cbd5e1);
+    background: color-mix(in srgb, var(--cal-chip-color, #94a3b8) 13%, #fff);
+  }
+  .cal-chip-input:focus-visible + .cal-chip-cara { outline:2px solid #0f766e; outline-offset:2px; }
+  .cal-chip:hover .cal-chip-cara { border-color: var(--cal-chip-color, #94a3b8); }
+
+  /* Eje secundario: mismo mecanismo, menos peso. El area tactil NO baja. */
+  .cal-chip--estado .cal-chip-cara { font-size:13px; padding:4px 11px; min-height:40px; }
+  .cal-chip--estado .cal-chip-punto { width:8px; height:8px; }
+
+  /* El aviso de entregas estimadas, con COSTO VISUAL CERO: un icono dentro
+     del chip. Las dos versiones anteriores (banner amarillo a todo el ancho y
+     nota de texto al lado del chip) costaban filas de alto — medido, la nota
+     de texto partia la fila de TIPO al medio y empujaba Cobranzas y
+     Cumpleanos a la derecha. El icono no rompe la fila: los tres chips quedan
+     juntos y el texto vive en el title y en el aria-describedby. */
+  .cal-chip-info { flex:0 0 auto; font-size:13px; line-height:1; color:#b45309; opacity:.8; cursor:help; }
+  .cal-chip-input:not(:checked) + .cal-chip-cara .cal-chip-info { opacity:.5; }
+
+  .cal-busca { display:flex; flex-wrap:wrap; gap:8px; }
+  .cal-filtro-q { width:176px; font-size:16px; min-height:40px; }
+  .cal-acciones { display:flex; align-items:center; gap:8px; margin-left:auto; align-self:flex-end; }
+  .cal-acciones .btn { min-height:40px; font-size:14px; }
+
+  /* Tom Select en modo texto: el control tiene que respetar los mismos pisos
+     que el input nativo al que reemplaza (40px de alto, 16px de fuente). */
+  #calFiltro .ts-wrapper { width:176px; min-width:0; }
+  #calFiltro .ts-wrapper .ts-control { min-height:40px; font-size:16px; padding:6px 10px; border-color:#dee2e6; border-radius:.375rem; }
+  #calFiltro .ts-wrapper .ts-control > input { font-size:16px; }
+  #calFiltro .ts-dropdown { font-size:14px; z-index:1060; }
+
+  /* Disparador del colapsable (solo <768px, ver .d-md-none del markup). */
+  .cal-filtro-toggle {
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    width:100%; min-height:44px; padding:8px 12px;
+    background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;
+    color:#0f766e; font-size:15px; font-weight:600; line-height:1.2;
+  }
+  .cal-filtro-toggle-txt { display:inline-flex; align-items:center; gap:7px; }
+  .cal-filtro-activos {
+    display:inline-block; padding:2px 8px; border-radius:999px;
+    background:#0f766e; color:#fff; font-size:11px; font-weight:600; line-height:1.5;
+  }
+  .cal-filtro-chevron { transition:none; }
+  #calFiltro.is-colapsado .cal-filtro-chevron { transform:rotate(-90deg); }
+  .cal-filtro-toggle:focus-visible { outline:2px solid #0f766e; outline-offset:2px; }
+
+  /* Separacion entre los dos ejes. Linea vertical cuando conviven en la misma
+     fila; horizontal cuando se apilan. */
+  @media (min-width: 768px) {
+    .cal-grupo--estado { border-left:1px solid #e5e7eb; padding-left:18px; }
+  }
+  @media (max-width: 767.98px) {
+    /* El plegado vive ACA, en el @media, no en el JS: arriba de 768 la clase
+       `is-colapsado` puede quedar puesta y no pasa nada, porque esta regla no
+       existe. Asi el CSS es la unica fuente de verdad de "¿se pliega?" y no
+       hace falta un segundo matchMedia peleando con el de la toolbar (que usa
+       575.98 para OTRA pregunta: ver el comentario del <button>). */
+    #calFiltro.is-colapsado .cal-filtro-cuerpo { display:none; }
+    #calFiltro.is-colapsado .cal-filtro-body { padding-bottom:10px; }
+    .cal-filtro-cuerpo { margin-top:10px; }
+
+    /* Los dos ejes de chips se apilan igual por ancho propio; se los fuerza a
+       ocupar la fila entera para que la divisoria quede horizontal y no
+       partida. La BUSQUEDA no: a 576-767 entra en la misma fila que los
+       botones, y obligarla al ancho completo agregaba una fila de mas
+       (medido: 418px de barra desplegada a 576px, contra 368px asi). */
+    .cal-grupo--tipo, .cal-grupo--estado { width:100%; }
+    .cal-grupo--estado { border-top:1px solid #e5e7eb; padding-top:10px; }
+  }
+  @media (max-width: 575.98px) {
+    .cal-grupo { width:100%; }
+    .cal-filtro-q, #calFiltro .ts-wrapper { width:100%; flex:1 1 200px; }
+    .cal-busca { flex-wrap:wrap; }
+    .cal-acciones { margin-left:0; width:100%; }
+    .cal-acciones .btn { flex:1 1 0; }
+  }
+
   @media (max-width: 575.98px) {
     .fc .fc-toolbar { flex-wrap: wrap; gap: .5rem; }
     .fc .fc-toolbar-title { font-size: 1.05rem; }
@@ -38,27 +415,208 @@
     <div id="sirioCalendar"></div>
   </div>
 </div>
+
+{# Los colores salen de los mismos mapas que pintan los eventos y los chips
+   (main.py: CALENDARIO_COLOR_TIPO / CALENDARIO_COLOR_SEVERIDAD). Antes estaban
+   escritos a mano aca, otra vez en el JS y otra vez en los checkboxes: tres
+   copias que podian divergir sin que nadie se enterara. #}
+<div class="sirio-leyenda d-flex flex-wrap align-items-center gap-3 mt-2">
+  <span class="fw-semibold">Tipo (fondo):</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-leyenda-tipo" style="background:{{ calendario_color_tipo['entrega'] }}"></span> Entrega</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-leyenda-tipo" style="background:{{ calendario_color_tipo['cobranza'] }}"></span> Cobranza</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-leyenda-tipo" style="background:{{ calendario_color_tipo['cumpleanos'] }}"></span> Cumpleaños</span>
+  <span class="fw-semibold ms-sm-3">Severidad (punto):</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-sev-dot"><i style="background:{{ calendario_color_severidad['critica'] }}"></i></span> Crítica (atraso &ge; 30 d)</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-sev-dot"><i style="background:{{ calendario_color_severidad['alta'] }}"></i></span> Alta (atrasado)</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-sev-dot"><i style="background:{{ calendario_color_severidad['media'] }}"></i></span> Media (a cobrar)</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-sev-dot"><i style="background:{{ calendario_color_severidad['baja'] }}"></i></span> Baja (en camino)</span>
+  <span class="d-inline-flex align-items-center gap-1"><span class="sirio-sev-dot"><i style="background:{{ calendario_color_severidad['ninguna'] }}"></i></span> Sin acción</span>
+</div>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/main.min.css" />
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
 <script>
 (function(){
   var calendarEl = document.getElementById('sirioCalendar');
   if (!calendarEl || !window.FullCalendar) return;
-  var initialDate = '{{ today }}';
-  var isMobile = false;
-  try { isMobile = window.innerWidth <= 575; } catch(e) { isMobile = false; }
+
+  // -------------------------------------------------------------------
+  //  FILTROS: la querystring es la UNICA fuente de verdad del estado
+  // -------------------------------------------------------------------
+  //  Nada de sessionStorage ni de estado en la sesion del server. La URL:
+  //    * sobrevive al refresh (el server ya pinta los checks)
+  //    * hace que el back/forward del browser funcione (pushState + popstate)
+  //    * se puede copiar y pegar para reproducir la vista exacta
+  //  El <form> anda sin JS (GET + recarga). Esto de aca es la mejora encima.
+  var form = document.getElementById('calFiltro');
+  var LISTAS = ['tipo', 'estado'];
+  var TEXTOS = ['client_q', 'company_q'];
+
+  function cajas(name){
+    return form ? form.querySelectorAll('input[type=checkbox][name="' + name + '"]') : [];
+  }
+
+  function paramsDeFiltro(){
+    var p = new URLSearchParams();
+    if (!form) return p;
+    LISTAS.forEach(function(name){
+      var todas = cajas(name);
+      var tildadas = [];
+      Array.prototype.forEach.call(todas, function(cb){ if (cb.checked) tildadas.push(cb.value); });
+      // Todo tildado = sin filtro: se OMITE la clave para que la URL por
+      // defecto quede limpia (/calendario a secas). El server lee "clave
+      // ausente" como TODOS, asi que es equivalente.
+      if (todas.length && tildadas.length === todas.length) return;
+      // Ninguno tildado: la clave igual tiene que viajar (con valor vacio), o
+      // el server lo leeria como "sin filtro" = todos. Mismo motivo que el
+      // <input type="hidden"> del form.
+      if (!tildadas.length) { p.append(name, ''); return; }
+      tildadas.forEach(function(v){ p.append(name, v); });
+    });
+    TEXTOS.forEach(function(name){
+      var el = form.querySelector('[name="' + name + '"]');
+      var v = el ? (el.value || '').trim() : '';
+      if (v) p.append(name, v);
+    });
+    return p;
+  }
+
+  function urlDeFiltro(){
+    var qs = paramsDeFiltro().toString();
+    return window.location.pathname + (qs ? '?' + qs : '');
+  }
+
+  // Espejo EXACTO de _lista_filtrada() del backend: clave ausente = TODOS.
+  // Si esta regla se desincroniza, el back/forward mostraria checkboxes que
+  // no se corresponden con los eventos que devuelve el endpoint.
+  function sincronizarFormDesdeUrl(){
+    if (!form) return;
+    var sp = new URLSearchParams(window.location.search);
+    LISTAS.forEach(function(name){
+      var ausente = !sp.has(name);
+      var vals = sp.getAll(name);
+      Array.prototype.forEach.call(cajas(name), function(cb){
+        cb.checked = ausente ? true : (vals.indexOf(cb.value) !== -1);
+      });
+    });
+    TEXTOS.forEach(function(name){
+      var el = form.querySelector('[name="' + name + '"]');
+      if (!el) return;
+      // `el.value = x` a secas NO alcanza cuando Tom Select esta montado: la
+      // libreria dibuja su propio control y seguiria mostrando lo anterior
+      // mientras el input escondido dice otra cosa. setTextValue() escribe los
+      // dos, y lo hace EN SILENCIO: un change aca volveria a aplicar el filtro
+      // y a pushear historial, con lo cual el back pelearia contra si mismo.
+      if (window.SirioSearchableSelect && window.SirioSearchableSelect.setTextValue) {
+        window.SirioSearchableSelect.setTextValue(el, sp.get(name) || '');
+      } else {
+        el.value = sp.get(name) || '';
+      }
+    });
+  }
+
+  // El aviso de "las entregas son estimadas" solo tiene sentido si las
+  // entregas se estan mostrando. Son DOS nodos con el mismo hook, uno por
+  // canal: el icono con el title (mouse) y el <span> visually-hidden al que
+  // apunta el aria-describedby del checkbox (lector de pantalla). Se apagan
+  // juntos, o un usuario tendria el aviso y el otro no.
+  function actualizarAviso(){
+    if (!form) return;
+    var cb = form.querySelector('input[name="tipo"][value="entrega"]');
+    if (!cb) return;
+    Array.prototype.forEach.call(
+      form.querySelectorAll('[data-js="cal-aviso-entregas"]'),
+      function(nodo){ nodo.hidden = !cb.checked; }
+    );
+  }
+
+  // -------------------------------------------------------------------
+  //  Colapsable de mobile: "Filtros (2 activos)"
+  // -------------------------------------------------------------------
+  //  A 390px la barra desplegada se comia 402px de alto: el 48% de la
+  //  pantalla, sin que se viera un solo dia del calendario. Plegada, el
+  //  disparador tiene que decir CUANTO se esta filtrando, o esconderia
+  //  informacion en vez de ahorrar espacio.
+  //
+  //  "Activo" = distinto del default. Un grupo de chips cuenta 1 si NO estan
+  //  todos tildados (todos tildados = sin filtro, misma regla que
+  //  paramsDeFiltro y que _lista_filtrada en el backend); cada buscador con
+  //  texto cuenta 1.
+  function contarActivos(){
+    if (!form) return 0;
+    var n = 0;
+    LISTAS.forEach(function(name){
+      var todas = cajas(name);
+      if (!todas.length) return;
+      var tildadas = 0;
+      Array.prototype.forEach.call(todas, function(cb){ if (cb.checked) tildadas++; });
+      if (tildadas !== todas.length) n++;
+    });
+    TEXTOS.forEach(function(name){
+      var el = form.querySelector('[name="' + name + '"]');
+      if (el && (el.value || '').trim()) n++;
+    });
+    return n;
+  }
+
+  function actualizarActivos(){
+    if (!form) return;
+    var badge = form.querySelector('[data-js="cal-activos"]');
+    if (!badge) return;
+    var n = contarActivos();
+    badge.hidden = (n === 0);
+    badge.textContent = n === 1 ? '1 activo' : n + ' activos';
+  }
+  // "Hoy" del NEGOCIO (hora de Argentina), calculado por el backend con la
+  // FUENTE UNICA DE VERDAD (backend/models.py -> hoy_negocio()). El JS NUNCA
+  // usa new Date() para decidir estado ni para saber que dia es hoy: si el
+  // navegador esta en otro huso veria un dia distinto al del servidor.
+  var HOY_NEGOCIO_ISO = '{{ now_date|fecha_iso }}';
+  if (window.SirioFechas && HOY_NEGOCIO_ISO) {
+    window.SirioFechas.setHoyNegocio(HOY_NEGOCIO_ISO);
+  }
+  var initialDate = HOY_NEGOCIO_ISO || '{{ today }}';
+
+  // Color del punto por SEVERIDAD. La severidad la calcula el backend con la
+  // fuente unica; el JS solo la pinta (no la deriva). El MAPA tambien viene del
+  // backend (CALENDARIO_COLOR_SEVERIDAD), que es el mismo que usan los chips
+  // del filtro y la leyenda: una sola paleta, no tres copias.
+  var SEVERIDAD_COLOR = {{ calendario_color_severidad|tojson }};
+  var SEVERIDAD_LABEL = {
+    critica: 'Critica',
+    alta:    'Alta',
+    media:   'Media',
+    baja:    'Baja',
+    ninguna: 'Sin accion',
+    info:    'Informativo'
+  };
+
+  // Antes: `isMobile = window.innerWidth <= 575` evaluado UNA sola vez al
+  // cargar. Quedaba congelado: al rotar el dispositivo o redimensionar la
+  // ventana la toolbar mantenia la config del tamano inicial. Se usa matchMedia
+  // con el MISMO breakpoint que el @media de arriba (575.98px) para tener una
+  // sola fuente de verdad, y su evento 'change' dispara solo al CRUZAR el
+  // breakpoint (no en cada pixel de resize), asi que no hace falta debounce.
+  var mqMobile = null;
+  try { mqMobile = window.matchMedia('(max-width: 575.98px)'); } catch(e) { mqMobile = null; }
+  var isMobile = !!(mqMobile && mqMobile.matches);
+  function toolbarPara(mobile){
+    return {
+      left: mobile ? 'prev,next' : 'prev,next today',
+      center: 'title',
+      right: mobile ? 'today' : ''
+    };
+  }
   var cal = new FullCalendar.Calendar(calendarEl, {
     initialView: 'dayGridMonth',
     initialDate: initialDate,
+    // 'now' manda en el resaltado del dia de hoy y en el boton "Hoy".
+    // Sin esto FullCalendar usa el reloj del navegador.
+    now: initialDate || undefined,
     locale: 'es',
     firstDay: 1,
     buttonText: { today: '↻ Hoy', month: 'Mes', list: 'Lista' },
     noEventsText: 'Sin eventos para mostrar',
-    headerToolbar: {
-      left: isMobile ? 'prev,next' : 'prev,next today',
-      center: 'title',
-      right: isMobile ? 'today' : ''
-    },
+    headerToolbar: toolbarPara(isMobile),
     height: 'auto',
     contentHeight: isMobile ? 560 : 720,
     expandRows: true,
@@ -81,27 +639,151 @@
       if (cal) { cal.changeView('listDay', info.dateStr); }
     },
     dayCellDidMount: function(arg){
+      // Antes: arg.date.toISOString().slice(0,10). Eso NO estaba roto en
+      // Argentina (UTC-3: medianoche local = 03:00Z, mismo dia), pero se
+      // rompe en cualquier huso con offset POSITIVO, donde la medianoche
+      // local cae el dia anterior en UTC. Se unifica por consistencia y para
+      // que no dependa del huso del navegador.
       var el = arg.el;
       if (!el) return;
       el.setAttribute('role','button');
       el.setAttribute('tabindex','0');
-      el.addEventListener('click', function(){ if (cal) cal.changeView('listDay', arg.date.toISOString().slice(0,10)); });
-      el.addEventListener('keydown', function(ev){ if(ev.key==='Enter' || ev.key===' '){ ev.preventDefault(); if (cal) cal.changeView('listDay', arg.date.toISOString().slice(0,10)); }});
+      el.addEventListener('click', function(){ if (cal) cal.changeView('listDay', window.SirioFechas.toIso(arg.date)); });
+      el.addEventListener('keydown', function(ev){ if(ev.key==='Enter' || ev.key===' '){ ev.preventDefault(); if (cal) cal.changeView('listDay', window.SirioFechas.toIso(arg.date)); }});
     },
     events: function(info, success, failure){
-      var url = "{{ url_for('main.api_calendario_events') }}" + '?start=' + encodeURIComponent(info.startStr) + '&end=' + encodeURIComponent(info.endStr);
+      // Los filtros viajan al endpoint: el filtrado lo hace el SERVER, con la
+      // fuente unica de estado. El JS no decide que evento se ve.
+      var p = paramsDeFiltro();
+      p.set('start', info.startStr);
+      p.set('end', info.endStr);
+      var url = "{{ url_for('main.api_calendario_events') }}" + '?' + p.toString();
       fetch(url, { credentials: 'same-origin' })
         .then(function(r){ return r.json(); })
         .then(function(data){ success(data || []); })
         .catch(function(err){ failure(err); });
     },
+    // DOBLE CODIFICACION: el fondo/borde ya viene del backend por TIPO
+    // (event.color). Aca se agrega el segundo canal: un punto cuyo color es la
+    // SEVERIDAD. Son dos ejes independientes, no se mezclan.
+    eventContent: function(arg){
+      var props = arg.event.extendedProps || {};
+      var sev = props.severidad || 'ninguna';
+      var wrap = document.createElement('div');
+      wrap.className = 'sirio-ev';
+
+      var dot = document.createElement('span');
+      dot.className = 'sirio-sev-dot';
+      dot.setAttribute('aria-hidden', 'true');
+      var nucleo = document.createElement('i');
+      nucleo.style.backgroundColor = SEVERIDAD_COLOR[sev] || SEVERIDAD_COLOR.ninguna;
+      dot.appendChild(nucleo);
+      wrap.appendChild(dot);
+
+      // El color no puede ser el UNICO canal: texto solo para lectores de
+      // pantalla con tipo + severidad + estado.
+      var sr = document.createElement('span');
+      sr.className = 'visually-hidden';
+      sr.textContent = (props.tipo || '') + ', severidad ' +
+        (SEVERIDAD_LABEL[sev] || sev) +
+        (props.estado ? ', estado ' + props.estado : '') + '. ';
+      wrap.appendChild(sr);
+
+      var txt = document.createElement('span');
+      txt.className = 'sirio-ev-title';
+      txt.textContent = arg.event.title || '';
+      wrap.appendChild(txt);
+
+      return { domNodes: [wrap] };
+    },
     eventDidMount: function(info){
-      // Tooltip simple
-      var t = info.event.title || '';
-      info.el.setAttribute('title', t);
+      // Tooltip: titulo + estado/severidad/atraso derivados de la fuente unica
+      var props = info.event.extendedProps || {};
+      var partes = [info.event.title || ''];
+      if (props.estado) partes.push('Estado: ' + props.estado);
+      var sev = props.severidad;
+      if (sev) partes.push('Severidad: ' + (SEVERIDAD_LABEL[sev] || sev));
+      if (props.diasAtraso) partes.push('Atraso: ' + props.diasAtraso + ' dias');
+      if (props.vencimiento) partes.push('Vence: ' + (window.SirioFechas ? window.SirioFechas.format(props.vencimiento, props.vencimiento) : props.vencimiento));
+      info.el.setAttribute('title', partes.join(' | '));
     }
   });
   cal.render();
+
+  // Reconfigura la toolbar cuando se cruza el breakpoint (rotacion / resize).
+  function aplicarModo(mobile){
+    if (mobile === isMobile) return;
+    isMobile = mobile;
+    cal.setOption('headerToolbar', toolbarPara(isMobile));
+    cal.setOption('contentHeight', isMobile ? 560 : 720);
+  }
+  if (mqMobile){
+    if (mqMobile.addEventListener) {
+      mqMobile.addEventListener('change', function(ev){ aplicarModo(!!ev.matches); });
+    } else if (mqMobile.addListener) {
+      // Safari < 14
+      mqMobile.addListener(function(ev){ aplicarModo(!!ev.matches); });
+    }
+  }
+
+  // -------------------------------------------------------------------
+  //  Filtros: cambio -> pushState + refetch (sin recargar la pagina)
+  // -------------------------------------------------------------------
+  function aplicarFiltro(){
+    var url = urlDeFiltro();
+    var actual = window.location.pathname + window.location.search;
+    // pushState (no replaceState): cada cambio de filtro es un paso de
+    // historial, que es justamente lo que hace andar el back/forward.
+    if (url !== actual) history.pushState({ sirioCalFiltro: 1 }, '', url);
+    actualizarAviso();
+    actualizarActivos();
+    cal.refetchEvents();
+  }
+
+  if (form){
+    // El disparador del colapsable nace hidden en el HTML: solo existe si hay
+    // JS para desplegarlo. Arriba de 576px el @media lo esconde igual, asi que
+    // no hace falta un segundo matchMedia que pelee con el de la toolbar.
+    var toggle = form.querySelector('[data-js="cal-toggle"]');
+    if (toggle){
+      toggle.hidden = false;
+      form.classList.add('is-colapsado');
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.addEventListener('click', function(){
+        var plegado = form.classList.toggle('is-colapsado');
+        toggle.setAttribute('aria-expanded', plegado ? 'false' : 'true');
+      });
+    }
+
+    form.addEventListener('change', function(ev){
+      var t = ev.target;
+      if (!t || !t.name) return;
+      if (LISTAS.indexOf(t.name) === -1 && TEXTOS.indexOf(t.name) === -1) return;
+      aplicarFiltro();
+    });
+
+    // Con JS no hace falta recargar: el submit (boton "Aplicar" o Enter en un
+    // input) hace lo mismo que un change. Sin JS el submit recarga y el server
+    // filtra igual.
+    form.addEventListener('submit', function(ev){
+      ev.preventDefault();
+      aplicarFiltro();
+    });
+
+    // Back/forward del browser: el navegador cambia la URL pero NO recarga.
+    // Hay que re-sincronizar los checkboxes desde la URL y volver a pedir los
+    // eventos, o la vista quedaria mostrando lo de antes.
+    window.addEventListener('popstate', function(){
+      sincronizarFormDesdeUrl();
+      actualizarAviso();
+      actualizarActivos();
+      cal.refetchEvents();
+    });
+
+    actualizarAviso();
+    actualizarActivos();
+  }
+
   // Vista switcher
   document.querySelectorAll('[data-view]').forEach(function(btn){
     btn.addEventListener('click', function(){ var v = btn.getAttribute('data-view'); if(v){ cal.changeView(v); } });

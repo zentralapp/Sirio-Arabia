@@ -27,9 +27,9 @@
         <tbody>
         {% for o in orders %}
           <tr>
-            <td>{{ o.created_at.strftime('%d/%m/%Y') if o.created_at else '-' }}</td>
+            <td>{{ o.created_at|fecha('-') }}</td>
             {% set fecha_compra = (o.logistics.fecha_compra if o.logistics and o.logistics.fecha_compra else o.created_at) %}
-            <td>{{ fecha_compra.strftime('%d/%m/%Y') if fecha_compra else '-' }}</td>
+            <td>{{ fecha_compra|fecha('-') }}</td>
             <td>{{ (o.client.apellido ~ ' ' ~ o.client.nombre) if o.client else '-' }}</td>
             <td>{{ o.company.nombre if o.company else '-' }}</td>
             <td>{{ o.tipo_comprobante or '-' }}</td>
@@ -37,8 +37,8 @@
               {% set amt = (o.precio_final if o.precio_final is not none else (o.logistics.precio if o.logistics and o.logistics.precio is not none else (o.collection.monto if o.collection and o.collection.monto is not none else none))) %}
               {{ amt if amt is not none else '-' }}
             </td>
-            <td>{{ o.logistics.fecha_entrega_efectiva.strftime('%d/%m/%Y') if o.logistics and o.logistics.fecha_entrega_efectiva else '-' }}</td>
-            <td>{{ o.collection.fecha_cobro_efectiva.strftime('%d/%m/%Y') if o.collection and o.collection.fecha_cobro_efectiva else '-' }}</td>
+            <td>{{ (o.logistics.fecha_entrega_efectiva if o.logistics else None)|fecha('-') }}</td>
+            <td>{{ (o.collection.fecha_cobro_efectiva if o.collection else None)|fecha('-') }}</td>
             <td class="text-end">
               <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#orderDetails{{ o.id }}">Ver</button>
 
@@ -55,12 +55,12 @@
                       <div class="row g-3">
                         <div class="col-12 col-md-4">
                           <label class="form-label">Fecha pedido</label>
-                          <input type="text" class="form-control" value="{{ o.created_at.strftime('%Y-%m-%d') if o.created_at else '' }}" disabled>
+                          <input type="text" class="form-control" value="{{ o.created_at|fecha }}" disabled>
                         </div>
                         <div class="col-12 col-md-4">
                           <label class="form-label">Fecha de compra</label>
                           {% set fecha_compra_modal = (o.logistics.fecha_compra if o.logistics and o.logistics.fecha_compra else o.created_at) %}
-                          <input type="text" class="form-control" value="{{ fecha_compra_modal.strftime('%Y-%m-%d') if fecha_compra_modal else '' }}" disabled>
+                          <input type="text" class="form-control" value="{{ fecha_compra_modal|fecha }}" disabled>
                         </div>
                         <div class="col-12 col-md-4">
                           <label class="form-label">Cliente</label>
@@ -108,16 +108,16 @@
                         </div>
                       </div>
                       <textarea class="d-none" id="histOrderCopy{{ o.id }}">Pedido #{{ o.id }}
-Fecha pedido: {{ o.created_at.strftime('%d/%m/%Y') if o.created_at else '-' }}
-Fecha de compra: {{ fecha_compra.strftime('%d/%m/%Y') if fecha_compra else '-' }}
+Fecha pedido: {{ o.created_at|fecha('-') }}
+Fecha de compra: {{ fecha_compra|fecha('-') }}
 Cliente: {{ (o.client.apellido ~ ' ' ~ o.client.nombre) if o.client else '-' }}
 Empresa: {{ o.company.nombre if o.company else '-' }}
 Sucursal: {{ o.sucursal or '-' }}
 Tipo: {{ o.tipo_comprobante or '-' }}
 Forma de pago: {{ (o.forma_pago.value if o.forma_pago else '-') ~ (' ' ~ (o.forma_pago_detalle or '') if (o.forma_pago_detalle) else '') }}
 Monto: {{ amt if amt is not none else '-' }}
-Entrega efectiva: {{ o.logistics.fecha_entrega_efectiva.strftime('%d/%m/%Y') if o.logistics and o.logistics.fecha_entrega_efectiva else '-' }}
-Cobro efectivo: {{ o.collection.fecha_cobro_efectiva.strftime('%d/%m/%Y') if o.collection and o.collection.fecha_cobro_efectiva else '-' }}
+Entrega efectiva: {{ (o.logistics.fecha_entrega_efectiva if o.logistics else None)|fecha('-') }}
+Cobro efectivo: {{ (o.collection.fecha_cobro_efectiva if o.collection else None)|fecha('-') }}
 Nota: {{ o.nota or '' }}
 Descripción: {{ o.descripcion or '' }}</textarea>
                       </div>

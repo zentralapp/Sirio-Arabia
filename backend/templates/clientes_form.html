@@ -302,7 +302,7 @@
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">Cumpleaños</label>
-                  <input id="birthday_date_input" type="text" class="form-control form-control-sm" placeholder="dd/mm/aaaa" data-datepicker>
+                  <input id="birthday_date_input" type="text" class="form-control form-control-sm" placeholder="DD/MM/AAAA" data-datepicker>
                 </div>
                 <div class="col-md-2 d-grid">
                   <label class="form-label">&nbsp;</label>
@@ -334,7 +334,7 @@
                               <input type="hidden" name="birthday_role_list" value="{{ b.puesto or '' }}">
                             </td>
                             <td data-label="Cumpleaños">
-                              {{ b.fecha.strftime('%d/%m/%Y') if b.fecha else '' }}
+                              {{ b.fecha|fecha }}
                               <input type="hidden" name="birthday_date_list" value="{{ b.fecha.isoformat() if b.fecha else '' }}">
                             </td>
                             <td class="text-end" data-label="Acciones">
@@ -1448,11 +1448,10 @@ document.addEventListener('DOMContentLoaded', function(){
     return String(str).replace(/"/g,'&quot;');
   }
 
+  // Formateo unificado: SirioFechas (static/js/fechas.js).
   function formatDate(isoDate){
     if (!isoDate) return '';
-    var parts = isoDate.split('-');
-    if (parts.length === 3) return parts[2] + '/' + parts[1] + '/' + parts[0];
-    return isoDate;
+    return window.SirioFechas.format(isoDate, isoDate);
   }
 
   var editNotasCache = '';
@@ -1493,8 +1492,16 @@ document.addEventListener('DOMContentLoaded', function(){
   var notesEditor = document.getElementById('personaNotasEditor');
   var notesToolbar = document.getElementById('personaNotasToolbar');
   var notesSaveBtn = document.getElementById('personaNotasGuardarBtn');
-  var notesModal = (notesModalEl && window.bootstrap && window.bootstrap.Modal) ? window.bootstrap.Modal.getOrCreateInstance(notesModalEl) : null;
+  // NO BORRAR: bootstrap.bundle.min.js se carga DESPUES de este bloque (va al
+  // final de layout.html, despues del bloque "content"), asi que en tiempo de
+  // parseo window.bootstrap es undefined. Resolverlo aca dejaba el modal en el
+  // fallback manual, que inyecta un .modal-backdrop propio. Resolver al usar.
+  function getNotesModal(){
+    var Ctor = window.bootstrap && window.bootstrap.Modal;
+    return (notesModalEl && Ctor) ? Ctor.getOrCreateInstance(notesModalEl) : null;
+  }
   function showNotesModal(){
+    var notesModal = getNotesModal();
     if (notesModal) {
       notesModal.show();
       return;
@@ -1512,6 +1519,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }
   function hideNotesModal(){
+    var notesModal = getNotesModal();
     if (notesModal) {
       notesModal.hide();
       return;
