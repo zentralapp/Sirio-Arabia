@@ -992,3 +992,51 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
   overflow-wrap: normal;
   word-break: normal;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MODAL DE CONFIRMACION ANIDADO — TIENE QUE QUEDAR ARRIBA DEL QUE LO INVOCA
+   ───────────────────────────────────────────────────────────────────────────
+   SINTOMA (reportado en iPhone): /empresas -> acciones -> "Clientes" (abre el
+   modal `#links{id}`) -> "Quitar" de una fila -> el modal de confirmacion se
+   dibuja POR DEBAJO del de clientes. Y como queda tapado, tampoco se puede
+   tocar "Cancelar": la pantalla queda trabada con dos modales abiertos, y al
+   cerrar el de clientes el de confirmacion sobrevive huerfano con el
+   scroll-lock pegado al <body>.
+
+   CAUSA, medida con playwright (webkit y chrome, 390x844 y 360x740):
+     1. Los dos modales terminan con el MISMO z-index computado.
+        - En portrait <768px por `body[data-active=...] .modal{z-index:3000
+          !important}` (arriba, :222-228).
+        - En TODO el resto de los breakpoints por el 1055 de bootstrap.
+        Bootstrap 5.3 no reacomoda modales anidados, asi que el empate queda.
+     2. Empatados, decide el ORDEN DEL DOM. `#confirmRemoveModal` se renderiza
+        dentro de <main>, y `moveAllLinkModalsToBody()` (empresas.html:1322,
+        clientes.html:1418) MUEVE los `#links{id}` al final de <body>: quedan
+        DESPUES en el arbol y ganan la pintada.
+        Medido: conf_parent=MAIN, links_parent=BODY, y
+        elementFromPoint() en el centro del modal de confirmacion devolvia
+        `td.align-middle` / `select.form-select` del modal de clientes.
+
+   POR QUE NO SE BORRAN LOS `!important` DE :222-228 (que era el otro camino):
+   porque el header clonado `.sticky-thead-wrap` es `position:fixed` con
+   z-index 1500 inline (layout.html:1028) y 2000 !important en status/deudas
+   (:218-219), o sea POR ENCIMA del 1055 de bootstrap, y NO se apaga siempre al
+   abrir un modal: `actualizarClones()` esta atado a `show.bs.modal`
+   (layout.html:1128), que corre ANTES de que bootstrap le ponga la clase
+   `show` al modal, asi que `hayModalVisible()` todavia da false.
+   MEDIDO simulando el borrado (modales forzados a 1055): en /deudas, con la
+   pagina scrolleada 500px y el clon dibujado, elementFromPoint() en la franja
+   de arriba del modal devuelve `th.col-company` DEL CLON, en los dos
+   viewports. Es exactamente el bug que hoy tiene /status, que nunca tuvo la
+   regla de 3000. Sacar los `!important` cambia un bug por otro peor.
+
+   ARREGLO: no tocar el piso de 3000; darle al modal de confirmacion un piso
+   PROPIO por encima, para que el orden del DOM deje de decidir. Vale en todos
+   los breakpoints (3100 > 3000 en portrait chico, y > 1055 en el resto).
+   El segundo backdrop sube a 3090 para que el modal de abajo quede atenuado,
+   que es como se ve un modal anidado bien apilado. `.modal-backdrop ~
+   .modal-backdrop` solo matchea a partir del SEGUNDO: con un solo modal
+   abierto no cambia nada.                                                   */
+#confirmRemoveModal{ z-index: 3100 !important; }
+body[data-active="empresas"] .modal-backdrop ~ .modal-backdrop,
+body[data-active="clientes"] .modal-backdrop ~ .modal-backdrop{ z-index: 3090 !important; }
