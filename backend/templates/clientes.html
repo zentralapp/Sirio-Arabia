@@ -304,8 +304,15 @@
                   <li>
                     <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#links{{ c.id }}">Empresa</button>
                   </li>
+                  {# Un solo #archiveClientModal para toda la pagina. La URL de
+                     destino viaja RENDERIZADA POR JINJA en data-archive-action:
+                     no se arma en el cliente, asi que no hay forma de que apunte
+                     a otro cliente. El JS del pie la copia al form al abrir. #}
                   <li>
-                    <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#archiveClient{{ c.id }}">Archivar</button>
+                    <button class="dropdown-item" type="button"
+                            data-bs-toggle="modal" data-bs-target="#archiveClientModal"
+                            data-archive-action="{{ url_for('main.clientes_archive', client_id=c.id) }}"
+                            data-client-name="{{ c.apellido }} {{ c.nombre }}">Archivar</button>
                   </li>
                   <li><hr class="dropdown-divider"></li>
                   <li>
@@ -314,27 +321,6 @@
                     </form>
                   </li>
                 </ul>
-              </div>
-              <div class="modal fade" id="archiveClient{{ c.id }}" tabindex="-1" aria-hidden="true">
-                <div class="modal-dialog modal-dialog-centered">
-                  <div class="modal-content">
-                    <div class="modal-header">
-                      <h5 class="modal-title">Archivar cliente</h5>
-                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                    </div>
-                    <div class="modal-body">
-                      <p class="mb-2">¿Querés archivar este cliente?</p>
-                      <p class="text-muted mb-0">El cliente dejará de mostrarse en el listado principal, pero podrás recuperarlo cuando quieras.</p>
-                    </div>
-                    <div class="modal-footer">
-                      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-                      <form method="post" action="{{ url_for('main.clientes_archive', client_id=c.id) }}" class="mb-0">
-                        <input type="hidden" name="return_to" value="{{ request.full_path|default('/clientes') }}">
-                        <button class="btn btn-primary" type="submit">Archivar</button>
-                      </form>
-                    </div>
-                  </div>
-                </div>
               </div>
               <div class="modal fade" id="links{{ c.id }}" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog modal-lg">
@@ -497,6 +483,75 @@
     <div class="mobile-cards"></div>
   </div>
 </div>
+{# UN SOLO modal de "Archivar" para toda la pagina, en vez de uno por fila.
+   Mismo motivo y mismo patron que en empresas.html: antes se renderizaba un
+   `#archiveClient{id}` dentro de cada `<td>`, o sea N nodos de modal metidos
+   adentro de la tabla, que es de donde sale la familia de bugs (ids duplicados
+   en cada repintado AJAX, modales que hay que mover a <body>, backdrops
+   huerfanos). El `action` NO se arma en el cliente: viaja renderizado por Jinja
+   en el `data-archive-action` del boton y se copia tal cual. #}
+<div class="modal fade" id="archiveClientModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Archivar cliente</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">¿Querés archivar a <strong id="archiveClientName">este cliente</strong>?</p>
+        <p class="text-muted mb-0">El cliente dejará de mostrarse en el listado principal, pero podrás recuperarlo cuando quieras.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        {# Sin `action` a proposito: hasta que no se sepa QUE cliente se archiva,
+           este form no puede apuntar a ningun lado. #}
+        <form method="post" id="archiveClientForm" class="mb-0">
+          <input type="hidden" name="return_to" value="{{ request.full_path|default('/clientes') }}">
+          <button class="btn btn-primary" type="submit" id="archiveClientSubmit" disabled>Archivar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  /* Puebla el modal unico de "Archivar" con los datos del boton que lo abrio.
+     `relatedTarget` es el elemento que disparo el modal, lo pasa bootstrap.
+
+     REGLA DE SEGURIDAD: si no se puede resolver a QUE cliente apunta, el form
+     se deja SIN `action` y el boton DESHABILITADO. Un `action` viejo colgado de
+     una apertura anterior archivaria al cliente equivocado, que es el unico
+     error grave posible en este refactor. Por eso se limpia tambien al cerrar. */
+  var modalEl = document.getElementById('archiveClientModal');
+  if (!modalEl) return;
+  var form   = document.getElementById('archiveClientForm');
+  var submit = document.getElementById('archiveClientSubmit');
+  var nombre = document.getElementById('archiveClientName');
+
+  function limpiar(){
+    try {
+      form.removeAttribute('action');
+      submit.disabled = true;
+      nombre.textContent = 'este cliente';
+    } catch(e) {}
+  }
+
+  modalEl.addEventListener('show.bs.modal', function(ev){
+    limpiar();
+    try {
+      var boton = ev.relatedTarget;
+      var accion = boton && boton.getAttribute ? boton.getAttribute('data-archive-action') : null;
+      if (!accion) return;                       // sin destino: queda deshabilitado
+      form.setAttribute('action', accion);
+      submit.disabled = false;
+      var n = boton.getAttribute('data-client-name');
+      if (n && n.trim()) nombre.textContent = n.trim();
+    } catch(e) { limpiar(); }
+  });
+
+  modalEl.addEventListener('hidden.bs.modal', limpiar);
+})();
+</script>
 <div class="modal fade" id="archivedClientsModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">

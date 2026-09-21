@@ -63,19 +63,7 @@ h1,h2{letter-spacing:.2px}
 .card{border:1px solid #eef1f4;border-radius:.8rem;overflow:hidden}
 .card .card-body{padding:1rem 1.25rem}
 .card.table-sticky-card{overflow:visible}
-.card.table-sticky-card{overflow:visible}
 .table>thead{font-size:.9rem}
-.table-sticky{border-collapse:separate !important; border-spacing:0}
-.table-sticky thead th{position:sticky !important; top:var(--sticky-top, 0px); z-index:1020; background:var(--bs-table-bg, #fff); background-clip:padding-box}
-.table-sticky thead.table-light th,
-.table-sticky thead th.table-light{background:#f8f9fa}
-.sticky-thead-wrap{background:transparent}
-.sticky-thead-wrap .sticky-thead-table{background:transparent}
-.sticky-thead-wrap .sticky-thead-table thead th{background:var(--bs-table-bg, #fff); background-clip:padding-box}
-.sticky-thead-wrap .sticky-thead-table thead.table-light th,
-.sticky-thead-wrap .sticky-thead-table thead th.table-light{background:#f8f9fa}
-.sticky-thead-wrap{box-shadow:0 2px 10px rgba(0,0,0,.08)}
-.sticky-thead-wrap .sticky-thead-table{margin:0}
 .table-sticky{border-collapse:separate !important; border-spacing:0}
 .table-sticky thead th{position:sticky !important; top:var(--sticky-top, 0px); z-index:1020; background:var(--bs-table-bg, #fff); background-clip:padding-box}
 .table-sticky thead.table-light th,
@@ -102,183 +90,6 @@ h1,h2{letter-spacing:.2px}
 @media (max-width: 767.98px) and (orientation: portrait){
   .desktop-table{display:none}
   .mobile-cards{display:flex; flex-direction:column; gap:.75rem}
-
-  /* Excepción: en Clientes/Empresas (listas) se prefiere tabla con scroll horizontal */
-  body[data-active="clientes"] .desktop-table,
-  body[data-active="empresas"] .desktop-table{display:block}
-  body[data-active="clientes"] .mobile-cards,
-  body[data-active="empresas"] .mobile-cards{display:none}
-  body[data-active="clientes"] .table-responsive,
-  body[data-active="empresas"] .table-responsive{overflow-x:auto !important; overflow-y:visible !important; -webkit-overflow-scrolling:touch}
-  body[data-active="clientes"] .table-responsive > .table,
-  body[data-active="empresas"] .table-responsive > .table{min-width:720px !important}
-  /* Desactivar table-mobile-cards (layout.html) en estas 2 vistas */
-  body[data-active="clientes"] .table-mobile-cards .table,
-  body[data-active="empresas"] .table-mobile-cards .table{display:table !important; width:100% !important}
-  body[data-active="clientes"] .table-mobile-cards .table thead,
-  body[data-active="empresas"] .table-mobile-cards .table thead{display:table-header-group !important}
-  body[data-active="clientes"] .table-mobile-cards .table tbody,
-  body[data-active="empresas"] .table-mobile-cards .table tbody{display:table-row-group !important}
-  body[data-active="clientes"] .table-mobile-cards .table tr,
-  body[data-active="empresas"] .table-mobile-cards .table tr{display:table-row !important; border:0 !important; border-radius:0 !important; margin:0 !important}
-  body[data-active="clientes"] .table-mobile-cards .table tr > *,
-  body[data-active="empresas"] .table-mobile-cards .table tr > *{display:table-cell !important; width:auto !important; border-bottom:inherit !important; padding:.35rem .5rem !important}
-  body[data-active="clientes"] .table td::before,
-  body[data-active="empresas"] .table td::before{content:none !important; display:none !important}
-  body[data-active="clientes"] .table,
-  body[data-active="empresas"] .table{font-size:12px}
-  body[data-active="clientes"] .table th,
-  body[data-active="clientes"] .table td,
-  body[data-active="empresas"] .table th,
-  body[data-active="empresas"] .table td{padding:.35rem .5rem}
-  body[data-active="clientes"] .table thead th,
-  body[data-active="empresas"] .table thead th{font-size:12px}
-  body[data-active="clientes"] .col-actions .btn,
-  body[data-active="empresas"] .col-actions .btn{padding:.25rem .4rem; font-size:12px; min-height:0}
-  body[data-active="clientes"] .col-actions .dropdown-toggle,
-  body[data-active="empresas"] .col-actions .dropdown-toggle{padding:.25rem .4rem}
-
-  /* Excepción: Status mercadería y Deudas pendientes: tabla real + scroll horizontal */
-  body[data-active="status"] .desktop-table,
-  body[data-active="deudas"] .desktop-table{display:block}
-  body[data-active="status"] .mobile-cards,
-  body[data-active="deudas"] .mobile-cards{display:none}
-  body[data-active="status"],
-  body[data-active="deudas"]{--sticky-top:0px}
-  body[data-active="status"] table.table-sticky thead th,
-  body[data-active="deudas"] table.table-sticky thead th{position:static !important}
-  body[data-active="status"] .sticky-thead-wrap,
-  body[data-active="deudas"] .sticky-thead-wrap{z-index:2000 !important}
-
-  /* Deudas: asegurar que los modales queden por encima del backdrop (mobile) */
-  body[data-active="deudas"] .modal{z-index:3000 !important}
-  body[data-active="deudas"] .modal-backdrop{z-index:2990 !important}
-
-  /* Deudas/Status: en iPhone queremos ver también las columnas ocultas en md (p.ej. Fecha pedido / Entrega efectiva) */
-  body[data-active="deudas"] .table .d-none.d-md-table-cell,
-  body[data-active="status"] .table .d-none.d-md-table-cell{display:table-cell !important}
-  body[data-active="status"] .table-responsive,
-  body[data-active="deudas"] .table-responsive{overflow-x:auto !important; -webkit-overflow-scrolling:touch}
-  /* H8: aquí vivía `min-width:1200px !important` para status/deudas. Estaba
-     MUERTA: el <style> inline de los templates gana por especificidad de id
-     (#cobResults .table-responsive > .table = 920px en cobranzas.html,
-      #statusResults ... = 690px en status.html). Medido a 390px: el
-     min-width computado de #cobTable era 920px, no 1200px. Se borró para que
-     nadie pierda media hora ajustando un valor sin efecto: el ancho mínimo
-     de esas dos tablas se cambia EN EL TEMPLATE. */
-  body[data-active="status"] .table-mobile-cards .table,
-  body[data-active="deudas"] .table-mobile-cards .table{display:table !important; width:100% !important}
-
-  /* Excepción: Historial: tabla real + scroll horizontal */
-  body[data-active="historial"] .desktop-table{display:block}
-  body[data-active="historial"] .mobile-cards{display:none}
-  body[data-active="historial"],
-  body[data-active="historial"]{--sticky-top:0px}
-  body[data-active="historial"] .table-responsive{overflow-x:auto !important; -webkit-overflow-scrolling:touch}
-  body[data-active="historial"] .table-responsive > .table{min-width:1100px !important}
-  body[data-active="historial"] .table-mobile-cards .table{display:table !important; width:100% !important}
-  body[data-active="historial"] .table-mobile-cards .table thead{display:table-header-group !important}
-  body[data-active="historial"] .table-mobile-cards .table tbody{display:table-row-group !important}
-  body[data-active="historial"] .table-mobile-cards .table tr{display:table-row !important; border:0 !important; border-radius:0 !important; margin:0 !important}
-  body[data-active="historial"] .table-mobile-cards .table tr > *{display:table-cell !important; width:auto !important}
-  body[data-active="historial"] .table-mobile-cards .table td::before{content:none !important; display:none !important}
-  body[data-active="historial"] .table{font-size:12px}
-  body[data-active="historial"] .table th,
-  body[data-active="historial"] .table td{padding:.35rem .5rem}
-  body[data-active="historial"] .table thead th{font-size:12px; white-space:nowrap !important}
-
-  /* Excepción: Comisiones: tabla real + scroll horizontal */
-  body[data-active="comisiones"] .desktop-table{display:block}
-  body[data-active="comisiones"] .mobile-cards{display:none}
-  body[data-active="comisiones"]{--sticky-top:0px}
-  body[data-active="comisiones"] .table-responsive{overflow-x:auto !important; -webkit-overflow-scrolling:touch}
-  body[data-active="comisiones"] .table-responsive > .table{min-width:900px !important}
-  body[data-active="comisiones"] .table-mobile-cards .table{display:table !important; width:100% !important}
-  body[data-active="comisiones"] .table-mobile-cards .table thead{display:table-header-group !important}
-  body[data-active="comisiones"] .table-mobile-cards .table tbody{display:table-row-group !important}
-  body[data-active="comisiones"] .table-mobile-cards .table tr{display:table-row !important; border:0 !important; border-radius:0 !important; margin:0 !important}
-  body[data-active="comisiones"] .table-mobile-cards .table tr > *{display:table-cell !important; width:auto !important}
-  body[data-active="comisiones"] .table-mobile-cards .table td::before{content:none !important; display:none !important}
-  body[data-active="comisiones"] .table{font-size:12px}
-  body[data-active="comisiones"] .table th,
-  body[data-active="comisiones"] .table td{padding:.35rem .5rem}
-  body[data-active="comisiones"] .table thead th{font-size:12px; white-space:nowrap !important}
-
-  /* Excepción: CRM: tabla real + scroll horizontal */
-  body[data-active="crm"] .desktop-table{display:block}
-  body[data-active="crm"] .mobile-cards{display:none}
-  body[data-active="crm"]{--sticky-top:0px}
-  body[data-active="crm"] .table-responsive{overflow-x:auto !important; -webkit-overflow-scrolling:touch}
-  body[data-active="crm"] .table-responsive > .table{min-width:900px !important}
-  body[data-active="crm"] .table-mobile-cards .table{display:table !important; width:100% !important}
-  body[data-active="crm"] .table-mobile-cards .table thead{display:table-header-group !important}
-  body[data-active="crm"] .table-mobile-cards .table tbody{display:table-row-group !important}
-  body[data-active="crm"] .table-mobile-cards .table tr{display:table-row !important; border:0 !important; border-radius:0 !important; margin:0 !important}
-  body[data-active="crm"] .table-mobile-cards .table tr > *{display:table-cell !important; width:auto !important}
-  body[data-active="crm"] .table-mobile-cards .table td::before{content:none !important; display:none !important}
-  body[data-active="crm"] .table{font-size:12px}
-  body[data-active="crm"] .table th,
-  body[data-active="crm"] .table td{padding:.35rem .5rem}
-  body[data-active="crm"] .table thead th{font-size:12px; white-space:nowrap !important}
-  body[data-active="status"] .table-mobile-cards .table thead,
-  body[data-active="deudas"] .table-mobile-cards .table thead{display:table-header-group !important}
-  body[data-active="status"] .table-mobile-cards .table tbody,
-  body[data-active="deudas"] .table-mobile-cards .table tbody{display:table-row-group !important}
-  body[data-active="status"] .table-mobile-cards .table tr,
-  body[data-active="deudas"] .table-mobile-cards .table tr{display:table-row !important; border:0 !important; border-radius:0 !important; margin:0 !important}
-  body[data-active="status"] .table-mobile-cards .table tr > *,
-  body[data-active="deudas"] .table-mobile-cards .table tr > *{display:table-cell !important; width:auto !important; border-bottom:inherit !important; padding:.35rem .5rem !important}
-  body[data-active="status"] .table-mobile-cards .table td::before,
-  body[data-active="deudas"] .table-mobile-cards .table td::before{content:none !important; display:none !important}
-  body[data-active="status"] .table,
-  body[data-active="deudas"] .table{font-size:12px}
-  body[data-active="status"] .table th,
-  body[data-active="status"] .table td,
-  body[data-active="deudas"] .table th,
-  body[data-active="deudas"] .table td{padding:.35rem .5rem}
-  body[data-active="status"] .table thead th,
-  body[data-active="deudas"] .table thead th{font-size:12px; white-space:nowrap !important}
-  body[data-active="deudas"] .table-cobranzas thead th{white-space:nowrap !important}
-  /* H9: la compactación de altura vale sólo DENTRO de la tabla. Antes era
-     `.btn{min-height:0}` a secas y mataba el piso táctil de 44px de
-     layout.html en toda la pantalla: medido a 390px en /deudas había
-     botones de filtro y paginación de 26.9px de alto. */
-  body[data-active="status"] .table .btn,
-  body[data-active="deudas"] .table .btn{min-height:0}
-
-  /* Deudas/Status: Monto compacto (override de reglas globales touch 44px) */
-  body[data-active="deudas"] .js-cob-price-group,
-  body[data-active="status"] .js-price-group,
-  body[data-active="status"] .js-cob-price-group{width:auto !important; min-width:140px !important}
-  body[data-active="deudas"] .js-cob-price-group .input-group-text,
-  body[data-active="status"] .js-price-group .input-group-text,
-  body[data-active="status"] .js-cob-price-group .input-group-text{padding:.18rem .35rem !important; font-size:12px}
-  body[data-active="deudas"] .js-cob-price-group .form-control,
-  body[data-active="status"] .js-price-group .form-control,
-  body[data-active="status"] .js-cob-price-group .form-control{
-    font-size:12px !important;
-    min-height:26px !important;
-    height:26px !important;
-    padding:.25rem .4rem !important;
-    line-height:1.1 !important;
-  }
-  body[data-active="deudas"] .js-cob-price-group .form-control.form-control-sm,
-  body[data-active="status"] .js-price-group .form-control.form-control-sm,
-  body[data-active="status"] .js-cob-price-group .form-control.form-control-sm{
-    min-height:26px !important;
-    height:26px !important;
-    font-size:12px !important;
-    padding:.2rem .35rem !important;
-  }
-  body[data-active="deudas"] .js-cob-price-group input,
-  body[data-active="status"] .js-price-group input,
-  body[data-active="status"] .js-cob-price-group input{min-height:26px !important; height:26px !important}
-  body[data-active="deudas"] td.col-money,
-  body[data-active="status"] td.col-money{min-width:150px !important}
-
-  /* Deudas/Status: Status más legible (badge/"logo") */
-  body[data-active="deudas"] .badge,
-  body[data-active="status"] .badge{font-size:.95rem !important; padding:.42em .66em !important; font-weight:700}
 
   /* Excepción: en Clientes/Empresas (listas) se prefiere tabla con scroll horizontal */
   body[data-active="clientes"] .desktop-table,
@@ -520,11 +331,6 @@ h1,h2{letter-spacing:.2px}
   .empresa-search-input{min-width:0!important; max-width:100%!important; width:100%!important}
   .btn-create-client,
   .btn-create-company{min-width:0!important; white-space:nowrap}
-  /* Inputs/botones con min-width en templates: que no hagan overflow en iPhone */
-  .cliente-search-input,
-  .empresa-search-input{min-width:0!important; max-width:100%!important; width:100%!important}
-  .btn-create-client,
-  .btn-create-company{min-width:0!important; white-space:nowrap}
   /* Para tablas con inputs (status/cobranzas), usar auto layout para no recortar campos */
   .table.table-tight, .table.table-cobranzas{ table-layout:auto !important }
   /* Asegurar visibilidad mínima de grupos de precio en mobile */
@@ -556,27 +362,6 @@ h1,h2{letter-spacing:.2px}
   .table .btn-group{flex-wrap:nowrap}
   .table .btn-group form{display:inline-block}
   .table .btn-group .btn{white-space:nowrap}
-
-  /* Deudas/Status (mobile): overrides finales para monto y badges */
-  body[data-active="deudas"] .table-cobranzas td.col-money .input-group-text,
-  body[data-active="status"] td.col-money .input-group-text{
-    font-size:12px !important;
-    padding:.18rem .35rem !important;
-  }
-  body[data-active="deudas"] .table-cobranzas td.col-money .form-control,
-  body[data-active="status"] td.col-money .form-control{
-    font-size:12px !important;
-    min-height:26px !important;
-    height:26px !important;
-    padding:.2rem .35rem !important;
-    line-height:1.1 !important;
-  }
-  body[data-active="deudas"] .table-cobranzas td.col-money input,
-  body[data-active="status"] td.col-money input{min-height:26px !important; height:26px !important}
-
-  body[data-active="deudas"] .table .badge,
-  body[data-active="status"] .table .badge{font-size:.95rem !important; padding:.42em .66em !important; font-weight:700 !important}
-
   /* Deudas/Status (mobile): overrides finales para monto y badges */
   body[data-active="deudas"] .table-cobranzas td.col-money .input-group-text,
   body[data-active="status"] td.col-money .input-group-text{
