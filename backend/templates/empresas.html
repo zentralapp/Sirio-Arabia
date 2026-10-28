@@ -654,7 +654,18 @@
       var parsed = new URL(url, window.location.origin);
       var params = parsed.searchParams;
       if (pageInput) pageInput.value = params.get('page') || '1';
-      if (input) input.value = params.get('q') || '';
+      // NO pisar el buscador con el `q` de la respuesta si el usuario siguio
+      // tipeando mientras el fetch estaba en vuelo (debounce de 350ms): eso le
+      // "borraba" las letras nuevas y encima el siguiente buildUrl() volvia a
+      // mandar el texto viejo. Si difiere y tiene foco o hay un debounce
+      // pendiente, se respeta lo tipeado (ya viene otro request). Se compara
+      // con trim() para que un `q` normalizado por el server (p.ej. en los
+      // links de paginacion) no le coma el espacio final a "juan ".
+      if (input) {
+        var qUrl = params.get('q') || '';
+        var typing = t !== null || document.activeElement === input;
+        if (input.value.trim() !== qUrl && !typing) input.value = qUrl;
+      }
     } catch (e) {}
   }
 
@@ -700,7 +711,10 @@
         replaceListFromHtml(html);
         syncControlsFromUrl(url);
         try { window.history.replaceState({}, '', url); } catch (e) {}
-        if (hadFocus && input) {
+        // Solo restaurar foco/cursor si el input lo perdio. Si sigue enfocado
+        // (el usuario siguio tipeando) volver a selStart le saltaba el cursor
+        // hacia atras y las letras siguientes caian en el medio.
+        if (hadFocus && input && document.activeElement !== input) {
           input.focus({ preventScroll: true });
           try {
             var end = input.value.length;
@@ -724,7 +738,7 @@
 
   function debounceSubmit(){
     if (t) clearTimeout(t);
-    t = setTimeout(submitFilters, 350);
+    t = setTimeout(function(){ t = null; submitFilters(); }, 350);
   }
 
   if (input) input.addEventListener('input', debounceSubmit);
