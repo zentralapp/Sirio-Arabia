@@ -32,7 +32,147 @@
     .notif-table--inact .notif-row{ grid-template-columns:repeat(2, minmax(120px,1fr)); row-gap:.35rem; }
     .notif-cell{ white-space:normal; overflow:visible; text-overflow:clip; }
     .notif-cell::before{ content:attr(data-label); display:block; font-size:.66rem; line-height:1.1; color:#6c757d; text-transform:uppercase; letter-spacing:.02em; margin-bottom:.15rem; font-weight:700; }
-    .notif-cell--action{ grid-column:1 / -1; justify-content:flex-end; }
+    /* EL BOTON VA A LA ESQUINA SUPERIOR DERECHA DE LA TARJETA.
+       Antes: `grid-column:1/-1` lo mandaba a una fila propia al final, o sea
+       una franja de 44px de alto y del ancho COMPLETO de la tarjeta para un
+       solo boton, y el gesto quedaba lejos del titulo de la notificacion.
+
+       TECNICA ELEGIDA: `position:absolute` sobre la fila (`position:relative`).
+       POR QUE, contra la alternativa de reubicarlo en la grilla:
+       ponerlo en la grilla obliga a darle una PISTA propia — sea una 3ra
+       columna de 44px, sea la celda (1,2) — y esa pista existe en TODAS las
+       filas del grid, no solo en la primera: se pierden 44px de ancho en
+       cada renglon de datos de una tarjeta que a 360px ya reparte 145px por
+       columna. Ademas las dos variantes de tabla tienen distinta cantidad de
+       celdas (5 y 5, pero `--main` mete un badge que crece), asi que la
+       posicion en la grilla no es la misma cuenta en las dos.
+       Sacandolo del flujo, el boton se ancla al borde de la TARJETA y no
+       depende de cuantos datos tenga: una sola regla sirve para
+       `.notif-table--main` y `.notif-table--inact`.
+
+       Se paga con dos resguardos explicitos, que es justo lo que hay que
+       cuidar al sacar algo del flujo:
+       1) RESERVA DE ESPACIO. Lo unico que queda debajo del boton es la celda
+          de la columna 2 de la primera fila (el "Nombre" en las dos
+          variantes). Se le reserva el hueco con `padding-right`, asi el
+          texto envuelve antes de llegar y NADA queda tapado. Es una reserva
+          quirurgica: cuesta 52px en UNA celda, no 44px en toda la columna.
+       2) ALTO MINIMO. `min-height` en la fila para que una tarjeta corta no
+          deje al boton sobresaliendo por abajo del borde.
+       `grid-column:auto` es necesario: con una posicion explicita de grilla,
+       el bloque contenedor del absoluto seria el AREA de grilla y no el
+       padding-box de la fila, y `top`/`right` medirian contra otra caja. */
+    .notif-row{ position:relative; min-height:60px; }
+    /* La PRIMERA fila de la grilla tiene que ser mas alta que el boton, si no
+       el boton (44px + .45rem de offset = 50.2px contra los 6.4px de
+       padding-top de la tarjeta) se derrama sobre la fila 2 de la grilla.
+       MEDIDO: en `.notif-table--inact` a 390px, con un "Nombre" de una sola
+       linea, la fila 1 medía 31px y el borde de abajo del boton pisaba 1.9px
+       de la etiqueta "EMPRESA" de la celda (2,2).
+       48px es el piso: 6.4 de padding + 48 = 54.4 > 50.2. `auto` de tope para
+       que un nombre largo siga creciendo. Vale para las dos variantes porque
+       la reserva se calcula contra el boton, no contra el contenido. */
+    .notif-table--main .notif-row,
+    .notif-table--inact .notif-row{ grid-template-rows:minmax(48px, auto); }
+    .notif-cell--action{
+      position:absolute; top:.45rem; right:.5rem;
+      grid-column:auto; margin:0; padding:0;
+      justify-content:flex-end;
+    }
+    /* El hueco que ocupa el boton, reservado en la celda que queda debajo. */
+    .notif-row > .notif-cell:nth-child(2){ padding-right:52px; }
+
+    /* CIRCULO VISIBLE DE 30px CON AREA DE TOQUE DE 44px.
+       El pedido es "un poco mas chico". Achicar el BOTON a 30px seria
+       deshacer el arreglo de la tanda 1: `_blindaje_mobile.html` le pone
+       `min-height:44px` a todo `.btn` y `min-width:44px` a `.btn.rounded-circle`
+       justo porque este boton renderizaba 19.8 x 44px, un ovalo vertical, y
+       era el peor target tactil de la app. 30px de target es peor que eso en
+       una dimension y no se negocia.
+
+       TECNICA: la caja sigue midiendo 44 x 44 — o sea el rect que recibe el
+       toque, el que mide cualquier auditoria y el que usa el hit-testing del
+       navegador, NO cambia — y se pinta el verde solo en el content-box de
+       30px con `background-clip:content-box`. Los 7px de padding de cada lado
+       quedan transparentes pero siguen siendo parte del boton: son area
+       clickeable de verdad, no un pseudo-elemento fantasma. Por eso NO se usa
+       un `::after` que extienda el area: eso dejaria el rect en 30px y toda
+       auditoria de targets lo contaria como chico, mintiendo al reves.
+
+       `border:0` es obligatorio: el borde se pinta sobre el BORDER-box, asi
+       que un `.btn-success` con su `border-color` dibujaria igual el circulo
+       de 44px por fuera del relleno de 30 y no se veria ningun cambio.
+       `border-radius:50%` sobre el border-box se reduce solo en los 7px de
+       padding y deja el content-box redondo: 30px de diametro exacto.
+
+       EL SELECTOR LLEVA `.btn` Y LA CELDA ADELANTE A PROPOSITO. Un
+       `.notif-btn-check` pelado es (0,1,0) y PIERDE contra el
+       `.btn.btn-sm{padding:.36rem .5rem}` de app.css, que es (0,2,0).
+       Medido con el selector pelado: el padding seguia siendo 4.59/6.375px y
+       el circulo salia 31.25 x 34.82px, o sea ni redondo ni de 30. Con
+       `.notif-cell--action .btn.notif-btn-check` (0,3,0) gana sin `!important`. */
+    .notif-cell--action .btn.notif-btn-check{
+      width:44px; height:44px; min-width:44px; min-height:44px;
+      padding:7px; border:0;
+      background-clip:content-box;
+      font-size:15px; line-height:1;
+    }
+
+    /* La celda de accion NO lleva etiqueta. El `::before` de arriba existe
+       porque en modo tarjeta se pierde el `thead`: cada dato necesita decir
+       de que campo es. La celda de accion no es un dato, es un boton, y el
+       boton ya se explica solo (check verde) y ya declara su nombre
+       accesible por `aria-label` + `title`, asi que "ACCIÓN" era ruido que
+       ademas ocupaba 42px de alto.
+       Se neutraliza con `content:none` y NO borrando el `data-label` del
+       markup: el atributo es el gancho semantico de la celda y ningun JS de
+       esta vista lo lee (verificado: el unico `data-label` que toca el JS es
+       el de layout.html:1279, que solo escribe sobre `td` de `.table`, y aca
+       no hay tabla). Neutralizar en CSS deja la decision donde se ve. */
+    .notif-cell--action::before{ content:none; }
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     LAS 4 PESTAÑAS DE FILTRO NO LLEGABAN AL PISO TACTIL DE 44px
+     ───────────────────────────────────────────────────────────────────────
+     MEDIDO en los DOS motores (WebKit y Chrome), identico en los dos:
+       360x740 y 390x844   95 / 121.9 / 104.4 / 245.9  x  30.6px de alto
+       800x1000            119.2 / 153 / 131 / 308.6   x  40px de alto
+     Son los UNICOS `small_touch_targets` que le quedaban a esta vista: 4 por
+     viewport, 12 por motor. Se les escapaba el blindaje de la app porque el
+     piso de 44px de `_blindaje_mobile.html` apunta a `.btn`, `.form-control` y
+     `.form-select`, y una pill de Bootstrap es `.nav-link`, ninguna de las tres.
+
+     BANDA 991.98px, NO 767.98px: es la misma que usa T1-A en
+     `_blindaje_mobile.html`. El piso tactil de esta app llega hasta ahi porque
+     entre 768 y 991.98 (tablet, y telefono en horizontal) el dedo sigue siendo
+     el puntero. A 800px las pills median 40px, o sea tambien fallaban.
+
+     SOLO ALTO. NO SE TOCA EL ANCHO, Y ES A PROPOSITO: esta documentado en
+     `_blindaje_mobile.html` (T1-C) que poner `min-width:44px` en un flex item
+     REEMPLAZA el `min-width:auto` que le impide encogerse por debajo de su
+     min-content, y que asi fue como los botones "Guardar" de /estado-clientes
+     se partieron en dos lineas. Estas pills ya miden 95-308px por su propio
+     texto: no necesitan piso de ancho y pedirlo solo traeria esa regresion.
+     Medido: con esta regla los cuatro anchos quedan EXACTAMENTE iguales que
+     antes en los dos motores y en los tres viewports.
+
+     `inline-flex` + `align-items:center` en vez de estirar el `line-height`:
+     con min-height a secas el texto queda pegado arriba, y centrarlo con
+     line-height obliga a una cuenta contra el padding, que NO es el mismo en
+     las dos bandas (6.375px hasta 767.98 y 8px arriba). Flexbox lo centra sin
+     numero magico. El contenedor de flex no rompe el contador: el JS de
+     2f4e15a escribe en `span[data-count-kind]`/`#notifActivasCount` por
+     textContent, y medido, el ancho de las pills no se movio ni un pixel.
+
+     No se generaliza a `.nav-pills .nav-link` porque el otro `nav-pills` de la
+     app es el del sidebar (layout.html:409) y no hace falta arrastrarlo. */
+  @media (max-width: 991.98px){
+    #notifKindTabs .nav-link{
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+    }
   }
 </style>
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -119,20 +259,20 @@
             <button class="nav-link active" type="button" data-kind="ALL">Todas (<span id="notifActivasCount">{{ active_alerts|length }}</span>)</button>
           </li>
           <li class="nav-item" role="presentation">
-            <button class="nav-link" type="button" data-kind="{{ _k_cob }}">Cobranzas ({{ cnt_cob }})</button>
+            <button class="nav-link" type="button" data-kind="{{ _k_cob }}">Cobranzas (<span data-count-kind="{{ _k_cob }}">{{ cnt_cob }}</span>)</button>
           </li>
           <li class="nav-item" role="presentation">
-            <button class="nav-link" type="button" data-kind="{{ _k_ent }}">Entregas ({{ cnt_ent }})</button>
+            <button class="nav-link" type="button" data-kind="{{ _k_ent }}">Entregas (<span data-count-kind="{{ _k_ent }}">{{ cnt_ent }}</span>)</button>
           </li>
           <li class="nav-item" role="presentation">
-            <button class="nav-link" type="button" data-kind="{{ _k_inact }}">Empresas sin compras desde: ({{ cnt_inact }})</button>
+            <button class="nav-link" type="button" data-kind="{{ _k_inact }}">Empresas sin compras desde: (<span data-count-kind="{{ _k_inact }}">{{ cnt_inact }}</span>)</button>
           </li>
         </ul>
 
         <div id="notifInactAccordion" class="d-none">
           <div class="border rounded mb-2">
             <button type="button" class="btn w-100 text-start d-flex justify-content-between align-items-center js-inact-toggle" data-inact-bucket="2">
-              <span>2 meses ({{ cnt_inact_2 }})</span>
+              <span>2 meses (<span data-count-bucket="2">{{ cnt_inact_2 }}</span>)</span>
               <i class="bi bi-chevron-right js-inact-icon" data-inact-bucket="2"></i>
             </button>
             <div class="px-2 pb-2 d-none js-inact-panel" data-inact-bucket="2">
@@ -155,7 +295,7 @@
           </div>
           <div class="border rounded mb-2">
             <button type="button" class="btn w-100 text-start d-flex justify-content-between align-items-center js-inact-toggle" data-inact-bucket="3">
-              <span>3 meses ({{ cnt_inact_3 }})</span>
+              <span>3 meses (<span data-count-bucket="3">{{ cnt_inact_3 }}</span>)</span>
               <i class="bi bi-chevron-right js-inact-icon" data-inact-bucket="3"></i>
             </button>
             <div class="px-2 pb-2 d-none js-inact-panel" data-inact-bucket="3">
@@ -178,7 +318,7 @@
           </div>
           <div class="border rounded mb-2">
             <button type="button" class="btn w-100 text-start d-flex justify-content-between align-items-center js-inact-toggle" data-inact-bucket="4">
-              <span>4 meses ({{ cnt_inact_4 }})</span>
+              <span>4 meses (<span data-count-bucket="4">{{ cnt_inact_4 }}</span>)</span>
               <i class="bi bi-chevron-right js-inact-icon" data-inact-bucket="4"></i>
             </button>
             <div class="px-2 pb-2 d-none js-inact-panel" data-inact-bucket="4">
@@ -201,7 +341,7 @@
           </div>
           <div class="border rounded mb-2">
             <button type="button" class="btn w-100 text-start d-flex justify-content-between align-items-center js-inact-toggle" data-inact-bucket="5">
-              <span>5 meses ({{ cnt_inact_5 }})</span>
+              <span>5 meses (<span data-count-bucket="5">{{ cnt_inact_5 }}</span>)</span>
               <i class="bi bi-chevron-right js-inact-icon" data-inact-bucket="5"></i>
             </button>
             <div class="px-2 pb-2 d-none js-inact-panel" data-inact-bucket="5">
@@ -224,7 +364,7 @@
           </div>
           <div class="border rounded mb-2">
             <button type="button" class="btn w-100 text-start d-flex justify-content-between align-items-center js-inact-toggle" data-inact-bucket="6PLUS">
-              <span>6+ meses ({{ cnt_inact_6p }})</span>
+              <span>6+ meses (<span data-count-bucket="6PLUS">{{ cnt_inact_6p }}</span>)</span>
               <i class="bi bi-chevron-right js-inact-icon" data-inact-bucket="6PLUS"></i>
             </button>
             <div class="px-2 pb-2 d-none js-inact-panel" data-inact-bucket="6PLUS">
@@ -271,6 +411,14 @@
 (function(){
   var currentKind = 'ALL';
   var currentInactBucket = 'ALL';
+
+  // Tipos de alerta que la CAMPANA del navbar cuenta. Sale de los defaults de
+  // _compute_alerts_for_all_clients: inject_notification_count la llama sin
+  // include_delivery_alerts ni include_inactivity_alerts, o sea solo cobranzas
+  // atrasadas. La constante viene del mismo `{% raw %}{% set %}{% endraw %}` que pinta las pills,
+  // asi que si el dia de manana el backend suma un tipo a la campana, se
+  // agrega aca y no hay dos literales sueltos que puedan discrepar.
+  var BELL_KINDS = ['{{ _k_cob }}'];
   var sortStateByTable = new WeakMap();
 
   function getRowTextAttr(row, key){
@@ -514,12 +662,53 @@
     }).then(function(r){ return r.json(); });
   }
 
-  function decActivasCount(){
-    var el = document.getElementById('notifActivasCount');
-    if (!el) return;
-    var n = parseInt(el.textContent || '0', 10);
-    if (isNaN(n)) n = 0;
-    el.textContent = String(Math.max(0, n - 1));
+  // LOS CONTADORES SE RECALCULAN DESDE EL DOM, NO SE DECREMENTAN.
+  //
+  // Antes solo existia decActivasCount(), que le restaba 1 al span de "Todas".
+  // Los otros cuatro numeros (Cobranzas / Entregas / Empresas sin compras y
+  // los cinco buckets del acordeon) eran Jinja pelado, sin span ni id: el JS
+  // no tenia de donde agarrarlos y quedaban congelados con el valor del render
+  // hasta el proximo F5.
+  //
+  // POR QUE RECALCULAR Y NO DECREMENTAR: un decremento es estado derivado que
+  // se mantiene a mano, y se desincroniza con cualquier camino que saque filas
+  // sin pasar por el handler (o que saque mas de una de un saque: el borrado
+  // usa querySelectorAll, no querySelector). Recontar hace que el numero sea
+  // siempre una FUNCION del DOM, la unica fuente de verdad que hay en cliente:
+  // no puede driftear, no puede quedar negativo, y no hace falta acertarle al
+  // data-kind de la fila que se fue.
+  //
+  // OJO CON EL DOBLE RENDER: las alertas EMPRESA_INACTIVA se pintan DOS veces
+  // (una en #notifActivasList y otra en el panel del bucket que les toca). Por
+  // eso las pills se cuentan SOLO sobre #notifActivasList y los buckets SOLO
+  // sobre su panel: contar con un selector global daria el doble.
+  // Tampoco se filtra por visibilidad: applyKindFilter oculta con display:none
+  // pero no saca del DOM, y las pills tienen que seguir mostrando el total de
+  // cada tipo aunque el filtro activo sea otro.
+  function recomputeNotifCounts(){
+    var list = document.getElementById('notifActivasList');
+    var items = list ? list.querySelectorAll('.js-notif-item') : [];
+    var byKind = {};
+    var total = 0;
+    Array.prototype.forEach.call(items, function(it){
+      var k = (it.getAttribute('data-kind') || '').toString();
+      byKind[k] = (byKind[k] || 0) + 1;
+      total += 1;
+    });
+
+    var all = document.getElementById('notifActivasCount');
+    if (all) all.textContent = String(total);
+
+    document.querySelectorAll('[data-count-kind]').forEach(function(el){
+      var k = el.getAttribute('data-count-kind') || '';
+      el.textContent = String(byKind[k] || 0);
+    });
+
+    document.querySelectorAll('[data-count-bucket]').forEach(function(el){
+      var b = el.getAttribute('data-count-bucket') || '';
+      var panel = document.querySelector('.js-inact-panel[data-inact-bucket="' + b + '"]');
+      el.textContent = String(panel ? panel.querySelectorAll('.js-notif-item').length : 0);
+    });
   }
 
   function getBellCount(){
@@ -576,8 +765,37 @@
       }
       var sel = '.js-notif-item[data-client-id="' + payload.client_id + '"][data-order-id="' + payload.order_id + '"][data-kind="' + payload.kind + '"]';
       document.querySelectorAll(sel).forEach(function(n){ try { n.remove(); } catch(e0) {} });
-      decActivasCount();
-      setBellCount(getBellCount() - 1);
+      recomputeNotifCounts();
+
+      // LA CAMPANA NO CUENTA LO MISMO QUE ESTA PAGINA. ESA ES LA CAUSA DEL BUG.
+      //
+      // Sintoma reportado: "el numero de la campanita a veces se descuenta,
+      // despues saco otra notificacion y vuelve a aumentar".
+      //
+      // La campana (inject_notification_count en backend/views/main.py) cuenta
+      // SOLO COBRANZAS ATRASADAS: es un semaforo de urgencia, y el comentario
+      // del backend dice explicitamente que la diferencia con el total de esta
+      // pagina es INTENCIONAL. Esta pagina, en cambio, lista los tres tipos.
+      // Este handler le restaba 1 a la campana para CUALQUIER tipo marcado.
+      // Marcar una EMPRESA_INACTIVA la bajaba 16 -> 15 sin que el server
+      // hubiera cambiado nada, y el `setInterval(refresh, 8000)` de
+      // layout.html la devolvia a 16 unos segundos despues. De ahi el "sube
+      // sola": no subia, se estaba corrigiendo una resta que nunca
+      // correspondio. MEDIDO: 16 -> 15 -> (8s) 16 -> 15 -> (8s) 16.
+      //
+      // Se arregla en dos pasos, y los dos hacen falta:
+      // 1) El descuento optimista se aplica SOLO si el tipo marcado es uno de
+      //    los que la campana cuenta. Asi el feedback sigue siendo inmediato
+      //    para el caso que importa, sin inventar un numero para los otros.
+      // 2) Se resincroniza contra el server con refreshNotifCount(), que ya
+      //    expone layout.html. El POST invalida el cache de 60s del contador
+      //    (_invalidate_notif_count_cache), asi que esta lectura trae el valor
+      //    real y no el cacheado. El server queda como unica fuente de verdad
+      //    y el poll de 8s ya no puede contradecir a la UI.
+      if (BELL_KINDS.indexOf(payload.kind) !== -1) {
+        setBellCount(getBellCount() - 1);
+      }
+      try { if (window.refreshNotifCount) window.refreshNotifCount(); } catch(_) {}
       if (window.showToast) window.showToast('Notificación marcada como visualizada', 'success');
       var list = document.getElementById('notifActivasList');
       if (list && list.querySelectorAll('.js-notif-item').length === 0){

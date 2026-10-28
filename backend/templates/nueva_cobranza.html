@@ -99,6 +99,14 @@
         .pm-wrap{ display:grid; grid-template-columns: repeat(2, minmax(240px, 1fr)); gap:1rem; }
         @media (max-width: 991.98px){ .pm-wrap{ grid-template-columns: 1fr; } }
         .pm-card .form-control, .pm-card .form-select{ font-size:.95rem; }
+        /* T1-B — `.95rem` NO alcanza en mobile: `html{font-size}` cae a 13.25px
+           (<=576px) y 12.75px (<=400px) en app.css, asi que computaba 12.11px
+           REALES (medido a 390px) y iOS Safari hace zoom al enfocar cualquier
+           input por debajo de 16px. A 800px computaba 15.2px, que tambien esta
+           por debajo del umbral. Por eso el techo es 991.98px y no 767.98px. */
+        @media (max-width: 991.98px){
+          .pm-card .form-control, .pm-card .form-select{ font-size:16px; }
+        }
         .pm-extras{ border: 1px dashed rgba(0,0,0,.15); border-radius: .5rem; padding: .5rem; background: rgba(0,0,0,.02); }
         .pm-extra-item{ border: 1px solid rgba(0,0,0,.10); border-radius: .5rem; padding: .5rem; background: #fff; }
         .pm-extra-row{ display:flex; align-items:end; gap:.5rem; flex-wrap:wrap; }
@@ -331,11 +339,11 @@
         var link = document.createElement('link');
         link.id = cssId;
         link.rel = 'stylesheet';
-        link.href = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css';
+        link.href = '{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.css') }}';
         document.head.appendChild(link);
       }
       var script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/flatpickr';
+      script.src = '{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.js') }}';
       script.onload = function(){ cb && cb(); };
       document.head.appendChild(script);
     } catch(e) {
@@ -481,8 +489,8 @@
     row.innerHTML = ''
       + '<input class="form-control js-only-number" name="' + (kind === 'ret' ? 'ret_amount' : 'nc_amount') + '" type="text" inputmode="decimal" placeholder="0,00" autocomplete="off">'
       + '<input class="form-control" name="' + (kind === 'ret' ? 'ret_concept' : 'nc_concept') + '" type="text" placeholder="Concepto (opcional)" autocomplete="off">'
-      + '<button type="button" class="btn btn-sm btn-outline-secondary js-money-add" aria-label="Agregar">+</button>'
-      + '<button type="button" class="btn btn-sm btn-outline-danger js-money-remove" aria-label="Eliminar">X</button>';
+      + '<button type="button" class="btn btn-sm btn-outline-secondary js-money-add" aria-label="Agregar"><i class="bi bi-plus-lg"></i></button>'
+      + '<button type="button" class="btn btn-sm btn-outline-danger js-money-remove" aria-label="Eliminar"><i class="bi bi-x-lg"></i></button>';
 
     list.appendChild(row);
 

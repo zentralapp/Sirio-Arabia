@@ -1095,7 +1095,7 @@
     var hidden = [];
     confirmed.forEach(function(_, email){
       var esc = email.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      chips.push('<span class="empresa-mail-chip">'+ esc +' <button type="button" class="btn btn-sm p-0 px-1 js-chip-del" data-email="'+ esc +'">×</button></span>');
+      chips.push('<span class="empresa-mail-chip">'+ esc +' <button type="button" class="btn btn-sm p-0 px-1 js-chip-del" data-email="'+ esc +'" aria-label="Quitar '+ esc +'"><i class="bi bi-x-lg"></i></button></span>');
       hidden.push('<input type="hidden" name="mail_pedido_list" value="'+ email +'">');
     });
     list.innerHTML = chips.join('');
@@ -1210,7 +1210,7 @@
     var hidden = [];
     confirmed.forEach(function(_, email){
       var esc = email.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      chips.push('<span class="empresa-mail-chip">'+ esc +' <button type="button" class="btn btn-sm p-0 px-1 js-chip-del-pago" data-email="'+ esc +'">×</button></span>');
+      chips.push('<span class="empresa-mail-chip">'+ esc +' <button type="button" class="btn btn-sm p-0 px-1 js-chip-del-pago" data-email="'+ esc +'" aria-label="Quitar '+ esc +'"><i class="bi bi-x-lg"></i></button></span>');
       hidden.push('<input type="hidden" name="mail_pago_list" value="'+ email +'">');
     });
     list.innerHTML = chips.join('');

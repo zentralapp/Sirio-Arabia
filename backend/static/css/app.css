@@ -1,4 +1,45 @@
-:root{--brand:#0f3d4c;--brand-700:#09303b;--accent:#0d6efd;--ink:#111827;--muted:#6b7280;--teal:#0f766e}
+/* ════════════════════════════════════════════════════════════════════════════
+   EL PRIMARY DE LA MARCA ES EL PETROLEO, NO EL AZUL DE BOOTSTRAP.
+   ────────────────────────────────────────────────────────────────────────────
+   `--accent` valia #0d6efd, el azul default de bootstrap, en una app cuya
+   marca es el petroleo #0f766e (que estaba hardcodeado 51 veces mientras
+   `var(--teal)` se usaba 4). El sintoma mas visible era el boton
+   "+ Crear Cliente" de /clientes, azul bootstrap sobre una pantalla petroleo.
+
+   Se cambia por las VARIABLES de bootstrap, no clase por clase en los
+   templates: asi cae todo junto (btn-primary, btn-outline-primary, .text-
+   primary, .bg-primary, .border-primary, los links, los focus rings) y se
+   revierte con un `git revert` de este commit.
+
+   Por que aca y no en un <style> del layout: app.css se linkea DESPUES de
+   bootstrap.min.css, o sea que le gana los empates de especificidad contra la
+   hoja de bootstrap sin un solo !important. Contra los <style> de las vistas
+   pierde, pero ninguna vista pisa el primary.
+
+   LA RAMPA sale de las MISMAS formulas que usa bootstrap con su azul, para que
+   los estados se comporten igual (verificado contra los numeros de
+   .btn-primary de bootstrap 5.3.3):
+     hover-bg / active-border   shade 15% / 25%  = color * 0.85 / 0.75
+     hover-border / active-bg   shade 20%        = color * 0.80
+     focus-shadow-rgb           mix(blanco 15%)
+   Para #0f766e = rgb(15,118,110):
+     *0.85 -> #0d645e   *0.80 -> #0c5e58   *0.75 -> #0b5852
+     mix blanco 15% -> 51,138,132
+   ════════════════════════════════════════════════════════════════════════════ */
+:root{--brand:#0f3d4c;--brand-700:#09303b;--teal:#0f766e;--accent:var(--teal);--ink:#111827;--muted:#6b7280;
+      --teal-600:#0d645e;--teal-700:#0c5e58;--teal-800:#0b5852;--teal-rgb:15,118,110}
+
+/* Bootstrap: sus tokens globales apuntan al petroleo. De aca salen .text-primary,
+   .bg-primary, .border-primary, los links y los anillos de foco. */
+:root{
+  --bs-primary: var(--teal);
+  --bs-primary-rgb: var(--teal-rgb);
+  --bs-link-color: var(--teal);
+  --bs-link-color-rgb: var(--teal-rgb);
+  --bs-link-hover-color: var(--teal-700);
+  --bs-link-hover-color-rgb: 12,94,88;
+  --bs-focus-ring-color: rgba(15,118,110,.25);
+}
 
 /* Typography */
 body{font-family:'Poppins',system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Helvetica,Arial}
@@ -79,10 +120,46 @@ h1,h2{letter-spacing:.2px}
 .badge.bg-primary{background:var(--brand)!important}
 
 /* Buttons tweak */
-.btn-primary{background-color:var(--accent);border-color:var(--accent)}
-.btn-primary:hover{filter:brightness(.95)}
+/* Antes esto era `background-color:var(--accent)` + `filter:brightness(.95)` en
+   el hover. Pisar `background-color` directo le gana a `--bs-btn-bg`, asi que
+   cambiar la variable no habria servido de nada; y el `filter` oscurecia TODO
+   el boton (texto incluido) en vez de solo el fondo. Ahora se declaran las
+   variables de componente de bootstrap y los estados salen solos. */
+.btn-primary{
+  --bs-btn-bg: var(--teal);
+  --bs-btn-border-color: var(--teal);
+  --bs-btn-hover-bg: var(--teal-600);
+  --bs-btn-hover-border-color: var(--teal-700);
+  --bs-btn-active-bg: var(--teal-700);
+  --bs-btn-active-border-color: var(--teal-800);
+  --bs-btn-disabled-bg: var(--teal);
+  --bs-btn-disabled-border-color: var(--teal);
+  --bs-btn-focus-shadow-rgb: 51,138,132;
+}
+.btn-outline-primary{
+  --bs-btn-color: var(--teal);
+  --bs-btn-border-color: var(--teal);
+  --bs-btn-hover-bg: var(--teal);
+  --bs-btn-hover-border-color: var(--teal);
+  --bs-btn-active-bg: var(--teal);
+  --bs-btn-active-border-color: var(--teal);
+  --bs-btn-disabled-color: var(--teal);
+  --bs-btn-disabled-border-color: var(--teal);
+  --bs-btn-focus-shadow-rgb: var(--teal-rgb);
+}
+
+/* Los anillos de foco de los form controls estan HARDCODEADOS en bootstrap
+   (`border-color:#86b7fe; box-shadow:...rgba(13,110,253,.25)`), no salen de
+   ninguna variable, asi que hay que repetirlos. #87bab7 es el mismo tint 50%
+   que bootstrap le aplica a su azul para el borde. */
+.form-control:focus,
+.form-select:focus{border-color:#87bab7;box-shadow:0 0 0 .25rem rgba(15,118,110,.25)}
+.form-check-input:checked{background-color:var(--teal);border-color:var(--teal)}
+.form-check-input:focus{border-color:#87bab7;box-shadow:0 0 0 .25rem rgba(15,118,110,.25)}
 .btn-outline-secondary{color:var(--ink);border-color:#e5e7eb}
-.btn-outline-secondary:hover{background:#f9fafb}
+/* Aca vivia `.btn-outline-secondary:hover{background:#f9fafb}`. Estaba MUERTA:
+   mas abajo en esta misma hoja hay un `background:rgba(15,118,110,.06)!important`
+   para el mismo :hover, y el !important le gana siempre. */
 
 /* Responsive table->cards framework */
 .desktop-table{display:block}
@@ -130,10 +207,10 @@ h1,h2{letter-spacing:.2px}
      esta hoja, que cubre TODO 0-991.98px y no solo portrait. Ver alla el porque. */
 
   /* Excepción: Status mercadería y Deudas pendientes: tabla real + scroll horizontal */
-  body[data-active="status"] .desktop-table,
-  body[data-active="deudas"] .desktop-table{display:block}
-  body[data-active="status"] .mobile-cards,
-  body[data-active="deudas"] .mobile-cards{display:none}
+  /* `deudas` salio de estas dos: cobranzas.html no tiene `.desktop-table` ni
+     `.mobile-cards`. Su `.table-mobile-cards` (mas abajo) SI existe y se queda. */
+  body[data-active="status"] .desktop-table{display:block}
+  body[data-active="status"] .mobile-cards{display:none}
   body[data-active="status"],
   body[data-active="deudas"]{--sticky-top:0px}
   body[data-active="status"] table.table-sticky thead th,
@@ -168,33 +245,26 @@ h1,h2{letter-spacing:.2px}
   /* Excepción: Historial: tabla real + scroll horizontal */
   body[data-active="historial"] .desktop-table{display:block}
   body[data-active="historial"] .mobile-cards{display:none}
-  body[data-active="historial"],
   body[data-active="historial"]{--sticky-top:0px}
   body[data-active="historial"] .table-responsive{overflow-x:auto !important; -webkit-overflow-scrolling:touch}
   body[data-active="historial"] .table-responsive > .table{min-width:1100px !important}
-  body[data-active="historial"] .table-mobile-cards .table{display:table !important; width:100% !important}
-  body[data-active="historial"] .table-mobile-cards .table thead{display:table-header-group !important}
-  body[data-active="historial"] .table-mobile-cards .table tbody{display:table-row-group !important}
-  body[data-active="historial"] .table-mobile-cards .table tr{display:table-row !important; border:0 !important; border-radius:0 !important; margin:0 !important}
-  body[data-active="historial"] .table-mobile-cards .table tr > *{display:table-cell !important; width:auto !important}
-  body[data-active="historial"] .table-mobile-cards .table td::before{content:none !important; display:none !important}
+  /* Los 6 kill-switches de `.table-mobile-cards` de historial se borraron: NI
+     historial.html NI pedidos_eliminados.html (las 2 vistas con active=historial)
+     tienen esa clase. Tienen `.desktop-table` + `.mobile-cards`, que si se apagan
+     arriba. */
   body[data-active="historial"] .table{font-size:12px}
   body[data-active="historial"] .table th,
   body[data-active="historial"] .table td{padding:.35rem .5rem}
   body[data-active="historial"] .table thead th{font-size:12px; white-space:nowrap !important}
 
   /* Excepción: Comisiones: tabla real + scroll horizontal */
-  body[data-active="comisiones"] .desktop-table{display:block}
-  body[data-active="comisiones"] .mobile-cards{display:none}
+  /* comisiones.html NO tiene `.desktop-table`, ni `.mobile-cards`, ni
+     `.table-mobile-cards`: nunca estuvo en el esquema tabla-a-tarjetas. Se
+     borraron los 8 kill-switches que la nombraban. Queda solo lo que SI aplica
+     a su tabla (sticky-top, scroll horizontal, compactacion). */
   body[data-active="comisiones"]{--sticky-top:0px}
   body[data-active="comisiones"] .table-responsive{overflow-x:auto !important; -webkit-overflow-scrolling:touch}
   body[data-active="comisiones"] .table-responsive > .table{min-width:900px !important}
-  body[data-active="comisiones"] .table-mobile-cards .table{display:table !important; width:100% !important}
-  body[data-active="comisiones"] .table-mobile-cards .table thead{display:table-header-group !important}
-  body[data-active="comisiones"] .table-mobile-cards .table tbody{display:table-row-group !important}
-  body[data-active="comisiones"] .table-mobile-cards .table tr{display:table-row !important; border:0 !important; border-radius:0 !important; margin:0 !important}
-  body[data-active="comisiones"] .table-mobile-cards .table tr > *{display:table-cell !important; width:auto !important}
-  body[data-active="comisiones"] .table-mobile-cards .table td::before{content:none !important; display:none !important}
   body[data-active="comisiones"] .table{font-size:12px}
   body[data-active="comisiones"] .table th,
   body[data-active="comisiones"] .table td{padding:.35rem .5rem}
@@ -206,12 +276,8 @@ h1,h2{letter-spacing:.2px}
   body[data-active="crm"]{--sticky-top:0px}
   body[data-active="crm"] .table-responsive{overflow-x:auto !important; -webkit-overflow-scrolling:touch}
   body[data-active="crm"] .table-responsive > .table{min-width:900px !important}
-  body[data-active="crm"] .table-mobile-cards .table{display:table !important; width:100% !important}
-  body[data-active="crm"] .table-mobile-cards .table thead{display:table-header-group !important}
-  body[data-active="crm"] .table-mobile-cards .table tbody{display:table-row-group !important}
-  body[data-active="crm"] .table-mobile-cards .table tr{display:table-row !important; border:0 !important; border-radius:0 !important; margin:0 !important}
-  body[data-active="crm"] .table-mobile-cards .table tr > *{display:table-cell !important; width:auto !important}
-  body[data-active="crm"] .table-mobile-cards .table td::before{content:none !important; display:none !important}
+  /* Idem historial: crm.html no tiene `.table-mobile-cards` (si `.desktop-table`
+     + `.mobile-cards`, que se apagan arriba). Sus 6 kill-switches se borraron. */
   body[data-active="crm"] .table{font-size:12px}
   body[data-active="crm"] .table th,
   body[data-active="crm"] .table td{padding:.35rem .5rem}
@@ -249,26 +315,33 @@ h1,h2{letter-spacing:.2px}
   body[data-active="deudas"] .js-cob-price-group .input-group-text,
   body[data-active="status"] .js-price-group .input-group-text,
   body[data-active="status"] .js-cob-price-group .input-group-text{padding:.18rem .35rem !important; font-size:12px}
+  /* T1-B — 16px OBLIGATORIO. iOS Safari hace zoom al enfocar un input con
+     font-size computado < 16px y descuadra la pantalla; el umbral es exacto y
+     SOLO lo dispara la tipografia. Estaba en 12px con alto fijo de 26px.
+     El alto pasa a `auto` con piso de 32px porque 16px de texto no entra en
+     26px: se clipeaba. La compactacion visual se mantiene apretando padding y
+     line-height, que no disparan el zoom. La fila queda un poco mas alta: es
+     el precio aceptado a cambio de que el input no dispare el zoom. */
   body[data-active="deudas"] .js-cob-price-group .form-control,
   body[data-active="status"] .js-price-group .form-control,
   body[data-active="status"] .js-cob-price-group .form-control{
-    font-size:12px !important;
-    min-height:26px !important;
-    height:26px !important;
-    padding:.25rem .4rem !important;
-    line-height:1.1 !important;
+    font-size:16px !important;
+    min-height:32px !important;
+    height:auto !important;
+    padding:.15rem .35rem !important;
+    line-height:1.15 !important;
   }
   body[data-active="deudas"] .js-cob-price-group .form-control.form-control-sm,
   body[data-active="status"] .js-price-group .form-control.form-control-sm,
   body[data-active="status"] .js-cob-price-group .form-control.form-control-sm{
-    min-height:26px !important;
-    height:26px !important;
-    font-size:12px !important;
-    padding:.2rem .35rem !important;
+    min-height:32px !important;
+    height:auto !important;
+    font-size:16px !important;
+    padding:.15rem .3rem !important;
   }
   body[data-active="deudas"] .js-cob-price-group input,
   body[data-active="status"] .js-price-group input,
-  body[data-active="status"] .js-cob-price-group input{min-height:26px !important; height:26px !important}
+  body[data-active="status"] .js-cob-price-group input{min-height:32px !important; height:auto !important}
   body[data-active="deudas"] td.col-money,
   body[data-active="status"] td.col-money{min-width:150px !important}
 
@@ -324,7 +397,6 @@ h1,h2{letter-spacing:.2px}
   .btn{padding:.5rem .8rem;font-size:.95rem}
   .btn.btn-sm{padding:.45rem .6rem;font-size:.9rem}
   .table{font-size:13px}
-  .table thead th{white-space:normal}
   .table td,.table th{vertical-align:middle}
   /* Inputs/botones con min-width en templates: que no hagan overflow en iPhone */
   .cliente-search-input,
@@ -333,8 +405,6 @@ h1,h2{letter-spacing:.2px}
   .btn-create-company{min-width:0!important; white-space:nowrap}
   /* Para tablas con inputs (status/cobranzas), usar auto layout para no recortar campos */
   .table.table-tight, .table.table-cobranzas{ table-layout:auto !important }
-  /* Asegurar visibilidad mínima de grupos de precio en mobile */
-  .js-price-group, .js-cob-price-group{ min-width:120px }
   /* Evitar superposición de títulos y acciones en headers */
   main > .d-flex.mb-4{flex-wrap:wrap; row-gap:.5rem}
   .table input.form-control, .table select.form-select{min-width:0; width:100%}
@@ -356,8 +426,8 @@ h1,h2{letter-spacing:.2px}
   .table-mobile-cards .js-forma,
   .table-mobile-cards .js-cob-forma,
   .table-mobile-cards .js-cob-estimado{ margin-top:.25rem }
-  .w-actions{min-width:100px}
-  .col-actions .btn-group{flex-wrap:wrap}
+  /* `.w-actions{min-width:100px}` salio de aca: ver el bloque COLUMNA DE
+     ACCIONES al final de esta hoja, que unifica el criterio para todas. */
   /* Botonera de acciones en tablas: mantener horizontal en pantallas chicas */
   .table .btn-group{flex-wrap:nowrap}
   .table .btn-group form{display:inline-block}
@@ -368,35 +438,29 @@ h1,h2{letter-spacing:.2px}
     font-size:12px !important;
     padding:.18rem .35rem !important;
   }
+  /* T1-B — 16px OBLIGATORIO, mismo motivo que el bloque gemelo de portrait de
+     mas arriba: por debajo de 16px iOS hace zoom al enfocar. Alto a `auto` con
+     piso de 32px porque 16px no entra en 26px. */
   body[data-active="deudas"] .table-cobranzas td.col-money .form-control,
   body[data-active="status"] td.col-money .form-control{
-    font-size:12px !important;
-    min-height:26px !important;
-    height:26px !important;
-    padding:.2rem .35rem !important;
-    line-height:1.1 !important;
+    font-size:16px !important;
+    min-height:32px !important;
+    height:auto !important;
+    padding:.15rem .3rem !important;
+    line-height:1.15 !important;
   }
   body[data-active="deudas"] .table-cobranzas td.col-money input,
-  body[data-active="status"] td.col-money input{min-height:26px !important; height:26px !important}
+  body[data-active="status"] td.col-money input{min-height:32px !important; height:auto !important}
 
   body[data-active="deudas"] .table .badge,
   body[data-active="status"] .table .badge{font-size:.95rem !important; padding:.42em .66em !important; font-weight:700 !important}
-  /* Legajo de Clientes: reducir padding extra en mobile */
-  .table-relaxed th, .table-relaxed td{padding:.35rem .5rem}
   /* Cobranzas: botones del filtro más chicos y separados del título */
   #cobFilter{ margin-top:.75rem }
   .cob-filter .btn{ padding:.32rem .56rem; font-size:.85rem; border-radius:.45rem }
-  /* Primario: mantener color pero sumar halo petróleo en hover/focus */
-  .btn-primary:hover,.btn-primary:focus{filter:brightness(.95); box-shadow:0 0 0 .25rem rgba(15,118,110,.25)!important}
-
-  /* Secundario outline: usar petróleo en hover/focus */
-  .btn-outline-secondary:hover,
-  .btn-outline-secondary:focus{
-    color:var(--teal)!important;
-    background:rgba(15,118,110,.06)!important;
-    border-color:rgba(15,118,110,.55)!important;
-    box-shadow:0 0 0 .25rem rgba(15,118,110,.2)!important;
-  }
+  /* Aca vivian copias EXACTAS de `.btn-primary:hover,:focus` y de
+     `.btn-outline-secondary:hover,:focus` que ya estan declaradas sin media
+     query mas arriba. Mismos valores, misma especificidad: la de arriba ya
+     aplicaba en 0-767.98px igual. Duplicado puro. */
 }
 
 /* XS aún más compacto.
@@ -411,17 +475,14 @@ h1,h2{letter-spacing:.2px}
   .row.g-3{ --bs-gutter-x:.6rem; --bs-gutter-y:.6rem }
   .input-group-sm .input-group-text{font-size:12px}
   .form-label{font-size:12px}
-  .form-control,.form-select{font-size:.92rem}
   .btn{padding:.42rem .64rem; font-size:12px}
   .btn.btn-sm{padding:.36rem .5rem; font-size:12px}
-  .table{font-size:12px}
-  .table th,.table td{padding:.3rem .4rem}
   .table .input-group,.table select.form-select,.table input.form-control{min-width:0; width:100%}
   .table .form-control.form-control-sm,.table .form-select.form-select-sm{padding:.22rem .45rem;height:auto;font-size:12px}
   .table .btn-group .btn{padding:.26rem .4rem;font-size:12px}
   .badge{font-size:11px; padding:.28em .42em}
-  .w-actions{min-width:90px}
-  .col-actions .btn-group{flex-wrap:wrap}
+  /* `.w-actions{min-width:90px}` salio de aca: ver el bloque COLUMNA DE
+     ACCIONES al final de esta hoja. */
   .alert{padding:.45rem .65rem; font-size:12px}
 
   /* iOS hace zoom al enfocar un input con font-size computado < 16px. El umbral es
@@ -436,8 +497,6 @@ h1,h2{letter-spacing:.2px}
 /* Muy pequeñas (ej. 360px). Ver nota H9 del bloque anterior: tamaños en px. */
 @media (max-width: 399.98px){
   html{font-size:12.75px}
-  .table{font-size:12px}
-  .table th,.table td{padding:.26rem .35rem}
   .table .btn-group .btn{padding:.24rem .36rem;font-size:12px}
   .badge{font-size:11px}
   .alert{font-size:12px}
@@ -446,11 +505,12 @@ h1,h2{letter-spacing:.2px}
 /* Control responsivo para campos de precio/forma pago en tablas */
 @media (min-width: 768px){
   .js-price-group{max-width:120px; min-width:120px}
-  .js-forma{max-width:150px}
   /* Cobranzas controles desktop */
   .js-cob-price-group{max-width:180px; min-width:140px}
-  .js-cob-forma{max-width:150px}
   .js-cob-estimado{max-width:160px}
+  /* `.js-forma{max-width:150px}` y `.js-cob-forma{max-width:150px}` salieron de
+     aca: el ancho del select de forma de pago lo define `--forma-select-w`
+     (bloque FORMA DE PAGO, mas abajo) en una sola regla por banda. */
   /* Forzar ancho mínimo de columna de dinero para evitar clipping del input */
   .table-tight td.col-money, .table-tight th.col-money,
   .table-cobranzas td.col-money, .table-cobranzas th.col-money{min-width: 140px}
@@ -482,6 +542,60 @@ h1,h2{letter-spacing:.2px}
    `body` este selector quedaba en (0,3,1) y PERDÍA aunque tuviera !important
    (verificado: min-width computado seguía en 720px). */
 body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   H9 — /estado-clientes: en Safari "Estado único del cliente:" se partía en dos
+   ───────────────────────────────────────────────────────────────────────────
+   MISMA FAMILIA QUE EL BUG DE /deudas (7e2a199): WebKit sub-computa el
+   intrínseco del contenido de un `<td>` y Chrome no. Medido a 360x740 sobre
+   ESTE markup, 10 veces repetido (una por cliente):
+
+     td > form.d-inline-flex > span.text-muted
+       Chrome   144.8 x 17.0   (UN renglón)
+       WebKit    98.9 x 33.6   (DOS renglones, 45.9px más angosto)
+     thead th (alto)      43 -> 43   pero con otro reparto de anchos
+     <body> (alto total)  6295.6 -> 6463.6px   => la página medía 168px MÁS
+
+   POR QUÉ NO ALCANZA CON PONER `min-width` EN EL SPAN (probado y descartado):
+   a <768px este archivo declara, 130 líneas más arriba,
+       `.table form.d-inline-flex{display:block!important; width:100%}`
+   así que el form NO es un flex container en el teléfono y el span queda
+   `display:inline`. `min-width` NO APLICA a un inline no reemplazado (CSS
+   Sizing §4). Verificado: con `min-width:145px` en el span el computed decía
+   `145px` y el ancho usado seguía siendo 98.9 en WebKit y 144.8 en Chrome.
+   El que sí lo acepta es el FORM, que ahí es un bloque.
+
+   EL PRESUPUESTO ES MEDIDO, NO ESTIMADO: 144.8px es el ancho de una línea de
+   "Estado único del cliente:" con la tipografía de `.table` en mobile (13px).
+   Se redondea a 145. Como el form es `display:block`, su min-content es el
+   máximo de sus hijos, y ese máximo es justo el span: declararlo acá fija el
+   piso del `<td>` y las dos celdas miden igual en los dos motores.
+
+   MEDIDO DESPUÉS (Chrome vs WebKit, mismo harness)
+     span                 144.8x17 vs 144.8x16.8   (UN renglón en los dos)
+     <body> @390x844      6264.1 vs 6264.1         (idéntico; antes +16.8)
+     <body> @360x740      6264.1 vs 6280.9         (antes +168)
+     hojas divergentes    360: 329 -> 110   390: 311 -> 102   800: 206 -> 156
+     h_scroll del body    0 en los dos motores, en los tres viewports
+
+   POR QUÉ LA REGLA VIVE ACÁ Y NO EN UN <style> DE LA VISTA
+   1) La regla que causa el problema (`display:block!important` de la línea
+      ~412) está en ESTE archivo: el antídoto va al lado de la causa.
+   2) `.table-fit` ya es un hook que esta hoja posee (bloque H4, acá arriba) y
+      que sólo usa estado_clientes.html, así que el alcance ya está acotado.
+   3) No hace falta la especificidad extra de un <style> en el <body>: no hay
+      NINGUNA otra declaración de `min-width` para este elemento. El <style>
+      de layout.html (que va después de esta hoja) sólo toca
+      `.table-responsive > .table`, que es otro elemento. Verificado con
+      getComputedStyle: la regla gana tal cual está escrita.
+
+   SIN MEDIA QUERY A PROPÓSITO: a >=768px el form vuelve a ser `inline-flex` y
+   mide 429-457px, así que los 145px quedan inertes. El `min-width:max-content`
+   del span es el espejo: a <768px es inerte (el span es inline) y a >=768px
+   evita que el mismo texto se apile en TRES renglones (76px de ancho) — ahí
+   los dos motores computan igual el max-content y quedan los dos en 156.8px. */
+.table-fit .table td > form.d-inline-flex{min-width:145px}
+.table-fit .table td > form.d-inline-flex > span.text-muted{min-width:max-content}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    H3 — fuga de orientación en los kill-switches de `table-mobile-cards`
@@ -602,13 +716,24 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
   .table thead th{font-size:12px}
 
   /* Texto largo: que parta en dos líneas en vez de estirar la columna */
+  /* `overflow-wrap:anywhere` -> `break-word`: ver "COLUMNAS DE NOMBRES
+     PROPIOS" en el <style> de layout.html. `anywhere` baja el min-content de
+     la celda a UN caracter y con table-layout:auto la columna se estrangula.
+     Estos selectores llevan ID (1,1,1) asi que le ganan a `.table td.col-nombre`
+     (0,2,1): si no se corrigen aca, la clase no sirve de nada.
+     El `max-width:150px` se deja: `min-width` siempre le gana a `max-width`,
+     asi que .col-nombre puede pasarse de 150 sin pelear con esta linea. */
   #cobTable td.col-client, #cobTable td.col-company,
   #status-table td.col-client, #status-table td.col-company,
   #clientes-table td.col-client, #clientes-table td.col-company{
-    max-width:150px; white-space:normal; overflow-wrap:anywhere; word-break:break-word;
+    max-width:150px; white-space:normal; overflow-wrap:break-word; word-break:normal;
   }
-  /* Encabezados: no reservar ancho por una sola palabra larga */
-  .table thead th{white-space:normal}
+  /* Aca vivia `.table thead th{white-space:normal}` con la intencion de que el
+     encabezado no reservara ancho por una sola palabra larga. NUNCA FUNCIONO:
+     layout.html declara `.table thead th{...white-space:nowrap}` en su <style>
+     del <head>, misma especificidad (0,1,1) y DESPUES de esta hoja, asi que
+     gana el nowrap. Si alguna vez hace falta de verdad, hay que cambiarlo en
+     layout.html o subir la especificidad; repetir la regla aca no alcanza. */
 
   /* Controles dentro de tablas: sólo tipografía y padding.
      NO se clampea el ancho de `.js-price-group` / `.js-cob-price-group` acá a
@@ -617,12 +742,42 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
      /status en esta banda YA entra sin scroll (846px de tabla en 846px de
      contenedor). El ancho de columna de /deudas — la única tabla que
      desbordaba fuerte — se ajusta en su propio template (cobranzas.html). */
-  .js-forma, .js-cob-forma, .js-cob-estimado{max-width:118px}
-  .table .form-control.form-control-sm,
-  .table .form-select.form-select-sm{font-size:12px; padding:.24rem .4rem}
+  /* Aca vivia `.js-forma, .js-cob-forma, .js-cob-estimado{max-width:118px}`.
+     Peleaba con `.js-cob-forma{max-width:150px}` del bloque `min-width:768px`
+     (mismo selector efectivo, este va despues y ganaba) y dejaba el select de
+     forma de pago en 83px utiles de texto contra los 115px que necesita
+     "Cheque (generico)" a 12px. El ancho de ese select ahora lo define UNA
+     sola regla, `--forma-select-w`, mas abajo. Ver el bloque FORMA DE PAGO. */
+  /* T1-B: los INPUTS y SELECTS de esta banda ya NO se compactan acá. Su
+     tipografía se parte en dos sub-bandas justo debajo, porque 768-991.98px es
+     tacto (tablet / teléfono horizontal) y 992-1199.98px es mouse. Acá quedan
+     sólo los elementos que NO reciben foco de teclado y por lo tanto no
+     disparan el zoom de iOS. */
   .table .input-group .input-group-text{padding:.2rem .35rem; font-size:12px}
   .table .btn-group .btn{padding:.28rem .42rem; font-size:12px}
   .table .badge{font-size:12px; padding:.3em .48em}
+}
+
+/* T1-B — LOS CONTROLES DE TABLA SE PARTEN EN DOS SUB-BANDAS. NO VOLVER A
+   UNIFICARLOS EN UN SOLO `768-1199.98`.
+   ───────────────────────────────────────────────────────────────────────────
+   `.table .form-control-sm{font-size:12px}` vivía en el bloque 768-1199.98px de
+   arriba. Esa banda mezcla dos mundos: de 768 a 991.98 se usa con el dedo
+   (tablet vertical, tablet Android, teléfono en horizontal) y ahí 12px dispara
+   el zoom automático de iOS Safari al enfocar; de 992 a 1199.98 es mouse y la
+   compactación de 12px es deseable para que la tabla entre.
+   Medido a 800x1000 con la regla unificada: 210 inputs por debajo de 16px, el
+   grueso en /deudas (80), /estado-clientes (60) y /status (22).
+   La sub-banda táctil sube a 16px y compensa el tamaño visual apretando padding
+   y line-height, que NO cuentan para el umbral de iOS. La sub-banda de mouse
+   conserva los 12px originales, o sea el escritorio queda INTACTO.            */
+@media (min-width: 768px) and (max-width: 991.98px){
+  .table .form-control.form-control-sm,
+  .table .form-select.form-select-sm{font-size:16px; padding:.15rem .3rem; height:auto; line-height:1.15}
+}
+@media (min-width: 992px) and (max-width: 1199.98px){
+  .table .form-control.form-control-sm,
+  .table .form-select.form-select-sm{font-size:12px; padding:.24rem .4rem}
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -661,10 +816,35 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
      INTACTO.
    - Scopeado a clientes/empresas para NO arrastrar a /status, /deudas,
      /cobranzas e /historial, que tienen el mismo bug latente pero su propio
-     tratamiento (y su propia rama en `topOffset()`). Eso va en otro laburo.   */
+     tratamiento (y su propia rama en `topOffset()`). Eso va en otro laburo.
+
+   ── EL "OTRO LABURO": ESTO YA NO VA SCOPEADO POR VISTA ──────────────────────
+   El bug latente dejo de ser latente. Medido en las 6 vistas con `.table-sticky`
+   (clientes, empresas, deudas, status, historial, eliminados) x 5 viewports,
+   midiendo `th.bottom - row0.top` (cuantos px del `th` pisan la primera fila):
+     800x1000   status / historial / eliminados  -> 60px de solape
+     740x360 L  historial / eliminados           -> 59px de solape
+     el resto                                    -> 0px
+   En /historial eso hacia que el boton "Ver" NO SE PUDIERA TOCAR: el
+   `th.text-end` (sticky, z-index 1020) se comia el tap. Playwright:
+   `<th class="text-end">Ver detalles</th> ... intercepts pointer events`, y
+   `elementFromPoint` sobre el centro del boton devolvia el TH. Con `.click()`
+   por JS si abria, o sea el handler estaba bien: el dedo no llegaba.
+
+   Y en LAS SEIS vistas el `.table-responsive` tiene extent vertical CERO
+   (scrollHeight === clientHeight, medido en los 5 viewports): el sticky de CSS
+   nunca se despega porque su scrollport no scrollea. O sea que no aporta NADA y
+   lo unico que hace es pintarse `--sticky-top` px mas abajo y tapar filas.
+   El header fijo de verdad lo da el clon `position:fixed` de layout.html.
+
+   Por eso la regla deja de enumerar vistas: apagar el sticky de CSS en
+   0-991.98px es correcto para TODAS. Es preferible a sumar una tercera y una
+   cuarta excepcion con nombres de vista hardcodeados. Desde 992px no se toca:
+   ahi `--sticky-top` vale 0px, no hay desplazamiento y escritorio queda INTACTO.
+   Las reglas por vista que ya hacian esto mismo (status/deudas en el bloque de
+   767.98px de arriba) quedan redundantes pero inofensivas.               */
 @media (max-width: 991.98px){
-  body[data-active="clientes"] table.table-sticky thead th,
-  body[data-active="empresas"] table.table-sticky thead th{
+  table.table-sticky thead th{
     position: static !important;
     top: auto !important;
   }
@@ -682,3 +862,181 @@ body[data-active] .table-responsive.table-fit > .table{min-width:0 !important}
   word-break: normal;
   hyphens: none;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FORMA DE PAGO — UN SOLO DUEÑO DEL ANCHO DEL SELECT
+   ───────────────────────────────────────────────────────────────────────────
+   SINTOMA REPORTADO (iPhone real, /deudas, columna "Forma de pago"): la opcion
+   se lee "Cheque (g" y se corta, y en la fila de "No se sabe" la flechita del
+   select se dibuja ENCIMA de la ultima letra.
+
+   DOS CAUSAS DISTINTAS, LAS DOS MEDIDAS:
+
+   1) ANCHO. La opcion mas larga es "Cheque (generico)". Medida con canvas
+      measureText contra la fuente COMPUTADA del select:
+        390px / 800px (fuente 16px) -> 154px de texto, habia 87px utiles
+        1100px        (fuente 12px) -> 115px de texto, habia 83px utiles
+        1400px        (fuente 14px) -> 134px de texto, habia 64px utiles
+      O sea estaba cortado en las CUATRO bandas, no solo en mobile.
+      La causa eran dos `max-width` para el mismo selector: 150px en
+      `min-width:768px` y 118px en `768-1199.98px`, que iba despues y ganaba;
+      abajo de 768px no habia ninguno y mandaba el `width:110px` que
+      cobranzas.html le pone a `.col-forma`.
+
+   2) CHEVRON. Bootstrap dibuja la flecha como background-image en
+      `right .75rem center`, 16px de ancho, y reserva el hueco con
+      `padding-right:2.25rem`. Los bloques de compactacion de tabla de esta
+      hoja reescriben el padding con la forma corta (`padding:.14rem .3rem`,
+      `padding:.15rem .3rem`, `padding:.24rem .4rem`), lo que deja el
+      padding-right en 3.8-6.4px MEDIDOS. Con menos hueco que el icono, la
+      flecha se pinta sobre el texto. Ensanchar no alcanza: hay que devolver
+      el hueco. 30px cubre el peor caso (root 16px: .75rem=12 + 16 del icono
+      = 28) y sobra en los roots chicos de mobile (12.75/13.25px).
+
+   ANCHO ADOPTADO = texto + padding izq (8) + hueco del chevron (30) + borde (2).
+   En px y no en rem: el `html{font-size}` baja a 13.25/12.75px en mobile y
+   cualquier rem quedaria corto justo donde mas duele.
+
+   `.js-forma` NO figura aca a proposito: la clase no existe en NINGUN
+   template (solo sobrevive un querySelectorAll muerto en status.html). Y
+   `.js-cob-estimado` TAMPOCO es un select de forma de pago: es el <input> de
+   fecha de Vencimiento de cobranzas.html, su ancho lo maneja `.col-venc`.
+   Meter las tres clases en la misma regla fue el error original.
+
+   Se usa `min-width` y no `width` porque el bloque de <768px de esta hoja trae
+   `.js-cob-forma{width:100%!important}`: `min-width` gana igual por spec
+   (el used width es max(min-width, width)) y asi no hace falta otro
+   `!important`. El selector lleva `.table select.form-select` para superar en
+   especificidad a las reglas de compactacion (0,4,2 contra 0,3,2).          */
+:root{ --forma-select-w: 196px; }                                  /* fuente 16px: 154+8+30+2 */
+@media (min-width: 992px) and (max-width: 1199.98px){
+  :root{ --forma-select-w: 156px; }                                /* fuente 12px: 115+8+30+2 */
+}
+@media (min-width: 1200px){
+  :root{ --forma-select-w: 176px; }                                /* fuente 14px: 134+8+30+2 */
+}
+
+.table select.form-select.js-cob-forma{
+  min-width: var(--forma-select-w);
+  padding-left: 8px;
+  padding-right: 30px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COLUMNA DE ACCIONES — UN SOLO CRITERIO PARA TODAS LAS TABLAS
+   ───────────────────────────────────────────────────────────────────────────
+   Habia SIETE anchos distintos para la misma columna:
+     cobranzas.html  min-width:56px + width:56px   (y 54px en su bloque mobile)
+     status.html     min-width:150px               (y 90px en su bloque mobile)
+     app.css         min-width:100px (<768px) y min-width:90px (<576px)
+     empresas.html   min-width:140px
+     clientes.html   width:1%   /  layout.html  width:1%
+
+   MEDIDO a 390x844 (ancho del th contra lo que ocupa el contenido real):
+     vista       declarado        botones visibles   contenido necesita   th real
+     /clientes   width:1%         1 de 44px          57px                 87px
+     /empresas   min-width:140px  1 de 44px          57px                 147px  <- 90px muertos
+     /deudas     width:56/54px    1 de 40px          53px                 69px
+     /status     min-width:90px   2 (49 + 44px)      112px                92px   <- 20px corto
+     /usuarios   sin nada         2 (69 + 62px)      145px                152px
+
+   O sea los numeros fijos ya se habian desincronizado del contenido en los dos
+   sentidos: /empresas roba 90px a las columnas de nombres en una pantalla de
+   390px, y /status declara menos de lo que ocupa. El de /deudas entra por
+   1.25px (40 de boton + 12.75 de padding contra 54 declarados): en cuanto ese
+   boton suba al piso tactil de 44px que usa el resto, deja de entrar.
+
+   CRITERIO ADOPTADO: `width:1%` + `white-space:nowrap`.
+
+   `width:1%` en una tabla `table-layout:auto` es el idiom de "esta columna se
+   achica a su contenido": el navegador la baja hasta su ancho MIN-CONTENT y le
+   da el sobrante a las demas. Con `nowrap`, ese min-content es exactamente la
+   cuenta que habria que hacer a mano — N botones x su ancho + los gaps + el
+   padding de la celda — pero calculada sobre el contenido VIVO, y en el borde
+   inferior queda el texto "Acciones" del encabezado, que nunca es menor que un
+   target tactil. Por eso NO lleva un `min-width` de respaldo: el piso ya lo
+   pone el propio boton, que es el contenido.
+
+   Se elige sobre pixeles fijos porque:
+     - no puede recortar (min-content es un PISO, no una sugerencia),
+     - no hay que recalcularlo cuando una vista suma o saca un boton,
+     - devuelve a las columnas de nombres el ancho que hoy se desperdicia.
+
+   Las vistas que no traian clase (`/usuarios`, `/estado-clientes`,
+   `/cobranzas/pendientes`, `/pedidos`) ahora la llevan en el markup.
+   `/historial`, `/historial/eliminados`, `/comisiones` y `/crm` no tienen
+   columna de acciones.
+
+   Las reglas de `.table-mobile-cards` (mas abajo y en layout.html) siguen
+   pisando esto con !important en modo tarjeta, que es lo correcto: ahi la
+   celda ocupa el ancho completo de la tarjeta.
+
+   ── POR QUE EL SELECTOR LLEVA `.table` ADELANTE ─────────────────────────────
+   Un `.col-actions` pelado (0,1,0) NO alcanza. layout.html declara en su
+   <style> del <head>, o sea DESPUES de esta hoja:
+       .table tbody td { white-space: normal; }            (0,1,2)
+       .table th, .table td { overflow-wrap: anywhere; }   (0,1,1)
+   y la primera le gana a cualquier regla de una sola clase. Probado: con
+   `.col-actions{white-space:nowrap}` el nowrap NO se aplicaba y /usuarios
+   colapsaba a 41px, con los botones partidos a UNA LETRA POR RENGLON y la
+   fila en 233px de alto. `.table td.col-actions` es (0,2,1) y si gana.
+
+   `overflow-wrap`/`word-break` vuelven a `normal` por lo mismo: con
+   `anywhere` el min-content de la celda es un caracter y el `width:1%` la
+   estrangula en vez de achicarla a su contenido. Es el mismo pisoton que ya
+   esta documentado en el bloque de columnas de nombres propios.            */
+.table th.w-actions,  .table td.w-actions,
+.table th.col-actions, .table td.col-actions{
+  width: 1%;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MODAL DE CONFIRMACION ANIDADO — TIENE QUE QUEDAR ARRIBA DEL QUE LO INVOCA
+   ───────────────────────────────────────────────────────────────────────────
+   SINTOMA (reportado en iPhone): /empresas -> acciones -> "Clientes" (abre el
+   modal `#links{id}`) -> "Quitar" de una fila -> el modal de confirmacion se
+   dibuja POR DEBAJO del de clientes. Y como queda tapado, tampoco se puede
+   tocar "Cancelar": la pantalla queda trabada con dos modales abiertos, y al
+   cerrar el de clientes el de confirmacion sobrevive huerfano con el
+   scroll-lock pegado al <body>.
+
+   CAUSA, medida con playwright (webkit y chrome, 390x844 y 360x740):
+     1. Los dos modales terminan con el MISMO z-index computado.
+        - En portrait <768px por `body[data-active=...] .modal{z-index:3000
+          !important}` (arriba, :222-228).
+        - En TODO el resto de los breakpoints por el 1055 de bootstrap.
+        Bootstrap 5.3 no reacomoda modales anidados, asi que el empate queda.
+     2. Empatados, decide el ORDEN DEL DOM. `#confirmRemoveModal` se renderiza
+        dentro de <main>, y `moveAllLinkModalsToBody()` (empresas.html:1322,
+        clientes.html:1418) MUEVE los `#links{id}` al final de <body>: quedan
+        DESPUES en el arbol y ganan la pintada.
+        Medido: conf_parent=MAIN, links_parent=BODY, y
+        elementFromPoint() en el centro del modal de confirmacion devolvia
+        `td.align-middle` / `select.form-select` del modal de clientes.
+
+   POR QUE NO SE BORRAN LOS `!important` DE :222-228 (que era el otro camino):
+   porque el header clonado `.sticky-thead-wrap` es `position:fixed` con
+   z-index 1500 inline (layout.html:1028) y 2000 !important en status/deudas
+   (:218-219), o sea POR ENCIMA del 1055 de bootstrap, y NO se apaga siempre al
+   abrir un modal: `actualizarClones()` esta atado a `show.bs.modal`
+   (layout.html:1128), que corre ANTES de que bootstrap le ponga la clase
+   `show` al modal, asi que `hayModalVisible()` todavia da false.
+   MEDIDO simulando el borrado (modales forzados a 1055): en /deudas, con la
+   pagina scrolleada 500px y el clon dibujado, elementFromPoint() en la franja
+   de arriba del modal devuelve `th.col-company` DEL CLON, en los dos
+   viewports. Es exactamente el bug que hoy tiene /status, que nunca tuvo la
+   regla de 3000. Sacar los `!important` cambia un bug por otro peor.
+
+   ARREGLO: no tocar el piso de 3000; darle al modal de confirmacion un piso
+   PROPIO por encima, para que el orden del DOM deje de decidir. Vale en todos
+   los breakpoints (3100 > 3000 en portrait chico, y > 1055 en el resto).
+   El segundo backdrop sube a 3090 para que el modal de abajo quede atenuado,
+   que es como se ve un modal anidado bien apilado. `.modal-backdrop ~
+   .modal-backdrop` solo matchea a partir del SEGUNDO: con un solo modal
+   abierto no cambia nada.                                                   */
+#confirmRemoveModal{ z-index: 3100 !important; }
+body[data-active="empresas"] .modal-backdrop ~ .modal-backdrop,
+body[data-active="clientes"] .modal-backdrop ~ .modal-backdrop{ z-index: 3090 !important; }
