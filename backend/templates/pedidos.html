@@ -39,7 +39,7 @@
               <tr>
                 <th>Cliente</th>
                 <th>Empresa</th>
-                <th class="text-end">Acciones</th>
+                <th class="text-end col-actions">Acciones</th>
               </tr>
             </thead>
             <tbody id="drafts-tbody">
@@ -119,10 +119,10 @@
       </div>
       <div class="col-md-3">
         <label class="form-label">Cliente</label>
-        <select class="form-select" id="pedido_cliente" name="client_id" required onchange="window.__onSelChange && window.__onSelChange()">
+        <select class="form-select" id="pedido_cliente" name="client_id" required data-searchable onchange="window.__onSelChange && window.__onSelChange()">
           <option value="">Cliente...</option>
           {% for c in clientes %}
-            <option value="{{ c.id }}" data-razon="{{ c.apellido }}" data-nombre="{{ c.nombre }}" data-forma-pago="{{ (c.forma_pago_habitual or '') }}">{{ c.apellido }}</option>
+            <option value="{{ c.id }}" data-razon="{{ c.apellido }}" data-nombre="{{ c.nombre }}" data-forma-pago="{{ (c.forma_pago_habitual or '') }}">{{ c.display_name }}</option>
           {% endfor %}
         </select>
       </div>
@@ -134,7 +134,7 @@
       </div>
       <div class="col-md-3">
         <label class="form-label">Empresa</label>
-        <select class="form-select" id="pedido_empresa" name="company_id" required onchange="window.__onSelChange && window.__onSelChange()">
+        <select class="form-select" id="pedido_empresa" name="company_id" required data-searchable onchange="window.__onSelChange && window.__onSelChange()">
           <option value="">Empresa...</option>
         </select>
       </div>
@@ -269,12 +269,11 @@
       hideNoteSuggestions();
     }
 
+    // Formateo unificado: SirioFechas (static/js/fechas.js).
     function fmtIsoToAr(isoDate){
       const s = String(isoDate || '').trim();
       if (!s) return '';
-      const p = s.split('-');
-      if (p.length !== 3) return s;
-      return [p[2], p[1], p[0]].join('/');
+      return window.SirioFechas.format(s, s);
     }
 
     function renderNoteSuggestions(filterText){
@@ -1352,7 +1351,7 @@
           const row = document.createElement('div');
           row.className = 'list-group-item';
           const showDate = String((o.fecha_compra_date || o.created_date || '')).trim();
-          const dtTxt = showDate ? showDate.split('-').reverse().join('/') : '';
+          const dtTxt = window.SirioFechas.format(showDate);
           const prev = (o.descripcion||'').split('\n').find(Boolean) || (o.nota||'');
           const top = document.createElement('div');
           top.className = 'd-flex align-items-center justify-content-between gap-2';
@@ -1504,12 +1503,12 @@
         mount();
       } else {
         var s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/flatpickr';
+        s.src = '{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.js') }}';
         s.onload = mount;
         document.head.appendChild(s);
         var l = document.createElement('link');
         l.rel = 'stylesheet';
-        l.href = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css';
+        l.href = '{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.css') }}';
         document.head.appendChild(l);
       }
     })();

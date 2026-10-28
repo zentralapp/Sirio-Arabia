@@ -57,6 +57,40 @@
       -webkit-overflow-scrolling: touch;
     }
     #empresas-table { min-width: 640px; }
+    /* ── EL AIRE VERTICAL DE LAS FILAS ─────────────────────────────────────
+       SINTOMA MEDIDO a 390x844: el texto pegado al techo de la celda y ~30px
+       de vacio debajo, en TODAS las filas.
+
+       DIAGNOSTICO (scratchpad/diag_aire.py, celda por celda):
+         alto de fila = 52.9px
+         padding      = 4.46 + 4.46 = 8.9px
+         quien manda  = la celda "Alertas", con un <button> de 44px de alto
+         texto real   = 15.4px (una linea, line-height 1.28)
+         => 52.9 - 8.9 - 15.4 = 28.6px de aire en las celdas de texto.
+
+       NO ERA EL PADDING. `.table-relaxed th,td{padding:.75rem 1.35rem}` de
+       arriba esta pisado en mobile: el padding computado es 4.46px, o sea casi
+       nada. Y la fila NO se puede achicar: 44 + 8.9 = 52.9 es exactamente el
+       piso tactil de 44px del boton de alertas mas el padding. Apretarla mas
+       habria sido romper ese piso.
+
+       LA CAUSA ES EL `vertical-align: top` DE ESTE MISMO BLOQUE. La tabla pide
+       `align-middle` en su propio markup y app.css dice
+       `.table td,.table th{vertical-align:middle}`, pero este selector con ID
+       le gana a los dos. Con la altura de la fila fijada por el boton de 44px,
+       `top` amontona TODO el sobrante abajo del texto en vez de repartirlo. El
+       vacio es el mismo; lo que cambia es que asi se lee como un error de
+       maquetado en vez de como padding.
+
+       POR QUE NO SE PONE `middle` A SECAS: el `top` tenia una razon. La primera
+       celda contiene el panel de alertas (.js-alertas-list), que el JS
+       despliega sacandole `d-none`. Desplegado, la fila pasa de 52.9px a varios
+       cientos, y ahi centrar "Marcelo" o "Buenos Aires" en el medio de ese
+       bloque es peor que pegarlo arriba. Por eso se centra SOLO con el panel
+       colapsado, que es el 100% del tiempo hasta que alguien toca el boton.
+       `:has()` es Safari 15.4+ / Chrome 105+ y ya se usa en
+       _blindaje_mobile.html; si un navegador viejo lo ignora, la regla se
+       descarta y volvemos al `top` de siempre.                                */
     #empresas-table th,
     #empresas-table td {
       white-space: normal;
@@ -64,6 +98,27 @@
       word-break: break-word;
       vertical-align: top;
       line-height: 1.28;
+    }
+
+    /* La columna de acciones queda FUERA del `white-space:normal` +
+       `overflow-wrap:anywhere` de arriba. Esa regla lleva ID (1,0,1) y le gana
+       al criterio unico de app.css (`.table td.col-actions`, (0,2,1)), asi que
+       hay que repetir la excepcion aca con ID. Sin esto el min-content de la
+       celda es UN caracter y el `width:1%` la estrangula en vez de achicarla a
+       su contenido: es exactamente lo que le paso a /usuarios, que colapso a
+       41px con los botones partidos a una letra por renglon y la fila en 233px
+       de alto. Hoy no se nota porque la celda tiene un solo dropdown, que no
+       tiene donde partirse; en cuanto entre un segundo boton, si. */
+    #empresas-table th.col-actions,
+    #empresas-table td.col-actions {
+      white-space: nowrap;
+      overflow-wrap: normal;
+      word-break: normal;
+    }
+
+
+    #empresas-table tbody tr:not(:has(.js-alertas-list:not(.d-none))) > td {
+      vertical-align: middle;
     }
     #empresas-table td:nth-child(1),
     #empresas-table td:nth-child(2) {
@@ -96,6 +151,11 @@
   @media (max-width: 399.98px) {
     #empresasPagination > .d-flex { grid-template-columns: 1fr; }
   }
+
+  /* NO agregar reglas de modal aca. El fullscreen de modales para 0-991.98px es
+     GLOBAL y vive en layout.html (bloque H12). Y NO volver a poner
+     `touch-action` en el `.table-responsive` de los modales: se probo, rompia el
+     scroll vertical con el dedo, y esta explicado en el bloque H12b. */
 </style>
 <div class="empresas-toolbar d-flex flex-column flex-md-row justify-content-between align-items-stretch align-items-md-center gap-2 mb-3 mt-3">
   <div class="empresas-toolbar-main">
@@ -124,12 +184,24 @@
         .table-tight td { word-break: break-word; }
         /* Forzar ancho mínimo de tabla para permitir scroll horizontal en móviles */
         .table-tight { min-width: 720px; }
-        /* Evitar wraps en columna Acciones */
-        .table-tight th.col-actions, .table-tight td.col-actions { white-space: nowrap; min-width: 140px; }
+        /* `min-width:140px` salio de aca: reservaba 140px para un boton de
+           44px (57px con padding), o sea 90px muertos robados a las columnas
+           de nombres en una pantalla de 390px. El `nowrap` tambien, porque
+           ya lo pone la regla unica. Ver COLUMNA DE ACCIONES en app.css. */
         /* Evitar wraps dentro del grupo de botones */
         .btn-group.flex-nowrap .btn { white-space: nowrap; }
       </style>
       <div class="table-responsive table-mobile-cards">
+        {# Lista de clientes UNA sola vez para toda la pagina. Cada modal `links{id}`
+           clona estas opciones al abrirse (ver el script al final del archivo), en vez
+           de traerse las 800 opciones repetidas 80 veces. Mismo patron que
+           #companyOptionsTemplate en clientes.html. #}
+        <select id="clientOptionsTemplate" class="d-none" aria-hidden="true" tabindex="-1">
+          <option value="">Seleccionar razón social...</option>
+          {% for c in clients %}
+            <option value="{{ c.id }}">{{ c.apellido }}</option>
+          {% endfor %}
+        </select>
         <table class="table table-hover align-middle mb-0 table-tight table-sticky" id="empresas-table">
         <thead class="table-light">
           <tr>
@@ -280,7 +352,14 @@
                 <ul class="dropdown-menu dropdown-menu-end">
                   <li><a class="dropdown-item" href="{{ url_for('main.empresas_edit_view', company_id=e.id) }}">Ver legajo</a></li>
                   <li><button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#links{{ e.id }}">Clientes</button></li>
-                  <li><button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#archiveCompany{{ e.id }}">Archivar</button></li>
+                  {# Un solo #archiveCompanyModal para toda la pagina. La URL de
+                     destino viaja RENDERIZADA POR JINJA en data-archive-action:
+                     no se arma en el cliente, asi que no hay forma de que apunte
+                     a otra empresa. El JS del pie la copia al form al abrir. #}
+                  <li><button class="dropdown-item" type="button"
+                              data-bs-toggle="modal" data-bs-target="#archiveCompanyModal"
+                              data-archive-action="{{ url_for('main.empresas_archive', company_id=e.id) }}"
+                              data-company-name="{{ e.nombre }}">Archivar</button></li>
                   <li><hr class="dropdown-divider"></li>
                   <li>
                     <form method="post" action="{{ url_for('main.empresas_delete', company_id=e.id) }}" class="js-confirm-remove mb-0" data-confirm="¿Eliminar empresa? Esta acción no se puede deshacer.">
@@ -288,27 +367,6 @@
                     </form>
                   </li>
                 </ul>
-              </div>
-              <div class="modal fade archive-company-modal" id="archiveCompany{{ e.id }}" tabindex="-1" aria-hidden="true">
-                <div class="modal-dialog modal-dialog-centered">
-                  <div class="modal-content">
-                    <div class="modal-header">
-                      <h5 class="modal-title">Archivar empresa</h5>
-                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                    </div>
-                    <div class="modal-body">
-                      <p class="mb-2">¿Querés archivar esta empresa?</p>
-                      <p class="text-muted mb-0">La empresa dejará de mostrarse en el listado principal, pero podrás recuperarla cuando quieras.</p>
-                    </div>
-                    <div class="modal-footer">
-                      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-                      <form method="post" action="{{ url_for('main.empresas_archive', company_id=e.id) }}" class="mb-0">
-                        <input type="hidden" name="return_to" value="{{ request.full_path|default('/empresas') }}">
-                        <button class="btn btn-primary" type="submit">Archivar</button>
-                      </form>
-                    </div>
-                  </div>
-                </div>
               </div>
               <div class="modal fade" id="links{{ e.id }}" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog modal-lg">
@@ -330,11 +388,18 @@
                       </div>
                       <form class="row g-2 mb-2" method="post" action="{{ url_for('main.empresas_link_add', company_id=e.id) }}">
                         <div class="col-md-5">
-                          <select class="form-select" name="client_id" required>
+                          {# Se renderiza VACIO a proposito y lo puebla el JS de mas abajo al
+                             abrir el modal, clonando #clientOptionsTemplate (que se renderiza
+                             UNA sola vez en toda la pagina). Antes cada uno de estos modales
+                             traia un <option> por CADA cliente del sistema: con 80 empresas y
+                             800 clientes eran 64.000 <option> = 2,64 MB de los 8,79 MB de la
+                             pagina. El universo de opciones NO cambia: sigue siendo todos los
+                             clientes, porque el vinculo cliente-empresa es N:M
+                             (ClientCompanyLink en models.py) y desde aca se da de alta
+                             cualquier cliente, no solo los ya vinculados.
+                             Mismo patron que ya usa clientes.html con #companyOptionsTemplate. #}
+                          <select class="form-select js-client-select" name="client_id" required data-searchable>
                             <option value="">Seleccionar razón social...</option>
-                            {% for c in clients %}
-                              <option value="{{ c.id }}">{{ c.apellido }}</option>
-                            {% endfor %}
                           </select>
                         </div>
                         <div class="col-md-3">
@@ -354,6 +419,16 @@
                           <button class="btn btn-primary">Agregar</button>
                         </div>
                       </form>
+                      {# NO poner `table-fit` aca. Probado: con `min-width:0` la tabla entra en
+                         363px pero la columna Cliente parte en UNA LETRA POR LINEA y el input de
+                         descuento queda de ~10px; la fila pasa de 54px a 211px de alto. El
+                         `min-width:720px` heredado de app.css:114 es lo que mantiene la tabla
+                         legible, y el scroll horizontal es la estrategia elegida a proposito para
+                         esta vista (ver app.css:106). El scroll VERTICAL de este modal lo resuelve
+                         el `.modal-body{flex:1; min-height:0; overflow-y:auto}` del bloque H12 de
+                         layout.html: el arrastre vertical encadena solo desde esta tabla al
+                         `.modal-body` (verificado con rueda: la tabla tiene extent vertical 0).
+                         NO agregar `touch-action` aca: se probo y rompia justamente ese gesto. #}
                       <div class="table-responsive">
                         <table class="table table-sm align-middle js-sortable-table">
                           <thead>
@@ -436,6 +511,75 @@
     <div class="mobile-cards"></div>
   </div>
 </div>
+{# UN SOLO modal de "Archivar" para toda la pagina, en vez de uno por fila.
+   Antes se renderizaba un `#archiveCompany{id}` dentro de cada `<td>`: con 80
+   empresas sin paginar eran 80 nodos de modal metidos adentro de la tabla, que
+   es de donde salio toda la familia de bugs (ids duplicados en cada repintado
+   AJAX, modales que hay que mover a <body> con JS, backdrops huerfanos).
+   El `action` NO se arma en el cliente: viaja renderizado por Jinja en el
+   `data-archive-action` del boton y se copia tal cual. #}
+<div class="modal fade archive-company-modal" id="archiveCompanyModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Archivar empresa</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">¿Querés archivar <strong id="archiveCompanyName">esta empresa</strong>?</p>
+        <p class="text-muted mb-0">La empresa dejará de mostrarse en el listado principal, pero podrás recuperarla cuando quieras.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        {# Sin `action` a proposito: hasta que no se sepa QUE empresa se archiva,
+           este form no puede apuntar a ningun lado. #}
+        <form method="post" id="archiveCompanyForm" class="mb-0">
+          <input type="hidden" name="return_to" value="{{ request.full_path|default('/empresas') }}">
+          <button class="btn btn-primary" type="submit" id="archiveCompanySubmit" disabled>Archivar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  /* Puebla el modal unico de "Archivar" con los datos del boton que lo abrio.
+     `relatedTarget` es el elemento que disparo el modal, lo pasa bootstrap.
+
+     REGLA DE SEGURIDAD: si no se puede resolver a QUE empresa apunta, el form
+     se deja SIN `action` y el boton DESHABILITADO. Un `action` viejo colgado
+     de una apertura anterior archivaria la empresa equivocada, que es el unico
+     error grave posible en este refactor. Por eso se limpia tambien al cerrar. */
+  var modalEl = document.getElementById('archiveCompanyModal');
+  if (!modalEl) return;
+  var form   = document.getElementById('archiveCompanyForm');
+  var submit = document.getElementById('archiveCompanySubmit');
+  var nombre = document.getElementById('archiveCompanyName');
+
+  function limpiar(){
+    try {
+      form.removeAttribute('action');
+      submit.disabled = true;
+      nombre.textContent = 'esta empresa';
+    } catch(e) {}
+  }
+
+  modalEl.addEventListener('show.bs.modal', function(ev){
+    limpiar();
+    try {
+      var boton = ev.relatedTarget;
+      var accion = boton && boton.getAttribute ? boton.getAttribute('data-archive-action') : null;
+      if (!accion) return;                       // sin destino: queda deshabilitado
+      form.setAttribute('action', accion);
+      submit.disabled = false;
+      var n = boton.getAttribute('data-company-name');
+      if (n) nombre.textContent = n;
+    } catch(e) { limpiar(); }
+  });
+
+  modalEl.addEventListener('hidden.bs.modal', limpiar);
+})();
+</script>
 <div class="modal fade" id="archivedCompaniesModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
@@ -995,11 +1139,21 @@
     var modalEl = document.getElementById('confirmRemoveModal');
     var msgEl = document.getElementById('confirmRemoveMsg');
     var confirmBtn = document.getElementById('confirmRemoveBtn');
-    var ModalCtor = window.bootstrap && window.bootstrap.Modal;
-    var modal = (modalEl && ModalCtor) ? ModalCtor.getOrCreateInstance(modalEl) : null;
+
+    // NO BORRAR: bootstrap.bundle.min.js se carga DESPUES de este bloque
+    // (layout.html: el bloque "content" esta en la linea 227 y el <script> de
+    // bootstrap en la 240). Resolver window.bootstrap.Modal aca arriba, en tiempo
+    // de parseo, daba SIEMPRE undefined y mandaba todo al fallback manual, que
+    // pinta un .modal-backdrop a mano: sin scroll-lock, sin ESC y sin foco.
+    // Resolver el constructor SIEMPRE al momento de usarlo.
+    function getModal(){
+      var ModalCtor = window.bootstrap && window.bootstrap.Modal;
+      return (modalEl && ModalCtor) ? ModalCtor.getOrCreateInstance(modalEl) : null;
+    }
 
     function closeModal(){
       try {
+        var modal = getModal();
         if (modal) {
           modal.hide();
         } else if (modalEl) {
@@ -1018,6 +1172,7 @@
         pendingForm = form;
         var text = form.getAttribute('data-confirm') || '¿Confirmar acción?';
         if (msgEl) msgEl.textContent = text;
+        var modal = getModal();
         if (modal) {
           modal.show();
         } else if (modalEl) {
@@ -1103,57 +1258,172 @@
     }
     function safeHideDropdown(fromEl){
       try {
-        var dd = closest(fromEl, '.dropdown');
-        if (!dd) return;
-        var toggle = dd.querySelector('[data-bs-toggle="dropdown"]');
+        // Con el menu portalizado a <body> (bloque E de app.js) el boton ya NO
+        // tiene un `.dropdown` de ancestro, asi que primero se pregunta al
+        // portal por el toggle y recien despues se cae al camino de siempre.
+        var toggle = (window.SirioMenuPortal && window.SirioMenuPortal.toggleDe)
+          ? window.SirioMenuPortal.toggleDe(fromEl) : null;
+        if (!toggle){
+          var dd = closest(fromEl, '.dropdown');
+          if (!dd) return;
+          toggle = dd.querySelector('[data-bs-toggle="dropdown"]');
+        }
         if (!toggle) return;
+        // getInstance y NO getOrCreateInstance: crear la instancia aca la
+        // crearia SIN el popperConfig de `fijarMenusDeTabla` (app.js), y
+        // `getOrCreateInstance` despues devuelve esa e IGNORA el config, o sea
+        // el menu quedaria position:absolute y lo clipearia el
+        // .table-responsive. Si no hay instancia, el menu no esta abierto y no
+        // hay nada que cerrar.
         if (window.bootstrap && window.bootstrap.Dropdown){
-          try { window.bootstrap.Dropdown.getOrCreateInstance(toggle).hide(); } catch(e0) {}
+          var inst = window.bootstrap.Dropdown.getInstance(toggle);
+          if (inst) { try { inst.hide(); } catch(e0) {} }
         }
       } catch(e) {}
     }
-    function moveModalToBody(modalEl){
+    /* ═══════════════════════════════════════════════════════════════════════
+       Los modales `links{id}` se sacan del `<td>` y se cuelgan de <body>.
+       ───────────────────────────────────────────────────────────────────────
+       NO BORRAR, y sobre todo NO volver a colgarlo solo de DOMContentLoaded.
+       El markup de cada modal vive DENTRO de `<td class="col-actions">`, o sea
+       dentro de `#empresas-table` y de `.table-responsive.table-mobile-cards`.
+       Ahi le pegan selectores que no son para el: `#empresas-table th,td`
+       (este archivo, ~:60) le mete `overflow-wrap:anywhere` a las celdas del
+       modal, `#empresas-table td:nth-child(1),(2)` (~:68) les clava
+       `min-width:170px`, y las reglas de `.table-mobile-cards` de layout.html
+       (~:82-88) lo tratan como tarjeta. Por eso se mueve afuera.
+
+       POR QUE TAMBIEN EN CADA CAMBIO DEL LISTADO Y NO SOLO AL CARGAR
+       `replaceListFromHtml()` (mas arriba en este archivo) hace
+       `tbody.innerHTML = ...` en CADA tecla del buscador y en cada paginacion:
+       eso vuelve a crear los 80 modales DENTRO del `<td>`. Con el move corriendo
+       una sola vez quedaban IDs DUPLICADOS (el viejo colgado de <body> y el
+       nuevo en la tabla), y bootstrap resuelve `data-bs-target` con
+       `document.querySelector`, que devuelve el PRIMERO EN ORDEN DE DOCUMENTO:
+       el de adentro de la tabla, o sea justo el roto. Ese era el modal de
+       Clientes destruido que se veia en el telefono despues de buscar.
+
+       TRAMPA: para encontrar el duplicado viejo NO se puede usar
+       `document.getElementById(id)`. Devuelve el primero en orden de documento,
+       que es el de la tabla: borrariamos el nuevo y dejariamos vivo el viejo.
+       Por eso se indexa recorriendo `document.body.children`, que son los que
+       ya fueron movidos.                                                      */
+    function indexarLinkModalesDeBody(){
+      var porId = {};
       try {
-        if (!modalEl || modalEl.parentElement === document.body) return;
-        document.body.appendChild(modalEl);
+        Array.prototype.forEach.call(document.body.children, function(el){
+          if (!el.id || el.id.indexOf('links') !== 0) return;
+          if (!el.classList || !el.classList.contains('modal')) return;
+          porId[el.id] = el;
+        });
       } catch(e) {}
+      return porId;
     }
     function moveAllLinkModalsToBody(){
       try {
-        document.querySelectorAll('.modal[id^="links"]').forEach(moveModalToBody);
+        var yaEnBody = indexarLinkModalesDeBody();
+        document.querySelectorAll('.modal[id^="links"]').forEach(function(modalEl){
+          try {
+            // La NodeList de querySelectorAll es ESTATICA: sigue teniendo los
+            // duplicados viejos que esta misma pasada ya saco del DOM. Sin este
+            // chequeo los volviamos a colgar de <body> y no se limpiaba nada.
+            if (modalEl.isConnected === false) return;
+            if (modalEl.parentElement === document.body) return; // ya movido
+            var viejo = yaEnBody[modalEl.id];
+            if (viejo && viejo !== modalEl){
+              // Si el viejo esta abierto, no se le arranca el DOM al usuario:
+              // se deja el duplicado y la proxima pasada lo limpia. Es un caso
+              // de borde (el listado se repinta con un modal fullscreen arriba).
+              if (viejo.classList.contains('show')) return;
+              try { viejo.remove(); } catch(e0) {}
+              delete yaEnBody[modalEl.id];
+            }
+            document.body.appendChild(modalEl);
+          } catch(e1) {}
+        });
       } catch(e) {}
     }
-    function cleanupOrphanModalState(){
+    /* NO VOLVER A PONER UN `cleanupOrphanModalState()` LOCAL ACA.
+       ───────────────────────────────────────────────────────────────────────
+       Habia uno, y era un BUG, no una red de seguridad. Chequeaba
+       `document.querySelector('.modal.show')` a secas, que es EXACTAMENTE el
+       chequeo que layout.html (~:956) documenta como insuficiente, y lo
+       disparaba con `setTimeout(..., 0)` justo despues del click que abre el
+       modal. En bootstrap 5.3 `Modal.show()` muestra primero el backdrop y
+       espera su transicion (~150ms) antes de agregarle la clase `show` al
+       modal: en el tick 0 todavia NO hay ningun `.modal.show`, asi que la
+       limpieza no hacia early-return y borraba el `.modal-backdrop` recien
+       creado, `body.modal-open` y `body.style.overflow`, o sea el scroll-lock.
+
+       La version buena vive en layout.html:981-1000, usa `isReallyVisible()`
+       (clase + display + rect, no solo la clase), ademas fuerza el cierre de
+       los modales "pegados", y cubre MAS disparadores que la local:
+         hidden.bs.modal (:1072)        <- mismo que tenia la local
+         click en [data-bs-toggle=modal] (:1076, a los 250ms, y sin acotar a
+                                          los botones `#links`)
+         toque en el velo (:1049-1050)
+         click en [data-bs-dismiss=modal] (:1057)
+         pageshow (:1084)
+       O sea: borrarla no deja ningun caso sin cubrir. */
+
+    // `window.SirioList` lo define js/app.js, que se carga en el PIE de
+    // layout.html: cuando corre este script inline todavia no existe. Por eso
+    // la suscripcion se difiere a DOMContentLoaded, momento en el que app.js ya
+    // se ejecuto. El consumidor es idempotente, que es lo que SirioList exige.
+    function engancharListado(){
+      moveAllLinkModalsToBody();
       try {
-        var hasVisibleModal = !!document.querySelector('.modal.show');
-        if (hasVisibleModal) return;
-        document.querySelectorAll('.modal-backdrop').forEach(function(bd){
-          try { bd.remove(); } catch(e0) {}
-        });
-        document.body.classList.remove('modal-open');
-        document.body.style.removeProperty('overflow');
-        document.body.style.removeProperty('padding-right');
+        if (window.SirioList && window.SirioList.onChange){
+          window.SirioList.onChange(moveAllLinkModalsToBody);
+        }
       } catch(e) {}
     }
 
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', moveAllLinkModalsToBody);
+      document.addEventListener('DOMContentLoaded', engancharListado);
     } else {
-      moveAllLinkModalsToBody();
+      engancharListado();
     }
 
-    document.addEventListener('hidden.bs.modal', function(){
-      setTimeout(cleanupOrphanModalState, 0);
-    });
-
+    // Solo cerrar el menu de 3 puntos: la limpieza de estado huerfano la hace
+    // layout.html, con el chequeo correcto y con el timing correcto.
     document.addEventListener('click', function(e){
       try {
         var btn = e.target && e.target.closest ? e.target.closest('button[data-bs-toggle="modal"][data-bs-target^="#links"]') : null;
         if (!btn) return;
         safeHideDropdown(btn);
-        setTimeout(cleanupOrphanModalState, 0);
       } catch(err) {}
     });
+})();
+</script>
+<script>
+(function(){
+  // Puebla el <select> de "Agregar cliente" recien al abrir el modal, clonando
+  // #clientOptionsTemplate (que se renderiza UNA vez por pagina).
+  // Medido con la forma de datos real (80 empresas, 800 clientes): tener las 800
+  // opciones repetidas en los 80 modales eran 64.000 <option> = 2,64 MB de los
+  // 8,79 MB que pesaba la pagina.
+  // NO hace falta re-inicializar Tom Select a mano: searchable-select.js observa
+  // los <option> del <select> con un MutationObserver y se reconstruye solo
+  // cuando cambian (ver el bloque "TRAMPA: destroy()..." en ese archivo).
+  function llenarSelectDeClientes(modalEl){
+    if (!modalEl || !modalEl.querySelector) return;
+    var sel = modalEl.querySelector('select.js-client-select');
+    if (!sel) return;
+    if (sel.options && sel.options.length > 1) return; // ya poblado
+    var tpl = document.getElementById('clientOptionsTemplate');
+    if (!tpl) return;
+    try {
+      sel.innerHTML = '';
+      Array.prototype.forEach.call(tpl.options || [], function(o){
+        sel.appendChild(o.cloneNode(true));
+      });
+    } catch(e) {}
+  }
+
+  document.addEventListener('show.bs.modal', function(e){
+    try { llenarSelectDeClientes(e.target); } catch(err) {}
+  });
 })();
 </script>
 {% endblock %}

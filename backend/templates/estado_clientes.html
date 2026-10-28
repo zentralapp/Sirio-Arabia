@@ -5,14 +5,17 @@
 </div>
 <div class="card">
   <div class="card-body p-0">
-    <div class="table-responsive">
+    {# H4: `table-fit` es el opt-out del `min-width:720px` que esta vista heredaba
+       de body[data-active="clientes"] (el active lo fija main.py y se comparte con
+       la lista de /clientes). La regla vive en static/css/app.css. #}
+    <div class="table-responsive table-fit">
       <table class="table table-hover align-middle mb-0">
         <thead class="table-light">
           <tr>
             <th>Cliente</th>
             <th>Empresa</th>
             <th>Estado</th>
-            <th class="text-end">Acciones</th>
+            <th class="text-end col-actions">Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -47,7 +50,7 @@
                     <button class="btn btn-sm btn-outline-secondary" type="submit">Guardar</button>
                   </form>
                 </td>
-                <td class="text-end">
+                <td class="text-end col-actions">
                   <span class="text-muted">—</span>
                 </td>
               </tr>
@@ -57,7 +60,7 @@
               <td></td>
               <td class="text-muted">Sin empresas vinculadas</td>
               <td class="text-muted">-</td>
-              <td class="text-end"><span class="text-muted">—</span></td>
+              <td class="text-end col-actions"><span class="text-muted">—</span></td>
             </tr>
           {% endif %}
         {% else %}

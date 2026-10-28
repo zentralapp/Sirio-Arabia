@@ -302,7 +302,7 @@
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">Cumpleaños</label>
-                  <input id="birthday_date_input" type="text" class="form-control form-control-sm" placeholder="dd/mm/aaaa" data-datepicker>
+                  <input id="birthday_date_input" type="text" class="form-control form-control-sm" placeholder="DD/MM/AAAA" data-datepicker>
                 </div>
                 <div class="col-md-2 d-grid">
                   <label class="form-label">&nbsp;</label>
@@ -334,7 +334,7 @@
                               <input type="hidden" name="birthday_role_list" value="{{ b.puesto or '' }}">
                             </td>
                             <td data-label="Cumpleaños">
-                              {{ b.fecha.strftime('%d/%m/%Y') if b.fecha else '' }}
+                              {{ b.fecha|fecha }}
                               <input type="hidden" name="birthday_date_list" value="{{ b.fecha.isoformat() if b.fecha else '' }}">
                             </td>
                             <td class="text-end" data-label="Acciones">
@@ -775,6 +775,15 @@
   .date-soft { border-radius:.75rem; box-shadow:0 4px 10px rgba(0,0,0,.06); background:#fff; }
   .date-soft .input-group-text { background:#f3f4f6; border:1px solid #e5e7eb; }
   .date-soft .form-control { background:#fafafa; border:1px solid #e5e7eb; min-height:36px; font-size:.9rem; }
+  /* T1-B — `.9rem` NO alcanza en mobile. `html{font-size}` baja a 13.25px
+     (<=576px) y 12.75px (<=400px) en app.css, asi que ese `.9rem` computaba
+     11.5-11.9px REALES y iOS Safari hace zoom al enfocar cualquier input por
+     debajo de 16px. Y el `min-height:36px` de arriba tiene mas especificidad que
+     el piso tactil `.form-control{min-height:44px}` de layout.html, o sea que
+     tambien lo estaba pisando: se repone aca. */
+  @media (max-width: 991.98px) {
+    .date-soft .form-control { font-size:16px; min-height:44px; }
+  }
   .date-soft .form-control:focus { background:#fff; border-color:#86b7fe; box-shadow:0 0 0 .2rem rgba(13,110,253,.15); }
   .date-soft .btn-clear { border:1px solid #e5e7eb; background:#fff; padding:.25rem .5rem; color:#6c757d; }
   .date-soft .btn-clear:hover { background:#f8f9fa; }
@@ -1448,11 +1457,10 @@ document.addEventListener('DOMContentLoaded', function(){
     return String(str).replace(/"/g,'&quot;');
   }
 
+  // Formateo unificado: SirioFechas (static/js/fechas.js).
   function formatDate(isoDate){
     if (!isoDate) return '';
-    var parts = isoDate.split('-');
-    if (parts.length === 3) return parts[2] + '/' + parts[1] + '/' + parts[0];
-    return isoDate;
+    return window.SirioFechas.format(isoDate, isoDate);
   }
 
   var editNotasCache = '';
@@ -1493,8 +1501,16 @@ document.addEventListener('DOMContentLoaded', function(){
   var notesEditor = document.getElementById('personaNotasEditor');
   var notesToolbar = document.getElementById('personaNotasToolbar');
   var notesSaveBtn = document.getElementById('personaNotasGuardarBtn');
-  var notesModal = (notesModalEl && window.bootstrap && window.bootstrap.Modal) ? window.bootstrap.Modal.getOrCreateInstance(notesModalEl) : null;
+  // NO BORRAR: bootstrap.bundle.min.js se carga DESPUES de este bloque (va al
+  // final de layout.html, despues del bloque "content"), asi que en tiempo de
+  // parseo window.bootstrap es undefined. Resolverlo aca dejaba el modal en el
+  // fallback manual, que inyecta un .modal-backdrop propio. Resolver al usar.
+  function getNotesModal(){
+    var Ctor = window.bootstrap && window.bootstrap.Modal;
+    return (notesModalEl && Ctor) ? Ctor.getOrCreateInstance(notesModalEl) : null;
+  }
   function showNotesModal(){
+    var notesModal = getNotesModal();
     if (notesModal) {
       notesModal.show();
       return;
@@ -1512,6 +1528,7 @@ document.addEventListener('DOMContentLoaded', function(){
     }
   }
   function hideNotesModal(){
+    var notesModal = getNotesModal();
     if (notesModal) {
       notesModal.hide();
       return;
@@ -1675,8 +1692,8 @@ document.addEventListener('DOMContentLoaded', function(){
   if (typeof window.flatpickr === 'function') {
     mount();
   } else {
-    var s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/flatpickr'; s.onload = mount; document.head.appendChild(s);
-    var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css'; document.head.appendChild(l);
+    var s = document.createElement('script'); s.src = '{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.js') }}'; s.onload = mount; document.head.appendChild(s);
+    var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = '{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.css') }}'; document.head.appendChild(l);
   }
 })();
 
