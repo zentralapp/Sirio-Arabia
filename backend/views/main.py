@@ -9341,6 +9341,10 @@ def api_client_companies(client_id: int):
 
                 "label": l.company.nombre,
 
+                # "Razón social (Marca)" para Pedidos; "label" queda como razón social
+                # porque nueva_cobranza.html también consume este endpoint.
+                "display_label": l.company.display_name,
+
                 "mail_pedido": l.company.mail_pedido or "",
 
                 "mail_pago": l.company.mail_pago or "",
@@ -9437,6 +9441,8 @@ def api_client_companies(client_id: int):
 
                 "label": comp.nombre,
 
+                "display_label": comp.display_name,
+
                 "mail_pedido": comp.mail_pedido or "",
 
                 "mail_pago": comp.mail_pago or "",
@@ -9457,9 +9463,9 @@ def api_client_companies(client_id: int):
 
             })
 
-    # Sort by name
+    # Ordenar por razón social (label), no por display_label con la marca
 
-    rows.sort(key=lambda r: r["label"].lower())
+    rows.sort(key=lambda r: (r["label"] or "").lower())
 
     return jsonify(rows)
 
@@ -10923,7 +10929,7 @@ def api_pedidos_drafts_list():
 
                 "client_label": " ".join([x for x in [getattr(c, "apellido", None), getattr(c, "nombre", None)] if x]) or (getattr(c, "apellido", None) or ""),
 
-                "company_label": (getattr(co, "nombre", None) or ""),
+                "company_label": (getattr(co, "display_name", None) or getattr(co, "nombre", None) or ""),
 
                 "branch_id": (getattr(d, "branch_id", None) or ""),
 

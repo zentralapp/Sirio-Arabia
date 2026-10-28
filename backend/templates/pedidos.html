@@ -888,7 +888,8 @@
         for(const e of items){
           const opt = document.createElement('option');
           opt.value = e.id;
-          opt.textContent = e.label;
+          // "Razón social (Marca)"; el server ya viene ordenado por razón social
+          opt.textContent = e.display_label || e.label;
           opt.setAttribute('data-mail', e.mail_pedido || '');
           opt.setAttribute('data-mail-pago', e.mail_pago || '');
           opt.setAttribute('data-pedido-std', e.pedido_estandar_recomendado || '');
