@@ -4,12 +4,16 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Sirio Arabia - CRM</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" crossorigin="anonymous">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" crossorigin="anonymous">
-    <link href="https://cdn.jsdelivr.net/npm/tom-select@2.6.2/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet" crossorigin="anonymous">
+    <!-- Tipografia AUTOHOSPEDADA (Poppins + Playfair Display).
+         Antes esto eran 3 lineas contra fonts.googleapis.com/fonts.gstatic.com.
+         Era el ultimo recurso externo de la app: si Google tarda, toda la
+         tipografia cae al system font y la app se ve como otro producto.
+         Los pesos y subsets son EXACTAMENTE los que servia Google, para que el
+         render no cambie. Detalle completo en el header de fonts.css. -->
+    <link href="{{ url_for('static', filename='vendor/fonts/fonts.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='vendor/bootstrap/5.3.3/css/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='vendor/bootstrap-icons/1.11.3/bootstrap-icons.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='vendor/tom-select/2.6.2/css/tom-select.bootstrap5.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
     <!-- SirioFechas: fuente unica de verdad de fechas en el frontend.
          Va en el head a proposito: los scripts de cada pagina viven dentro
@@ -21,7 +25,7 @@
          inline de cada vista corren dentro del bloque content, o sea ANTES de
          los <script> del pie, asi que no pueden depender de nada que se cargue
          abajo. Version pineada a proposito, igual que bootstrap y bootstrap-icons. -->
-    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.6.2/dist/js/tom-select.complete.min.js"></script>
+    <script src="{{ url_for('static', filename='vendor/tom-select/2.6.2/js/tom-select.complete.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/searchable-select.js') }}"></script>
     <style>
       /* Encabezados de tablas con tono azul/verdoso petróleo en toda la app */
@@ -74,7 +78,9 @@
         /* Tablas en móvil: no forzar fixed (recorta columnas). */
         .table { font-size: 13px; table-layout: auto; }
         .table th, .table td { padding: .45rem .55rem; word-break: break-word; overflow-wrap: anywhere; }
-        .col-actions { width: 1%; white-space: nowrap; }
+        /* `.col-actions{width:1%; white-space:nowrap}` salio de aca: ahora es
+           la regla unica de app.css y vale en todas las bandas, no solo en
+           mobile. Ver COLUMNA DE ACCIONES. */
         /* Acciones: misma disposición y sin salto de línea */
         .col-actions .btn-group { display: inline-flex; flex-wrap: nowrap; gap: .35rem; }
         .col-actions .btn-group .btn { font-size: 13px; padding: .35rem .5rem; }
@@ -93,6 +99,54 @@
         .table-responsive{ -webkit-overflow-scrolling: touch; }
         .table-responsive > .table{ min-width: 720px; }
       }
+
+      /* ═══════════════════════════════════════════════════════════════════════
+         COLUMNAS DE NOMBRES PROPIOS (.col-nombre) — NO SE PICAN A MITAD.
+         ───────────────────────────────────────────────────────────────────────
+         SINTOMA MEDIDO en /deudas a 390x844: la columna "Cliente" renderizaba a
+         56px de ancho (43.3px utiles) y los apellidos salian partidos en 5, 6 y
+         hasta 7 lineas de dos caracteres: "Noguei/ra", "Maldo/nado",
+         "Lomba/rdi", "Ovejer/o". 28 celdas picadas entre Cliente y Empresa.
+
+         CAUSA REAL: `overflow-wrap: anywhere` de la regla
+         `.table th, .table td` de mas arriba. `anywhere` NO es equivalente a
+         `break-word`: los dos parten una palabra que no entra, pero SOLO
+         `anywhere` cambia el calculo del min-content de la caja — lo baja al
+         ancho de UN caracter. Con `table-layout: auto` el navegador reparte el
+         ancho respetando el min-content de cada columna, asi que las columnas
+         con `anywhere` pierden todo su piso y las de fecha/monto (que tienen
+         inputs de ancho fijo) se las comen enteras. Esa es la unica diferencia
+         entre las dos propiedades y es exactamente el bug.
+
+         POR QUE NO SE SACA `anywhere` GLOBALMENTE: esta ahi para que razones
+         sociales, mails y notas largas sin espacios no desborden la fila. Se
+         acota: las columnas de nombre propio se marcan con `.col-nombre` y se
+         pasan a `break-word`, que sigue partiendo la palabra si de verdad no
+         entra pero NO regala el min-content.
+
+         EL `min-width` HACE FALTA IGUAL (medido): con solo `break-word` la
+         columna de /deudas sube de 56px a 112.8px pero sigue con 20 celdas
+         picadas, porque la tabla esta dentro de un `.table-responsive` de 390px
+         y el reparto sigue apretando. Con 170px quedan 0 nombres de mas de 2
+         lineas. Es un `var()` para que una vista pueda subirlo o bajarlo sin
+         tocar esta regla.
+
+         VA FUERA DE TODA MEDIA QUERY a proposito: el picado se midio en 360,
+         390 Y 800px (en 800 aparecen ademas /status y /historial). En desktop
+         estas columnas ya son mas anchas que el minimo, asi que no cambia nada.
+
+         NO SE APLICO A /usuarios NI A /crm: medido, ahi EMPEORA. En /usuarios
+         la tabla mide 319.8px y darle 170px a la primera columna estrangula las
+         otras tres (2 celdas picadas -> 5). Un minimo global habria sido una
+         regresion; por eso la clase se pone a mano, columna por columna.       */
+      .table th.col-nombre,
+      .table td.col-nombre {
+        min-width: var(--col-nombre-min, 170px);
+        overflow-wrap: break-word;
+        word-break: normal;
+      }
+
+      {% include '_blindaje_mobile.html' %}
 
       /* ═══════════════════════════════════════════════════════════════════════
          Modales fullscreen en móvil Y TABLET.
@@ -148,6 +202,41 @@
           display: flex; flex-direction: column;
         }
         .modal-header, .modal-footer { flex: 0 0 auto; }
+
+        /* H12c — UN `<form>` ENTRE `.modal-content` Y `.modal-body` CORTA LA
+           CADENA FLEX.
+           ───────────────────────────────────────────────────────────────────
+           `.modal-body{flex:1 1 auto; min-height:0}` solo hace algo si el PADRE
+           del body es el contenedor flex. En historial.html el `.modal-content`
+           abre, despues entra un `<form>` y recien adentro viene el
+           `.modal-body`: el form es un `display:block` comun, asi que el body
+           deja de ser flex item, no recibe altura y no scrollea. El que termina
+           scrolleando es el overlay `.modal` (position:fixed), o sea el sintoma
+           (2) del bloque de arriba, y el footer con Guardar nace abajo del
+           pliegue. Medido en /historial con el modal `orderDetails` abierto:
+             360x740        footer 361.1px abajo del pliegue
+             390x844        footer 257.1px abajo del pliegue
+             740x360 land   footer 892.6px abajo del pliegue
+           En los tres, `.modal` scrolleaba y `.modal-body` no.
+
+           POR QUE SE ARREGLA POR CSS Y NO MOVIENDO EL `<form>` ADENTRO DEL
+           `.modal-body`: mover el form dejaria el `.modal-footer` FUERA de el.
+           Hoy el boton Guardar se asocia por `form="histForm{id}"`, asi que el
+           submit sobreviviria, pero `form.elements` / `new FormData(form)`
+           dejarian de ver cualquier control del footer, y meter un `<form>`
+           nuevo adentro del body rompe los selectores `.modal-body > *`. Hacer
+           que el form PARTICIPE de la cadena no toca el markup ni el DOM de
+           ningun script, y de yapa cubre a cualquier vista que caiga en el
+           mismo anidado. Se apunta solo al form que es hijo directo del
+           `.modal-content` (hoy: solo historial.html de las 9 plantillas con
+           modales), asi que ningun otro modal cambia. */
+        .modal-content > form {
+          display: flex;
+          flex-direction: column;
+          flex: 1 1 auto;
+          min-height: 0;
+        }
+
         .modal-body {
           flex: 1 1 auto;
           min-height: 0;           /* sin esto el flex item no encoge y no scrollea */
@@ -222,6 +311,42 @@
 
       /* NO BORRAR: sin min-width:0 el flex item no puede encogerse por debajo de su min-content (tablas anchas) y la .row se envuelve, mandando el main debajo del sidebar */
       main.col { min-width: 0; }
+
+      /* ══════════════════════════════════════════════════════════════════════
+         EL CONTENEDOR DE TOASTS SE COMIA LA ESQUINA DEL BOTON HAMBURGUESA
+         ──────────────────────────────────────────────────────────────────────
+         `div.toast-stack` es `position-fixed top-0 end-0 p-3` con z-index 1100,
+         o sea que SIEMPRE esta arriba de todo en el vertice superior derecho,
+         aunque no haya ningun toast: el `.toast` oculto no ocupa lugar pero los
+         `p-3` del contenedor si, y dejan una caja viva de 32 x 32px.
+
+         MEDIDO por el chequeo `obscured_controls` del harness, en LOS DOS
+         motores y en LOS TRES viewports:
+           button.navbar-toggler   rect 305.4, 6.4, 45 x 44
+           blocked_points 1 de 5   (la esquina superior derecha, punto "tr")
+           blocker                 div.position-fixed.top-0.end-0.p-3
+           center_blocked false    -> el centro se podia tocar, el borde no
+         22 rutas autenticadas x 3 viewports x 2 motores. Es el hallazgo mas
+         repetido de toda la auditoria.
+
+         ARREGLO: el patron estandar de "capa de notificaciones". El CONTENEDOR
+         deja de recibir eventos y cada `.toast` los vuelve a pedir. Asi la caja
+         de 32px es transparente al dedo mientras esta vacia, y un toast VISIBLE
+         sigue siendo clickeable (incluido su boton de cerrar, que hereda
+         `pointer-events` del toast).
+
+         POR QUE NO SE MUEVE NI SE ACHICA EL CONTENEDOR: correrlo hacia abajo lo
+         despegaria del borde (es donde el usuario espera el aviso) y sacarle el
+         padding pegaria el toast al vertice de la pantalla. El solape no es un
+         problema de POSICION, es de que una capa vacia intercepte el toque.
+
+         EL SELECTOR DEL HIJO ES `> .toast` A PROPOSITO: el helper `showToast`
+         de este mismo archivo REESCRIBE `el.className` entero en cada llamada
+         ('toast align-items-center border-0 text-bg-' + variante), asi que
+         cualquier clase propia que le pusieramos al toast se perderia en el
+         primer aviso. `.toast` es la unica que el helper garantiza.          */
+      .toast-stack { pointer-events: none; }
+      .toast-stack > .toast { pointer-events: auto; }
 
       @media (max-width: 991.98px) {
         #topMenu {
@@ -339,7 +464,7 @@
       </div>
     </div>
     <!-- Toast container global para alertas estéticas -->
-    <div class="position-fixed top-0 end-0 p-3" style="z-index: 1100">
+    <div class="toast-stack position-fixed top-0 end-0 p-3" style="z-index: 1100">
       <div id="appToast" class="toast align-items-center text-bg-primary border-0" role="status" aria-live="assertive" aria-atomic="true" data-bs-delay="2500">
         <div class="d-flex">
           <div id="appToastBody" class="toast-body">Acción realizada</div>
@@ -347,7 +472,7 @@
         </div>
       </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='vendor/bootstrap/5.3.3/js/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     <script>
       (function(){
@@ -833,43 +958,52 @@
           }
         }
 
+        /* Donde arranca el header clonado (position:fixed) y, arriba de 992px,
+           el `top` del sticky de CSS.
+           ─────────────────────────────────────────────────────────────────────
+           UNA SOLA FORMULA, SIN NOMBRES DE VISTA. Antes habia tres ramas
+           escritas a mano: una para `deudas|status` (que devolvia 0), otra para
+           `clientes|empresas` (`bottom` clampeado a 0) y un `else` generico que
+           usaba el ALTO del navbar. Ese `else` era el bug: el navbar movil NO es
+           fixed-top ni sticky-top, se va con el scroll, asi que usar su alto deja
+           el header clonado 45-56px por debajo del borde de la pantalla y por ese
+           hueco se ve pasar el contenido por detras.
+
+           Medido con la pagina scrolleada 500px, hueco entre el borde de arriba y
+           el clon, y que devuelve elementFromPoint dentro del hueco:
+             800x1000  deudas     60px  -> TD.col-money asomando
+             800x1000  status     60px  -> TD.col-money asomando
+             800x1000  historial  60px  -> TD asomando
+             740x360L  historial  59px  -> TD asomando
+             el resto             0px
+           O sea que el `else` no se comia solo a /historial y /eliminados:
+           tambien a /deudas y /status arriba de 768px, donde su rama propia
+           (acotada a `max-width:767.98px`) no llegaba.
+
+           `Math.max(0, nav.bottom)` es correcto para TODAS: vale el alto del
+           navbar mientras el navbar se ve, y baja solo a 0 cuando se fue
+           scrolleando. La rama de `deudas|status` devolvia 0 fijo, que es el
+           mismo valor que da esta formula una vez que el navbar se fue (que es
+           cuando el clon se muestra), y de yapa ahora tambien es correcta
+           durante la transicion. Se conserva la correccion de
+           `visualViewport.offsetTop`, que era lo unico propio de esa rama y
+           cubre el pinch-zoom de iOS, pero aplicada a todas las vistas.        */
         function topOffset(){
-          var top = 0;
           try {
+            var vvTop = 0;
             try {
-              var active0 = '{{ active }}';
-              var isMobile0 = false;
-              try { isMobile0 = !!(window.matchMedia && window.matchMedia('(max-width: 767.98px)').matches); }
-              catch(e_mq0){ isMobile0 = window.innerWidth < 768; }
-              if ((active0 === 'deudas' || active0 === 'status') && isMobile0) {
-                try {
-                  if (window.visualViewport && typeof window.visualViewport.offsetTop === 'number') {
-                    return Math.round(window.visualViewport.offsetTop || 0);
-                  }
-                } catch(e_vv) {}
-                return 0;
+              if (window.visualViewport && typeof window.visualViewport.offsetTop === 'number') {
+                vvTop = Math.max(0, Math.round(window.visualViewport.offsetTop || 0));
               }
-            } catch(e_a0) {}
+            } catch(e_vv) {}
+
+            var navBottom = 0;
             var nav = document.querySelector('nav.navbar.d-lg-none');
             if (nav && window.getComputedStyle(nav).display !== 'none'){
-              if (active0 === 'clientes' || active0 === 'empresas'){
-                // A — el navbar movil (mas abajo en este archivo) NO es fixed-top
-                // ni sticky-top: se va con el scroll. Usar su ALTO fija el header
-                // clonado 45-56px mas abajo del borde de la pantalla y por ese
-                // hueco se ve pasar el contenido por detras (era parte del
-                // "contenido colandose" que reporto el cliente).
-                // `bottom` clampeado a 0 da el valor correcto en los dos casos:
-                // vale el alto mientras el navbar se ve, y baja a 0 cuando se fue.
-                // Scopeado a estas 2 vistas para no tocar a /status, /deudas,
-                // /cobranzas e /historial, que salen por la rama de arriba o
-                // dependen de este mismo valor con su propio ajuste.
-                top = Math.max(0, Math.round(nav.getBoundingClientRect().bottom || 0));
-              } else {
-                top = Math.round(nav.getBoundingClientRect().height || 0);
-              }
+              navBottom = Math.max(0, Math.round(nav.getBoundingClientRect().bottom || 0));
             }
-          } catch(e) {}
-          return top;
+            return Math.max(navBottom, vvTop);
+          } catch(e) { return 0; }
         }
 
         function applyCssStickyTop(){
@@ -1149,6 +1283,49 @@
         window.addEventListener('pageshow', function(){
           setTimeout(cleanupOrphanModalState, 0);
         });
+
+        /* ── RED DE SEGURIDAD AGNOSTICA DEL ORIGEN ──────────────────────────
+           Todos los disparadores de arriba son POR EVENTO: hay que tocar el
+           velo, o el boton que abre, o el que cierra. En movil los modales son
+           fullscreen y NO hay velo visible para tocar (ver el comentario de
+           :1215): si un `.modal-backdrop` aparece SIN modal detras, la pantalla
+           queda gris y no hay ningun gesto que la limpie. La app queda
+           inusable y la unica salida es recargar.
+
+           Esto vigila el DOM en vez de vigilar un gesto: cada vez que aparece
+           un backdrop, se reevalua a los 400ms. Si para entonces hay un modal
+           de verdad a la vista, cleanupOrphanModalState() corta por
+           `hasVisibleModal()` y no toca nada.
+
+           Los 400ms salen del peor caso de bootstrap 5.3: `Modal.show()`
+           muestra el backdrop, espera su transicion (~150ms) y recien ahi le
+           pone `show` al modal. El disparador por click de :1243 ya usa 250ms;
+           400 deja margen para el reflow del modal fullscreen sin que el gris
+           llegue a ser perceptible. Mas corto arriesga repetir el bug que
+           documenta cobranzas.html:1539 (borrar el velo de un modal que estaba
+           naciendo). */
+        try {
+          if (window.MutationObserver) {
+            var bdTimer = null;
+            new MutationObserver(function(muts){
+              var vioBackdrop = false;
+              for (var i = 0; i < muts.length && !vioBackdrop; i++){
+                var added = muts[i].addedNodes || [];
+                for (var j = 0; j < added.length; j++){
+                  var n = added[j];
+                  if (n && n.nodeType === 1 && n.classList &&
+                      n.classList.contains('modal-backdrop')) { vioBackdrop = true; break; }
+                }
+              }
+              if (!vioBackdrop) return;
+              if (bdTimer) clearTimeout(bdTimer);
+              bdTimer = setTimeout(function(){
+                bdTimer = null;
+                cleanupOrphanModalState();
+              }, 400);
+            }).observe(document.body, { childList: true });
+          }
+        } catch(e_mo) {}
       })();
     </script>
     <script>

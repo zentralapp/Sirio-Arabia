@@ -42,6 +42,16 @@
 
     .date-soft .form-control { background:#fafafa; border:1px solid #e5e7eb; min-height:36px; font-size:.9rem; }
 
+    /* T1-B — `.9rem` NO alcanza en mobile. `html{font-size}` baja a 13.25px
+       (<=576px) y 12.75px (<=400px) en app.css, asi que ese `.9rem` computaba
+       11.5-11.9px REALES y iOS Safari hace zoom al enfocar cualquier input por
+       debajo de 16px. Y el `min-height:36px` de la linea de arriba tiene mas
+       especificidad que el piso tactil `.form-control{min-height:44px}` de
+       layout.html, o sea que tambien lo estaba pisando: se repone aca. */
+    @media (max-width: 991.98px) {
+      .date-soft .form-control { font-size:16px; min-height:44px; }
+    }
+
     .date-soft .form-control:focus { background:#fff; border-color:#86b7fe; box-shadow:0 0 0 .2rem rgba(13,110,253,.15); }
 
     .date-soft .btn-clear { border:1px solid #e5e7eb; background:#fff; padding:.25rem .5rem; color:#6c757d; }
@@ -54,13 +64,106 @@
 
     .flatpickr-calendar.open { z-index: 3050; }
 
+    /* ── "FILTRAR FECHAS": EL CALENDARIO TAPABA LOS BUSCADORES ────────────────
+       Medido con document.elementFromPoint() sobre el centro de cada control,
+       en WebKit y en Chrome, a 390x844 y a 360x740: con el rango abierto,
+       #cobClientQ y #cobCompanyQ devolvian `span.flatpickr-day`. El usuario
+       cree que toca el buscador y en realidad toca un dia del calendario.
+
+       Bajar el z-index no arregla nada: el calendario seguiria encima de esos
+       inputs. La unica forma de que NINGUN control quede debajo es sacarlo del
+       flujo flotante y ponerlo EN el flujo: se monta dentro de #cobCalHost
+       (appendTo) y se lo fuerza a position:static, con lo cual empuja la barra
+       de busqueda hacia abajo en vez de taparla. El comportamiento de la
+       seleccion de fechas NO cambia. */
+    .cob-cal-host { display: block; }
+
+    /* `relative` y NO `static`: las flechas .flatpickr-prev-month /
+       .flatpickr-next-month son position:absolute con top/left/right 0 y
+       necesitan que el calendario sea su bloque contenedor. Con `static` se
+       escapaban al bloque contenedor inicial y aterrizaban en la esquina
+       superior de la pagina, encima del boton del menu (medido: el centro de
+       .navbar-toggler devolvia span.flatpickr-next-month, y un toque en 8,8
+       caia en .flatpickr-prev-month en vez de cerrar el calendario).
+       `relative` sigue en flujo y no desplaza nada porque anulamos top/left. */
+    .cob-cal-host .flatpickr-calendar {
+      position: relative !important;
+      top: auto !important;
+      left: auto !important;
+      right: auto !important;
+      margin: .25rem auto .5rem;
+      box-shadow: 0 0 0 1px #e5e7eb;
+    }
+
+    .cob-cal-host .flatpickr-calendar:not(.open) { display: none !important; }
+
+    .cob-cal-host .flatpickr-calendar.open { display: block !important; }
+
+    /* la flechita apunta al input flotante; en flujo no tiene sentido */
+    .cob-cal-host .flatpickr-calendar.arrowTop::before,
+    .cob-cal-host .flatpickr-calendar.arrowTop::after,
+    .cob-cal-host .flatpickr-calendar.arrowBottom::before,
+    .cob-cal-host .flatpickr-calendar.arrowBottom::after { display: none !important; }
+
+    /* ── LO MISMO PARA LOS TRES DATEPICKERS DE FILA ──────────────────────────
+       .js-cob-entrega, .js-cob-estimado y .js-cob-cobro flotaban igual que el
+       de filtros y tapaban 6-8 controles cada uno (los dos buscadores, "Limpiar
+       filtros", Factura/Remito y el input de fecha de otra fila). Medido igual
+       en WebKit y en Chrome a 390x844 y 360x740: no es divergencia de motor.
+       Y estos SI escriben: un toque en un dia manda POST /cobranzas/<id>/update.
+
+       Aca el host NO puede ser uno global: el calendario tiene que salir al
+       lado de la fila que se esta editando. Se inserta un <tr class="cob-cal-row">
+       justo debajo de la fila, con un unico <td colspan> que aloja el host. Se
+       crea al abrir y se saca al cerrar, asi que EN REPOSO la tabla queda byte
+       por byte como estaba: mismo alto de fila, mismos anchos de columna, mismo
+       colspan. No se toca ninguna celda existente.
+
+       El host va `sticky` horizontalmente: la tabla scrollea en horizontal y la
+       columna de Vencimiento vive a la derecha, asi que sin esto el calendario
+       quedaba en el borde izquierdo de la TABLA, fuera de pantalla. */
+    .cob-row-cal-host {
+      position: sticky;
+      left: .5rem;
+      width: 307.875px;
+      max-width: calc(100vw - 1.5rem);
+    }
+
+    /* `relative` y NO `static`, por el mismo motivo que arriba: las flechas
+       .flatpickr-prev-month / .flatpickr-next-month son absolute con top/left/
+       right 0 y si el calendario no es su bloque contenedor se escapan a la
+       esquina superior de la pagina. */
+    .cob-row-cal-host .flatpickr-calendar {
+      position: relative !important;
+      top: auto !important;
+      left: auto !important;
+      right: auto !important;
+      margin: .25rem 0 .35rem;
+      box-shadow: 0 0 0 1px #e5e7eb;
+    }
+
+    .cob-row-cal-host .flatpickr-calendar:not(.open) { display: none !important; }
+
+    .cob-row-cal-host .flatpickr-calendar.open { display: block !important; }
+
+    .cob-row-cal-host .flatpickr-calendar.arrowTop::before,
+    .cob-row-cal-host .flatpickr-calendar.arrowTop::after,
+    .cob-row-cal-host .flatpickr-calendar.arrowBottom::before,
+    .cob-row-cal-host .flatpickr-calendar.arrowBottom::after { display: none !important; }
+
+    /* la fila portadora no participa del hover ni pinta bordes de datos */
+    #cobTable tbody tr.cob-cal-row,
+    #cobTable tbody tr.cob-cal-row:hover { background: #fff; --bs-table-accent-bg: transparent; }
+
+    #cobTable tbody tr.cob-cal-row > td { border-top: 0; background: #fff; }
+
     /* Colores activos */
 
     .cob-filter .btn-outline-primary:hover,
 
     .cob-filter .btn-outline-primary.active,
 
-    .cob-filter .btn-outline-primary.active:hover { background:#0d6efd; color:#fff; border-color:#0d6efd; }
+    .cob-filter .btn-outline-primary.active:hover { background:var(--teal); color:#fff; border-color:var(--teal); }
 
     .cob-filter .btn-outline-success:hover,
 
@@ -86,9 +189,8 @@
 
     .cob-filter .btn-outline-secondary.active:hover { background:#6c757d; color:#fff; border-color:#6c757d; }
 
-    /* Asegurar espacio para Acciones */
-
-    .w-actions { min-width: 56px; width: 56px; }
+    /* El ancho de la columna de Acciones lo define app.css, bloque
+       COLUMNA DE ACCIONES. Aca habia `min-width:56px; width:56px`. */
 
     .table-cobranzas { table-layout: auto; width: 100%; }
 
@@ -128,7 +230,9 @@
 
     .table-cobranzas td.col-date { width: 120px; min-width: 120px; }
 
-    .table-cobranzas td.col-date .form-control { max-width: 120px; width: 100%; }
+    /* El `width:100%` que habia aca lo pisaba el `width:120px` de 8 lineas mas
+       abajo (misma especificidad, mas tarde). Queda solo el max-width. */
+    .table-cobranzas td.col-date .form-control { max-width: 120px; }
 
 
 
@@ -177,11 +281,15 @@
       line-height: 1;
     }
 
+    /* La columna se achica a su contenido y el contenido es el select, cuyo
+       ancho lo define `--forma-select-w` en app.css (bloque FORMA DE PAGO).
+       Antes habia aca `width:110px; min-width:110px` + `.form-select{width:110px}`,
+       o sea un TERCER numero peleando con los dos `max-width` de app.css
+       (150px y 118px). Resultado medido: 87px utiles de texto contra los 154px
+       que necesita "Cheque (generico)" -> se leia "Cheque (g". Ahora hay UNO. */
     .table-cobranzas th.col-forma,
 
-    .table-cobranzas td.col-forma { width: 110px; min-width: 110px; }
-
-    .table-cobranzas td.col-forma .form-select { width: 110px; }
+    .table-cobranzas td.col-forma { width: 1%; white-space: nowrap; }
 
 
 
@@ -252,9 +360,11 @@
          .col-date (112.8px), y #cobTable en 969.3px = el baseline de H10. */
       .table-cobranzas td.col-venc .form-control { width: 80px; max-width: 80px; }
 
-      .table-cobranzas th.col-forma,
-      .table-cobranzas td.col-forma { width: 98px; min-width: 98px; }
-      .table-cobranzas td.col-forma .form-select { width: 98px; }
+      /* `.col-forma` a 98px salio de aca: apretaba el select por debajo de lo
+         que mide su opcion mas larga. La columna ahora se dimensiona sola
+         (`width:1%`) contra `--forma-select-w`. Esto suma ancho a la tabla en
+         esta banda respecto de H10, y es a proposito: el usuario acepto el
+         scroll horizontal de /deudas, no acepta texto cortado. */
 
       .table-cobranzas th.col-money,
       .table-cobranzas td.col-money { width: 106px; min-width: 106px; }
@@ -268,9 +378,12 @@
          columna titulada "Días". Que parta en dos líneas. */
       #cobTable tbody td .badge { white-space: normal; }
 
-      /* Cliente/Empresa: partir en vez de estirar la columna. */
+      /* Cliente/Empresa: partir en vez de estirar la columna.
+         `anywhere` -> `break-word` (ver layout.html, "COLUMNAS DE NOMBRES
+         PROPIOS"): `anywhere` hacia que el min-content de la celda fuera UN
+         caracter y la columna se estrangulaba hasta partir los apellidos. */
       #cobTable td.col-client,
-      #cobTable td.col-company { max-width: 130px; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+      #cobTable td.col-company { max-width: 130px; white-space: normal; overflow-wrap: break-word; word-break: normal; }
     }
 
     @media (max-width: 767.98px) {
@@ -291,22 +404,50 @@
         gap: .45rem !important;
       }
 
+      /* ── LOS FILTROS DE ESTADO: GRID, NO FLEX-WRAP ────────────────────────
+         SINTOMA MEDIDO a 390x844: "En camino | A cobrar | Parcial | Atrasado"
+         entraban en una fila y "Cobrado" quedaba SOLO en la siguiente,
+         estirado a 378.3px = 97% del viewport. A 360px: 348.3px = 96.8%.
+
+         CAUSA: `flex-wrap: wrap` + `flex: 1 1 auto` + `min-width: 86px`. Con
+         5 botones de 86px minimo en 377px utiles entran 4 por fila; el quinto
+         baja solo y `flex-grow: 1` le da TODO el espacio sobrante de su fila.
+         Es el comportamiento normal de flexbox: el reparto se hace por fila y
+         una fila de un solo item se la lleva entera. Flexbox no tiene forma de
+         alinear en columnas entre filas distintas — eso es literalmente lo que
+         diferencia a grid.
+
+         ARREGLO: grid de columnas iguales. Cada boton mide exactamente
+         1/cols, este en la fila que este. La cantidad de columnas va por
+         custom property porque los dos grupos tienen distinta cantidad de
+         botones: 5 estados -> 3 columnas, 2 tipos de comprobante -> 2.
+
+         Hay que resetear `margin-left` y `border-radius`: `.btn-group` de
+         bootstrap pega los botones con `margin-left:-1px` y les saca las
+         esquinas, y con `gap` eso queda desalineado. Ya venian separados de
+         hecho, por el wrap.
+
+         Medido despues: 5 botones en 3+2, todos de 123.2px = 31.6% del
+         viewport a 390px (31.4% a 360, 31.6% a 414). Ninguno desborda su
+         texto (scrollWidth == clientWidth). A partir de 768px no cambia nada:
+         entran los 5 en una fila como siempre.                               */
       .cob-filter-wrap .btn-group {
         width: 100%;
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(var(--cob-filtro-cols, 2), minmax(0, 1fr));
+        gap: .3rem;
         margin-left: 0 !important;
       }
 
-      .cob-filter-wrap .btn-group .btn {
-        flex: 1 1 auto;
-        min-width: 86px;
-        padding: .38rem .5rem;
-        font-size: .84rem;
-      }
+      .cob-filter-wrap .cob-filter { --cob-filtro-cols: 3; }   /* 5 estados */
+      .cob-filter-wrap .cob-type-group { --cob-filtro-cols: 2; } /* Factura / Remito */
 
-      .cob-type-group .btn {
-        min-width: 96px;
+      .cob-filter-wrap .btn-group > .btn {
+        min-width: 0;
+        margin-left: 0;
+        border-radius: .3rem;
+        padding: .38rem .35rem;
+        font-size: .84rem;
       }
 
       .cob-date-range {
@@ -345,12 +486,42 @@
         vertical-align: top;
       }
 
+      /* ── EL THEAD SE ALINEA AL MEDIO, NO ARRIBA ───────────────────────────
+         Síntoma: "Vencimiento ⇕" y "Entrega efectiva ⇕" caían más abajo que
+         "Forma de pago", "Monto" y "Días".
+
+         Causa medida a 390x844 (posición del primer glifo respecto del tope
+         del th, con un Range sobre el nodo de texto):
+           th de texto plano          -> 2.5px
+           th con `.cob-sort-link`    -> 15.1px     => 12.6px de desfase
+
+         No es un salto de línea ni un `vertical-align` distinto entre th: los
+         once th computan lo mismo. Es que `.cob-sort-link` es un
+         `inline-flex` con `min-height:40px` y `align-items:center` (piso
+         táctil de H9), así que su texto va CENTRADO en una caja de 40px;
+         puesta arriba de todo en un th de 48.9px, su texto cae 12.6px más
+         abajo que el texto suelto de los demás.
+
+         El arreglo no es un margin-top a ojo: es dejar de alinear el thead
+         arriba. Con `middle` el centro de la caja de 40px y el centro del
+         texto plano coinciden por construcción, y sigue valiendo si mañana
+         otro th se convierte en link o cambia el alto de la fila. El `top` de
+         la regla de arriba se queda donde hacía falta: en las celdas del
+         tbody, que sí tienen nombres de cliente en varias líneas. */
+      #cobTable thead th {
+        vertical-align: middle;
+      }
+
+      /* `anywhere` -> `break-word`: ver layout.html, "COLUMNAS DE NOMBRES
+         PROPIOS". Esta regla lleva ID y esta en un <style> del <body>, o sea
+         que le gana por especificidad Y por orden a `.table td.col-nombre`;
+         mientras dijera `anywhere` la clase no tenia ningun efecto aca. */
       #cobTable td.col-client,
       #cobTable td.col-company {
         max-width: 175px;
         white-space: normal;
-        overflow-wrap: anywhere;
-        word-break: break-word;
+        overflow-wrap: break-word;
+        word-break: normal;
       }
 
       #cobTable th.col-money,
@@ -369,19 +540,86 @@
         width: 104px;
       }
 
-      /* Acá el botón va DEBAJO del input, no al lado. El piso táctil de 40px
-         (H9, abajo) más los 104px del input no entran en el ancho de la celda:
-         medido con los dos en fila, `flex-shrink` le comía el input hasta 62px
-         (clientWidth 60 contra 99 que necesita la fecha) y "07/09/2026" salía
-         cortado. Apilados, el input recupera sus ~105px, el botón mantiene los
-         40x40 y la columna NO crece: td.col-venc = 120px y #cobTable = 1195.1px
-         a 576px de viewport, los mismos números que antes del botón. */
+      /* ── EL BOTÓN VUELVE AL LADO DEL INPUT ────────────────────────────────
+         Acá el botón estaba DEBAJO del input. La razón que decía el comentario
+         anterior era correcta pero ya no aplica:
+
+           "El piso táctil de 40px más los 104px del input no entran en el ancho
+            de la celda: con los dos en fila, flex-shrink le comía el input hasta
+            62px y '07/09/2026' salía cortado. Apilados, la columna NO crece:
+            td.col-venc = 120px."
+
+         O sea: apilar era el precio que se pagaba para que la COLUMNA NO
+         CRECIERA. Ese presupuesto lo levantó el usuario por escrito — la tabla
+         ya scrollea en horizontal y lo aceptó. Sin ese techo, apilar sólo
+         cuesta alto de fila: 90px de alto de celda medidos, que empujaban la
+         fila a 99px y dejaban 3 filas por pantalla en un iPhone.
+
+         Lo que hacía falta para ponerlos en fila NO era más ancho a secas: era
+         que el input DEJE DE ENCOGERSE. Tenía `flex:1 1 auto` + `min-width:0`
+         (app.css) y además `width:100%!important`, así que flexbox lo comprimía
+         hasta 62px. Con `flex:0 0 104px` la base es fija, no encoge, y el
+         `width:100%!important` queda sin efecto porque el flex-basis explícito
+         le gana al width.
+
+         La celda se dimensiona sola: `width:1%` + el min-content del flex row
+         = 104 (input) + .2rem (gap) + 40 (botón) + padding de la celda. No hay
+         número mágico que mantener sincronizado a mano. */
+      /* El `z-index` NO es decorativo: es la red que impide que el badge de la
+         columna "Días" TAPE el botón. Ver el bloque de `min-width` de acá
+         abajo, que es el arreglo de fondo. */
       #cobTable td.col-venc .cob-venc-wrap {
-        flex-direction: column;
-        align-items: flex-start;
+        flex-direction: row;
+        align-items: center;
+        position: relative;
+        z-index: 1;
+      }
+
+      /* ── EL BADGE DE "DÍAS" SE DIBUJABA ENCIMA DEL BOTÓN DE TILDE ──────────
+         Reportado desde el iPhone: del botón verde sólo se veía una franja
+         abajo con el ✓. Lo introdujimos nosotros en 5224ce5, el commit que puso
+         el botón EN FILA con el input: antes el wrap era `flex-direction:
+         column` y el botón, apilado, no compartía banda vertical con la celda
+         de al lado. No pasaba antes de ese commit.
+
+         Quién invade a quién, medido a 390x844 en Chrome:
+           botón   .right = 267.8    badge .x = 280.6
+           solape vertical = 18.7px de los 40px de alto del botón
+           hueco horizontal = 12.8px  ... que son EXACTAMENTE los dos paddings
+                                          de celda (6.4 + 6.4). Slack real: CERO.
+         O sea: el botón y el badge ya comparten banda vertical y lo único que
+         los separa es el padding. El que desborda es el BOTÓN, hacia la
+         derecha, y como el `<td>` de "Días" viene DESPUÉS en el DOM, su badge
+         (que tiene fondo opaco) se pinta encima.
+
+         Por qué en Chrome no se ve y en iOS sí: la celda era `width: 1%`, o sea
+         se dimensionaba por el min-content de un CONTENEDOR FLEX metido en un
+         `<td>`. Chrome lo computa bien (159.3px = 6.4 + 104 + 3.2 + 40 + 6.4) y
+         queda justo; WebKit sub-computa el intrínseco de un flex container
+         dentro de una celda de tabla, así que el `width:1%` gana, la celda se
+         achica y los dos items -- que tienen `flex-shrink: 0` y NO pueden
+         encoger -- se derraman a la derecha.
+
+         Arreglo: no depender del intrínseco. Se declara el presupuesto real de
+         la celda, que es la misma cuenta de arriba y sale de valores que ya
+         están escritos acá al lado:
+           6.4 (padding) + 104 (input) + 3.2 (.2rem de gap) + 40 (botón) + 6.4
+           = 160px
+         Con eso la celda mide lo mismo en todos los motores. Cuesta 0.7px de
+         scroll horizontal contra los 159.3 que medía antes.
+
+         El `z-index: 1` del wrap es el cinturón además del tirante: no se pudo
+         probar en WebKit (no hay WebKit instalado y no se corre `playwright
+         install`), así que si algún motor igual achica la celda, el botón queda
+         ARRIBA del badge y se puede tocar, en vez de desaparecer debajo. */
+      #cobTable td.col-date.col-venc {
+        width: 1%;
+        min-width: 160px;
+        white-space: nowrap;
       }
 
       #cobTable td.col-venc .form-control {
+        flex: 0 0 104px;
         width: 104px;
         max-width: 104px;
       }
@@ -468,11 +706,10 @@
         font-size: 13px;
       }
 
-      /* La columna de acciones tiene que poder alojar un target de 40px. */
-      #cobTable .w-actions {
-        min-width: 54px;
-        width: 54px;
-      }
+      /* `#cobTable .w-actions{min-width:54px; width:54px}` salio de aca. Los
+         54px entraban por 1.25px contra un boton de 40px mas 12.75 de
+         padding; con el piso tactil de 44px ya no entraban. Ahora la
+         columna se mide sola: ver COLUMNA DE ACCIONES en app.css. */
     }
 
     body[data-active="deudas"] .table-cobranzas.table-sticky thead th {
@@ -575,6 +812,9 @@
 
 </div>
 
+<!-- Contenedor EN FLUJO del calendario de "Filtrar fechas": ver .cob-cal-host -->
+<div id="cobCalHost" class="cob-cal-host"></div>
+
 <div class="cob-search-bar d-flex justify-content-end mb-2 gap-2 flex-wrap">
 
   <input type="text" id="cobClientQ" name="client_q" form="cobFilter" class="cob-search-input form-control form-control-sm" style="max-width: 240px;" placeholder="Buscar cliente" value="{{ request.args.get('client_q','') }}">
@@ -597,9 +837,9 @@
 
           <tr>
 
-            <th class="col-client js-sort-text" data-sort-type="text" style="cursor:pointer;">Cliente</th>
+            <th class="col-client col-nombre js-sort-text" data-sort-type="text" style="cursor:pointer;">Cliente</th>
 
-            <th class="col-company js-sort-text" data-sort-type="text" style="cursor:pointer;">Empresa</th>
+            <th class="col-company col-nombre js-sort-text" data-sort-type="text" style="cursor:pointer;">Empresa</th>
 
             <th class="d-none d-md-table-cell js-sort-date col-orderdate" data-sort-type="date" style="cursor:pointer;">Fecha compra</th>
 
@@ -680,13 +920,13 @@
           {% set dep_text = 'Dep ' ~ (c.order.client.apellido or '') ~ ' - ' ~ (c.order.company.nombre or '') %}
           <tr data-cliente="{{ ((c.order.client.apellido or '') ~ ' ' ~ (c.order.client.nombre or ''))|lower }}" data-empresa="{{ (c.order.company.nombre or '')|lower }}" data-dep="{{ dep_text }}">
 
-            <td class="col-client">{{ c.order.client.apellido }}
+            <td class="col-client col-nombre">{{ c.order.client.apellido }}
 
               <form id="upd{{ c.order.id }}" method="post" action="{{ url_for('main.cobranzas_update', order_id=c.order.id) }}" class="d-none"></form>
 
             </td>
 
-            <td class="col-company">{{ c.order.company.nombre }}</td>
+            <td class="col-company col-nombre">{{ c.order.company.nombre }}</td>
 
             {% set fecha_compra_ref = (c.order.logistics.fecha_compra if c.order and c.order.logistics and c.order.logistics.fecha_compra else (c.order.created_at if c.order and c.order.created_at else None)) %}
             <td class="d-none d-md-table-cell col-orderdate">{{ fecha_compra_ref|fecha }}</td>
@@ -908,7 +1148,7 @@
 
             </td>
 
-            <td class="text-end">
+            <td class="text-end w-actions">
 
               <div class="dropdown">
 
@@ -1283,6 +1523,10 @@
 
   function sortByDateColumn(colIndex, direction){
 
+    // una fila portadora de calendario es un <tr> con un solo <td colspan>:
+    // `children[colIndex]` daria undefined. Se cierra el calendario primero.
+    try { if (typeof window.cobCloseRowCalendars === 'function') window.cobCloseRowCalendars(); } catch(e) {}
+
     var rows = Array.from(tbody.querySelectorAll('tr'));
 
     rows.sort(function(a, b){
@@ -1308,6 +1552,9 @@
 
 
   function sortByTextColumn(colIndex, direction){
+
+    // idem sortByDateColumn
+    try { if (typeof window.cobCloseRowCalendars === 'function') window.cobCloseRowCalendars(); } catch(e) {}
 
     var rows = Array.from(tbody.querySelectorAll('tr'));
 
@@ -1410,50 +1657,56 @@
   }
 
   function safeHideDropdown(fromEl){
-
     try {
-
-      var dd = fromEl && fromEl.closest ? fromEl.closest('.dropdown') : null;
-
-      if (!dd) return;
-
-      var toggle = dd.querySelector('[data-bs-toggle="dropdown"]');
-
-      if (!toggle) return;
-
-      if (window.bootstrap && window.bootstrap.Dropdown){
-
-        try { window.bootstrap.Dropdown.getOrCreateInstance(toggle).hide(); } catch(e0) {}
-
+      // Con el menu portalizado a <body> (bloque E de app.js, desde da878de) el
+      // boton ya NO tiene un `.dropdown` de ancestro, asi que primero se
+      // pregunta al portal por el toggle y recien despues se cae al camino de
+      // siempre. Mismo patron que clientes.html:1294 y empresas.html:1207.
+      var toggle = (window.SirioMenuPortal && window.SirioMenuPortal.toggleDe)
+        ? window.SirioMenuPortal.toggleDe(fromEl) : null;
+      if (!toggle){
+        var dd = fromEl && fromEl.closest ? fromEl.closest('.dropdown') : null;
+        if (!dd) return;
+        toggle = dd.querySelector('[data-bs-toggle="dropdown"]');
       }
-
+      if (!toggle) return;
+      // getInstance y NO getOrCreateInstance: crear la instancia aca la crearia
+      // SIN el popperConfig de `fijarMenusDeTabla` (app.js), y
+      // `getOrCreateInstance` despues devuelve esa e IGNORA el config, o sea el
+      // menu quedaria position:absolute y lo clipearia el .table-responsive.
+      // Si no hay instancia, el menu no esta abierto y no hay nada que cerrar.
+      if (window.bootstrap && window.bootstrap.Dropdown){
+        var inst = window.bootstrap.Dropdown.getInstance(toggle);
+        if (inst) { try { inst.hide(); } catch(e0) {} }
+      }
     } catch(e) {}
-
   }
 
-  function cleanupOrphanModalState(){
+  /* NO VOLVER A PONER UN `cleanupOrphanModalState()` LOCAL ACA.
+     ─────────────────────────────────────────────────────────────────────────
+     Habia uno, y era un BUG, no una red de seguridad. Es la TERCERA copia del
+     mismo error (ya se borro de /clientes y de /empresas en 93a67ec).
 
-    try {
+     Chequeaba `document.querySelector('.modal.show')` a secas — el chequeo que
+     layout.html (~:1105) documenta como insuficiente — y lo disparaba con
+     `setTimeout(..., 0)` en el click que ABRE el modal. En bootstrap 5.3
+     `Modal.show()` muestra primero el backdrop y espera su transicion (~150ms)
+     antes de ponerle la clase `show` al modal: en el tick 0 todavia NO hay
+     ningun `.modal.show`, asi que la limpieza no hacia early-return y borraba
+     el `.modal-backdrop` recien creado, `body.modal-open` y el scroll-lock.
+     Medido: delOrder y markPaid abrian SIN velo y SIN scroll-lock en los 4
+     viewports mobile y tambien en desktop 1280.
 
-      var hasVisibleModal = !!document.querySelector('.modal.show');
-
-      if (hasVisibleModal) return;
-
-      document.querySelectorAll('.modal-backdrop').forEach(function(bd){
-
-        try { bd.remove(); } catch(e0) {}
-
-      });
-
-      document.body.classList.remove('modal-open');
-
-      document.body.style.removeProperty('overflow');
-
-      document.body.style.removeProperty('padding-right');
-
-    } catch(e) {}
-
-  }
+     La version buena vive en layout.html:1129-1147, usa `isReallyVisible()`
+     (clase + display + rect, no solo la clase), ademas fuerza el cierre de los
+     modales "pegados", y cubre MAS disparadores que la local:
+       hidden.bs.modal (:1220)          <- mismo que tenia la local
+       click en [data-bs-toggle=modal] (:1226, a los 250ms, y sin acotar a
+                                        markPaid/delOrder/editOrder)
+       toque en el velo (:1196-1197)
+       click en [data-bs-dismiss=modal] (:1205)
+       pageshow (:1232)
+     O sea: borrarla no deja ningun caso sin cubrir. */
 
 
 
@@ -1479,19 +1732,10 @@
 
       safeHideDropdown(btn);
 
-      setTimeout(cleanupOrphanModalState, 0);
-
     } catch(err) {}
 
   });
 
-
-
-  document.addEventListener('hidden.bs.modal', function(){
-
-    setTimeout(cleanupOrphanModalState, 0);
-
-  });
 
 })();
 
@@ -2517,6 +2761,60 @@
 
 (function(){
 
+  /* ── HOST EN FLUJO, UNO POR FILA (ver el bloque CSS .cob-row-cal-host) ──────
+     Cada datepicker de fila recibe como `appendTo` un div propio que vive
+     DESACONECTADO del documento. Al abrir se inserta un <tr class="cob-cal-row">
+     debajo de la fila que se esta editando y el host se cuelga ahi; al cerrar se
+     saca. En reposo la tabla no tiene ni un nodo de mas, asi que el alto de fila
+     (56px), los anchos de columna y el badge de "Dias" quedan como estaban.
+     Beneficio extra: antes flatpickr dejaba los 60 calendarios (3 x 20 filas)
+     colgando de <body>; ahora no hay ninguno suelto. */
+  function rowCalShow(el, host){
+    try {
+      var tr = el.closest ? el.closest('tr') : null;
+      if (!tr || !tr.parentNode) {
+        // fuera de una tabla (p. ej. si el input terminara dentro de un modal
+        // movido a body): igual en flujo, pegado abajo del propio input.
+        if (el.parentNode) el.parentNode.insertBefore(host, el.nextSibling);
+        host._cobHolder = null;
+        return;
+      }
+      var holder = document.createElement('tr');
+      holder.className = 'cob-cal-row';
+      var td = document.createElement('td');
+      td.colSpan = Math.max(1, tr.children.length);
+      td.appendChild(host);
+      holder.appendChild(td);
+      tr.parentNode.insertBefore(holder, tr.nextSibling);
+      host._cobHolder = holder;
+    } catch(e) {}
+  }
+
+  function rowCalHide(host){
+    try {
+      var holder = host && host._cobHolder;
+      if (holder && holder.parentNode) holder.parentNode.removeChild(holder);
+      else if (host && host.parentNode && !holder) host.parentNode.removeChild(host);
+      if (host) host._cobHolder = null;
+    } catch(e) {}
+  }
+
+  /* Cierra todos los calendarios de fila y barre filas portadoras huerfanas.
+     Lo llaman los dos ordenadores de columna (:1474 y :1500), que hacen
+     `tbody.querySelectorAll('tr')` + `children[colIndex]` y se confundirian con
+     una fila de colspan. En la practica flatpickr ya cerro por su `touchstart`
+     antes de que llegue el click del <th>, pero esto lo deja garantizado. */
+  window.cobCloseRowCalendars = function(){
+    try {
+      document.querySelectorAll('input[data-datepicker]').forEach(function(el){
+        try { if (el._flatpickr && el._flatpickr.isOpen) el._flatpickr.close(); } catch(e) {}
+      });
+      document.querySelectorAll('tr.cob-cal-row').forEach(function(r){
+        if (!r.querySelector('.flatpickr-calendar.open') && r.parentNode) r.parentNode.removeChild(r);
+      });
+    } catch(e) {}
+  };
+
   function mountFlatpickr(){
 
     var nodes = document.querySelectorAll('input[data-datepicker]');
@@ -2527,9 +2825,17 @@
 
       try { if (el && el._flatpickr) return; } catch(e) {}
 
-      var isRowPago = el.classList && el.classList.contains('js-cob-estimado');
+      var rowHost = document.createElement('div');
 
-      flatpickr(el, {
+      rowHost.className = 'cob-row-cal-host';
+
+      var fpInst = flatpickr(el, {
+
+        // EN FLUJO, debajo de la propia fila: asi el calendario no le roba el
+        // toque a ningun control. Ver rowCalShow / rowCalHide.
+        appendTo: rowHost,
+
+        onOpen: function(){ rowCalShow(el, rowHost); },
 
         altInput: true,
 
@@ -2541,23 +2847,109 @@
 
         disableMobile: true,
 
-        onChange: function(){
+        /* ── ACA NO VA UN onChange QUE SUBMITEE: SALIAN DOS POST POR TOQUE ────
+           Cuando flatpickr termina de correr los hooks de `onChange` dispara
+           ADEMAS eventos nativos sobre el input original (flatpickr.min.js,
+           triggerEvent):
 
-          if (isRowPago){
+             "onChange" === e && (w.input.dispatchEvent(we("change")),
+                                  w.input.dispatchEvent(we("input")))
 
-            var f = el.form || el.closest('form');
+           Ese `change` nativo YA lo escucha el bloque de mas arriba: :2339 para
+           .js-cob-estimado y :2353 para .js-cob-entrega / .js-cob-cobro. Los dos
+           llaman a syncAndSubmit. Un hook `onChange` que encima submiteara por
+           su cuenta le daba a `pago_estimado` DOS submits identicos por un solo
+           toque, mientras entrega y cobro tenian uno. Eso es una escritura de
+           mas en /cobranzas/<id>/update por cada fecha que se toca.
 
-            // Reutilizar syncAndSubmit si existe
+           Medido en /deudas, tap real (touchscreen.tap) sobre un dia del
+           calendario, contando eventos `submit`, en WebKit y Chrome a 390x844
+           y 360x740:
 
-            try{ if (typeof window.syncAndSubmit === 'function') { window.syncAndSubmit(f); return; } }catch(e){}
+             js-cob-entrega   1 -> 1
+             js-cob-estimado  2 -> 1
+             js-cob-cobro     1 -> 1
 
-            if (f) { (f.requestSubmit ? f.requestSubmit() : f.submit()); }
+           El guardado NO cambia: sigue saliendo al seleccionar la fecha, por la
+           misma via de `change` nativo que ya usaban los otros dos campos, y con
+           el mismo payload (pago_estimado en Y-m-d). */
 
-          }
+        /* ── EL CALENDARIO NO REABRE EN iOS: HAY QUE BLUREAR AL CERRAR ────────
+           flatpickr elige el evento de "click afuera" segun el dispositivo
+           (flatpickr.min.js, bindEvents):
+
+             void 0 !== window.ontouchstart
+               ? P(window.document, "touchstart", X)
+               : P(window.document, "mousedown",  X);
+
+           y la REAPERTURA la ata solo a dos eventos del input:
+
+             clickOpens === true && (P(w._input,"focus",w.open), P(w._input,"click",w.open))
+
+           En desktop, tocar afuera dispara un mousedown que ADEMAS blurea el
+           input: medido en Chrome 390x844 con touch, despues del toque afuera
+           `document.activeElement` vuelve a ser BODY, y por eso el siguiente
+           toque sobre el mismo input vuelve a disparar `focus` y reabre.
+
+           En iOS Safari NO: tocar una zona no interactiva cierra el calendario
+           (el `touchstart` de arriba) pero NO le saca el foco al campo de texto
+           — el teclado QWERTY se queda arriba, que es exactamente lo que se ve
+           en la captura del cliente. Con el input ya enfocado, el proximo toque
+           no dispara `focus` (ya lo tiene) y iOS tampoco entrega un `click`
+           confiable sobre un input enfocado: lo consume para posicionar el
+           cursor. Resultado: mueren las DOS vias de reapertura y el calendario
+           no vuelve a abrir nunca. El respaldo por `click` de layout.html
+           (bindFlatpickrAltInputs) cae por el mismo motivo.
+
+           Blureando al cerrar dejamos el mismo estado que en desktop: se baja
+           el teclado y el proximo toque vuelve a disparar `focus`.
+
+           No dispara submit: el handler de `blur` de layout.html llama a
+           normalizeAltInput -> pushDateToFlatpickr, que corta por `sameDay` si
+           la fecha no cambio. Solo sincroniza si el usuario tipeo algo, que es
+           lo que iba a pasar igual al salir del campo. */
+        onClose: function(selectedDates, dateStr, inst){
+
+          rowCalHide(rowHost);
+
+          try {
+
+            var alt = inst && inst.altInput;
+
+            if (alt && document.activeElement === alt) alt.blur();
+
+          } catch(e) {}
 
         }
 
       });
+
+      /* Respaldo tactil de la reapertura. layout.html ya tiene uno por `click`,
+         pero en iOS el click sobre un input enfocado no llega (ver arriba).
+         `touchend` si llega siempre. Va despues del `touchstart` de flatpickr,
+         asi que si habia OTRO calendario abierto ese ya se cerro y este abre el
+         suyo. Si el propio ya esta abierto no hace nada. */
+      try {
+
+        var altI = fpInst && fpInst.altInput;
+
+        if (altI && !altI._cobTouchOpen) {
+
+          altI._cobTouchOpen = true;
+
+          altI.addEventListener('touchend', function(){
+
+            setTimeout(function(){
+
+              try { if (fpInst && !fpInst.isOpen) fpInst.open(); } catch(e2) {}
+
+            }, 0);
+
+          }, { passive: true });
+
+        }
+
+      } catch(e) {}
 
     });
 
@@ -2567,15 +2959,23 @@
 
     var rangeEl = document.getElementById('cobDateRange');
 
-    if (rangeEl){
+    // el guard evita dos calendarios apilados dentro de #cobCalHost si
+    // mountFlatpickr se vuelve a ejecutar (cobFetchAndReplace, :2113)
+    if (rangeEl && !rangeEl._flatpickr){
 
       var fromH = document.getElementById('cobFrom');
 
       var toH = document.getElementById('cobTo');
 
+      var calHost = document.getElementById('cobCalHost');
+
       window.__cobRangePicker = flatpickr(rangeEl, {
 
         mode: 'range',
+
+        // EN FLUJO, no flotando: asi no puede taparle el toque a #cobClientQ
+        // ni a #cobCompanyQ. Ver el bloque CSS .cob-cal-host.
+        appendTo: calHost || undefined,
 
         altInput: true,
 
@@ -2645,7 +3045,7 @@
 
     var s = document.createElement('script');
 
-    s.src = 'https://cdn.jsdelivr.net/npm/flatpickr';
+    s.src = '{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.js') }}';
 
     s.onload = mountFlatpickr;
 
@@ -2655,7 +3055,7 @@
 
     l.rel = 'stylesheet';
 
-    l.crossOrigin = 'anonymous'; l.href = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css';
+    l.crossOrigin = 'anonymous'; l.href = '{{ url_for('static', filename='vendor/flatpickr/4.6.13/flatpickr.min.css') }}';
 
     document.head.appendChild(l);
 

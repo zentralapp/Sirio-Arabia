@@ -15,8 +15,8 @@
           <tr>
             <th class="js-hist-sort" data-sort-key="pedido" style="cursor:pointer; user-select:none;">Fecha pedido</th>
             <th class="js-hist-sort" data-sort-key="compra" style="cursor:pointer; user-select:none;">Fecha de compra</th>
-            <th class="js-hist-sort" data-sort-key="cliente" style="cursor:pointer; user-select:none;">Cliente</th>
-            <th class="js-hist-sort" data-sort-key="empresa" style="cursor:pointer; user-select:none;">Empresa</th>
+            <th class="js-hist-sort col-nombre" data-sort-key="cliente" style="cursor:pointer; user-select:none;">Cliente</th>
+            <th class="js-hist-sort col-nombre" data-sort-key="empresa" style="cursor:pointer; user-select:none;">Empresa</th>
             <th>Tipo</th>
             <th class="text-end">Monto</th>
             <th class="js-hist-sort" data-sort-key="entrega" style="cursor:pointer; user-select:none;">Fecha entrega</th>
@@ -30,8 +30,8 @@
             <td>{{ o.created_at|fecha('-') }}</td>
             {% set fecha_compra = (o.logistics.fecha_compra if o.logistics and o.logistics.fecha_compra else o.created_at) %}
             <td>{{ fecha_compra|fecha('-') }}</td>
-            <td>{{ (o.client.apellido ~ ' ' ~ o.client.nombre) if o.client else '-' }}</td>
-            <td>{{ o.company.nombre if o.company else '-' }}</td>
+            <td class="col-nombre">{{ (o.client.apellido ~ ' ' ~ o.client.nombre) if o.client else '-' }}</td>
+            <td class="col-nombre">{{ o.company.nombre if o.company else '-' }}</td>
             <td>{{ o.tipo_comprobante or '-' }}</td>
             <td class="text-end">
               {% set amt = (o.precio_final if o.precio_final is not none else (o.logistics.precio if o.logistics and o.logistics.precio is not none else (o.collection.monto if o.collection and o.collection.monto is not none else none))) %}

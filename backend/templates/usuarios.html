@@ -21,7 +21,7 @@
             <th>Usuario</th>
             <th>Admin</th>
             <th>Estado</th>
-            <th class="text-end">Acción</th>
+            <th class="text-end col-actions">Acción</th>
           </tr>
         </thead>
         <tbody>
@@ -37,7 +37,7 @@
                 <span class="badge text-bg-secondary">Normal</span>
               {% endif %}
             </td>
-            <td class="text-end">
+            <td class="text-end col-actions">
               <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#perms{{ u.id }}">Permisos</button>
               {% if impersonate_user_id and impersonate_user_id == u.id %}
                 <form method="post" action="{{ url_for('main.usuarios_salir_soporte') }}" class="d-inline">

@@ -84,7 +84,9 @@
     .db-table thead th{ font-size:12px; }
     .db-table tbody td{ font-size:12px; }
     .db-link{ font-size:12px; }
-    .db-range .form-control{ font-size:12px; }
+    /* T1-B: `.db-range .form-control` YA NO baja a 12px. Es un `<input type=date>`
+       real y por debajo de 16px iOS Safari hace zoom al enfocarlo. Su tipografía
+       la fija ahora el bloque anti-zoom de más abajo. */
     .db-filter-bar .btn-sm{ font-size:12px; }
     .db-kpi-title{ font-size:11px; }
     .db-filter-label{ font-size:11px; }
@@ -102,6 +104,85 @@
     .db-range .form-control{ min-height:40px; }
     .db-filter-bar .form-select, .db-filter-bar .form-control{ min-height:40px; }
     .db-link{ display:inline-block; min-height:40px; padding-top:.5rem; padding-bottom:.5rem; }
+
+    /* ── EL CODIGO DE PEDIDO SE APILABA EN 3 Y 4 RENGLONES ──────────────────
+       "PED-000152" es un codigo, no una frase: partirlo no ayuda a leerlo, y
+       el `overflow-wrap:anywhere` que layout.html le pone a `.table td` lo
+       dejaba cortar en cualquier letra. Medido, 6 links por pagina:
+
+                     Chrome              WebKit
+         360x740     44.1 x 46.3  3 lin  39.9 x 46.3-63.1  3 y 4 lineas
+         390x844     48.1 x 46.3  3 lin  44.6 x 46.3       3 lineas
+       O sea: se veia mal en LOS DOS motores y TAMBIEN a 390px, no solo en
+       Safari a 360. Ademas en WebKit a 360 el ancho caia a 39.9px, por debajo
+       del piso tactil de 44: son los 6 hallazgos `small_touch_targets` que
+       aparecian SOLO en WebKit en toda la auditoria de 23 rutas.
+
+       `white-space:nowrap` y no `min-width:44px`: probado el min-width, deja
+       el target en 44.0px justo justo y el codigo SIGUE en 3 renglones, o sea
+       tapa la metrica sin arreglar lo que se ve. Con nowrap el min-content de
+       la celda pasa a ser el codigo entero, que es el ancho que la columna
+       siempre necesito, y los dos motores convergen:
+         360 y 390   69 - 72.4 x 40px, UNA linea, en Chrome y en WebKit
+         <body> @360  WebKit 2060.9 -> 2001.2, identico al de Chrome
+         800x1000     sin cambios (ahi ya entraba en una linea)
+       La tabla vive en un `.table-responsive`, asi que el ancho extra se
+       resuelve con scroll del contenedor: el `h_scroll` del body sigue en 0
+       en los tres viewports y en los dos motores.
+
+       EL SELECTOR LLEVA `td` ADELANTE A PROPOSITO: `.db-link` tambien son los
+       dos pies de panel ("Ver todos los pedidos del día", "Ver todas las
+       empresas"), que son FRASES de 144-175px y con nowrap se saldrian de la
+       tarjeta. Medido: con esta regla esos dos quedan intactos.
+
+       EL `min-height:44px` VA JUNTO Y NO ES DECORATIVO. Al pasar de 3 lineas a
+       1, el alto del link cae del 46.3px que le daban los tres renglones al
+       `min-height:40px` de la regla de arriba, y 40 < 44: el link salia de la
+       lista de targets chicos por ANCHO y volvia a entrar por ALTO. Medido con
+       el JS del harness sobre `/`, con nowrap SOLO:
+         small_touch_targets  13 por viewport, 8 de ellos `.db-link`
+       Con nowrap + min-height:44px:
+         360x740 y 390x844    13 -> 7, y los `.db-link` 8 -> 2
+       en LOS DOS motores. Los 2 que quedan son los dos pies de panel, que
+       siguen en los 40px que esta vista eligio para toda su barra de filtros
+       (chips, botones y controles): no se tocan en esta tanda.
+       El selector (0,2,1) le gana al `.db-link{min-height:40px}` (0,1,0) de
+       mas arriba sin `!important`. Verificado: con un selector pelado la regla
+       NO tenia efecto.                                                     */
+    .db-table td .db-link{ white-space:nowrap; min-height:44px; }
+  }
+
+  /* ── T1-B: ANTI-ZOOM DE iOS EN LA BARRA DE FILTROS ─────────────────────────
+     iOS Safari hace zoom automático al enfocar un input con font-size computado
+     < 16px, y al volver deja la página descuadrada. Los controles del filtro
+     eran los peores de toda la app: `.db-filter-bar .form-select-sm{.78rem}` y
+     `.db-range .form-control{.77rem}` sobre un `html{font-size:12.75px}`
+     computaban 9.95px y 9.82px REALES a 390px (medido).
+     En px y no en rem: el piso NO debe volver a escalar con el html{font-size}.
+     El techo es 991.98px y no 767.98px porque a 800px esos mismos rem seguían
+     dando 12.3-12.5px, o sea también por debajo del umbral.
+     `height:auto` es obligatorio: las reglas de arriba clavan `height:26px` y
+     `height:30px`, y 16px de texto no entra ahí. El alto táctil lo pone el
+     min-height. El `.btn-sm` NO se toca: un botón no recibe foco de teclado y
+     por lo tanto no dispara el zoom.
+     El `input` de Tom Select va aparte porque lo genera el JS y no lleva
+     `.form-control`: hereda el .875rem propio del componente (14px a 800px). */
+  @media (max-width: 991.98px){
+    .db-filter-bar .form-control,
+    .db-filter-bar .form-select,
+    .db-range .form-control,
+    .db-filter-bar .ts-control,
+    .db-filter-bar .ts-control > input{
+      font-size:16px; height:auto; min-height:44px;
+    }
+    /* Subir los dos `<input type=date>` del período a 16px los ensancha: su
+       min-content nativo pasa a 164px cada uno y `.db-range` pedía 346px
+       dentro de 327px disponibles a 360px de viewport => 3px de scroll
+       horizontal del BODY (medido). `min-width:0` le saca el piso de
+       min-content al flex item para que pueda encoger, y `flex-wrap` es la red
+       de seguridad para que en el peor caso apilen en vez de desbordar. */
+    .db-range{ padding:.2rem .35rem; flex-wrap:wrap; }
+    .db-range .form-control{ flex:1 1 130px; min-width:0; }
   }
 </style>
 
@@ -288,7 +369,7 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="{{ url_for('static', filename='vendor/chartjs/4.5.1/chart.umd.min.js') }}"></script>
 <script id="dashboardDataJson" type="application/json">{{ {
   "filters": f,
   "orders_chart": orders_chart,

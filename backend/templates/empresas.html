@@ -57,6 +57,40 @@
       -webkit-overflow-scrolling: touch;
     }
     #empresas-table { min-width: 640px; }
+    /* ── EL AIRE VERTICAL DE LAS FILAS ─────────────────────────────────────
+       SINTOMA MEDIDO a 390x844: el texto pegado al techo de la celda y ~30px
+       de vacio debajo, en TODAS las filas.
+
+       DIAGNOSTICO (scratchpad/diag_aire.py, celda por celda):
+         alto de fila = 52.9px
+         padding      = 4.46 + 4.46 = 8.9px
+         quien manda  = la celda "Alertas", con un <button> de 44px de alto
+         texto real   = 15.4px (una linea, line-height 1.28)
+         => 52.9 - 8.9 - 15.4 = 28.6px de aire en las celdas de texto.
+
+       NO ERA EL PADDING. `.table-relaxed th,td{padding:.75rem 1.35rem}` de
+       arriba esta pisado en mobile: el padding computado es 4.46px, o sea casi
+       nada. Y la fila NO se puede achicar: 44 + 8.9 = 52.9 es exactamente el
+       piso tactil de 44px del boton de alertas mas el padding. Apretarla mas
+       habria sido romper ese piso.
+
+       LA CAUSA ES EL `vertical-align: top` DE ESTE MISMO BLOQUE. La tabla pide
+       `align-middle` en su propio markup y app.css dice
+       `.table td,.table th{vertical-align:middle}`, pero este selector con ID
+       le gana a los dos. Con la altura de la fila fijada por el boton de 44px,
+       `top` amontona TODO el sobrante abajo del texto en vez de repartirlo. El
+       vacio es el mismo; lo que cambia es que asi se lee como un error de
+       maquetado en vez de como padding.
+
+       POR QUE NO SE PONE `middle` A SECAS: el `top` tenia una razon. La primera
+       celda contiene el panel de alertas (.js-alertas-list), que el JS
+       despliega sacandole `d-none`. Desplegado, la fila pasa de 52.9px a varios
+       cientos, y ahi centrar "Marcelo" o "Buenos Aires" en el medio de ese
+       bloque es peor que pegarlo arriba. Por eso se centra SOLO con el panel
+       colapsado, que es el 100% del tiempo hasta que alguien toca el boton.
+       `:has()` es Safari 15.4+ / Chrome 105+ y ya se usa en
+       _blindaje_mobile.html; si un navegador viejo lo ignora, la regla se
+       descarta y volvemos al `top` de siempre.                                */
     #empresas-table th,
     #empresas-table td {
       white-space: normal;
@@ -64,6 +98,27 @@
       word-break: break-word;
       vertical-align: top;
       line-height: 1.28;
+    }
+
+    /* La columna de acciones queda FUERA del `white-space:normal` +
+       `overflow-wrap:anywhere` de arriba. Esa regla lleva ID (1,0,1) y le gana
+       al criterio unico de app.css (`.table td.col-actions`, (0,2,1)), asi que
+       hay que repetir la excepcion aca con ID. Sin esto el min-content de la
+       celda es UN caracter y el `width:1%` la estrangula en vez de achicarla a
+       su contenido: es exactamente lo que le paso a /usuarios, que colapso a
+       41px con los botones partidos a una letra por renglon y la fila en 233px
+       de alto. Hoy no se nota porque la celda tiene un solo dropdown, que no
+       tiene donde partirse; en cuanto entre un segundo boton, si. */
+    #empresas-table th.col-actions,
+    #empresas-table td.col-actions {
+      white-space: nowrap;
+      overflow-wrap: normal;
+      word-break: normal;
+    }
+
+
+    #empresas-table tbody tr:not(:has(.js-alertas-list:not(.d-none))) > td {
+      vertical-align: middle;
     }
     #empresas-table td:nth-child(1),
     #empresas-table td:nth-child(2) {
@@ -129,8 +184,10 @@
         .table-tight td { word-break: break-word; }
         /* Forzar ancho mínimo de tabla para permitir scroll horizontal en móviles */
         .table-tight { min-width: 720px; }
-        /* Evitar wraps en columna Acciones */
-        .table-tight th.col-actions, .table-tight td.col-actions { white-space: nowrap; min-width: 140px; }
+        /* `min-width:140px` salio de aca: reservaba 140px para un boton de
+           44px (57px con padding), o sea 90px muertos robados a las columnas
+           de nombres en una pantalla de 390px. El `nowrap` tambien, porque
+           ya lo pone la regla unica. Ver COLUMNA DE ACCIONES en app.css. */
         /* Evitar wraps dentro del grupo de botones */
         .btn-group.flex-nowrap .btn { white-space: nowrap; }
       </style>
@@ -295,7 +352,14 @@
                 <ul class="dropdown-menu dropdown-menu-end">
                   <li><a class="dropdown-item" href="{{ url_for('main.empresas_edit_view', company_id=e.id) }}">Ver legajo</a></li>
                   <li><button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#links{{ e.id }}">Clientes</button></li>
-                  <li><button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#archiveCompany{{ e.id }}">Archivar</button></li>
+                  {# Un solo #archiveCompanyModal para toda la pagina. La URL de
+                     destino viaja RENDERIZADA POR JINJA en data-archive-action:
+                     no se arma en el cliente, asi que no hay forma de que apunte
+                     a otra empresa. El JS del pie la copia al form al abrir. #}
+                  <li><button class="dropdown-item" type="button"
+                              data-bs-toggle="modal" data-bs-target="#archiveCompanyModal"
+                              data-archive-action="{{ url_for('main.empresas_archive', company_id=e.id) }}"
+                              data-company-name="{{ e.nombre }}">Archivar</button></li>
                   <li><hr class="dropdown-divider"></li>
                   <li>
                     <form method="post" action="{{ url_for('main.empresas_delete', company_id=e.id) }}" class="js-confirm-remove mb-0" data-confirm="¿Eliminar empresa? Esta acción no se puede deshacer.">
@@ -303,27 +367,6 @@
                     </form>
                   </li>
                 </ul>
-              </div>
-              <div class="modal fade archive-company-modal" id="archiveCompany{{ e.id }}" tabindex="-1" aria-hidden="true">
-                <div class="modal-dialog modal-dialog-centered">
-                  <div class="modal-content">
-                    <div class="modal-header">
-                      <h5 class="modal-title">Archivar empresa</h5>
-                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                    </div>
-                    <div class="modal-body">
-                      <p class="mb-2">¿Querés archivar esta empresa?</p>
-                      <p class="text-muted mb-0">La empresa dejará de mostrarse en el listado principal, pero podrás recuperarla cuando quieras.</p>
-                    </div>
-                    <div class="modal-footer">
-                      <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-                      <form method="post" action="{{ url_for('main.empresas_archive', company_id=e.id) }}" class="mb-0">
-                        <input type="hidden" name="return_to" value="{{ request.full_path|default('/empresas') }}">
-                        <button class="btn btn-primary" type="submit">Archivar</button>
-                      </form>
-                    </div>
-                  </div>
-                </div>
               </div>
               <div class="modal fade" id="links{{ e.id }}" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog modal-lg">
@@ -468,6 +511,75 @@
     <div class="mobile-cards"></div>
   </div>
 </div>
+{# UN SOLO modal de "Archivar" para toda la pagina, en vez de uno por fila.
+   Antes se renderizaba un `#archiveCompany{id}` dentro de cada `<td>`: con 80
+   empresas sin paginar eran 80 nodos de modal metidos adentro de la tabla, que
+   es de donde salio toda la familia de bugs (ids duplicados en cada repintado
+   AJAX, modales que hay que mover a <body> con JS, backdrops huerfanos).
+   El `action` NO se arma en el cliente: viaja renderizado por Jinja en el
+   `data-archive-action` del boton y se copia tal cual. #}
+<div class="modal fade archive-company-modal" id="archiveCompanyModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Archivar empresa</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">¿Querés archivar <strong id="archiveCompanyName">esta empresa</strong>?</p>
+        <p class="text-muted mb-0">La empresa dejará de mostrarse en el listado principal, pero podrás recuperarla cuando quieras.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        {# Sin `action` a proposito: hasta que no se sepa QUE empresa se archiva,
+           este form no puede apuntar a ningun lado. #}
+        <form method="post" id="archiveCompanyForm" class="mb-0">
+          <input type="hidden" name="return_to" value="{{ request.full_path|default('/empresas') }}">
+          <button class="btn btn-primary" type="submit" id="archiveCompanySubmit" disabled>Archivar</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  /* Puebla el modal unico de "Archivar" con los datos del boton que lo abrio.
+     `relatedTarget` es el elemento que disparo el modal, lo pasa bootstrap.
+
+     REGLA DE SEGURIDAD: si no se puede resolver a QUE empresa apunta, el form
+     se deja SIN `action` y el boton DESHABILITADO. Un `action` viejo colgado
+     de una apertura anterior archivaria la empresa equivocada, que es el unico
+     error grave posible en este refactor. Por eso se limpia tambien al cerrar. */
+  var modalEl = document.getElementById('archiveCompanyModal');
+  if (!modalEl) return;
+  var form   = document.getElementById('archiveCompanyForm');
+  var submit = document.getElementById('archiveCompanySubmit');
+  var nombre = document.getElementById('archiveCompanyName');
+
+  function limpiar(){
+    try {
+      form.removeAttribute('action');
+      submit.disabled = true;
+      nombre.textContent = 'esta empresa';
+    } catch(e) {}
+  }
+
+  modalEl.addEventListener('show.bs.modal', function(ev){
+    limpiar();
+    try {
+      var boton = ev.relatedTarget;
+      var accion = boton && boton.getAttribute ? boton.getAttribute('data-archive-action') : null;
+      if (!accion) return;                       // sin destino: queda deshabilitado
+      form.setAttribute('action', accion);
+      submit.disabled = false;
+      var n = boton.getAttribute('data-company-name');
+      if (n) nombre.textContent = n;
+    } catch(e) { limpiar(); }
+  });
+
+  modalEl.addEventListener('hidden.bs.modal', limpiar);
+})();
+</script>
 <div class="modal fade" id="archivedCompaniesModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
