@@ -697,6 +697,9 @@
       };
     }
     function saveDraft(){
+      // En modo edición no autoguardar: el server sólo borra el borrador al crear
+      // (sin order_id), así que quedaría un "Pendiente" huérfano para siempre.
+      if (document.querySelector('input[name="order_id"]')) return;
       try{
         const d = collectDraft();
         if (!d) return;
@@ -1048,7 +1051,47 @@
         const eid = empresaSel?.value || '';
         if (cid && eid) localStorage.removeItem(draftKey(cid, eid));
       }catch(err){}
+
+      // Pedido nuevo: copiar la Vista previa al portapapeles antes de navegar
+      if (!e.defaultPrevented && !document.querySelector('input[name="order_id"]')) {
+        copyPreviewOnSubmit();
+      }
     });
+
+    // Copia SÍNCRONA (execCommand) dentro del gesto del submit: la página redirige
+    // enseguida y un navigator.clipboard.writeText async puede quedar cortado.
+    // Nunca debe frenar el envío: cualquier error se ignora.
+    function copyPreviewOnSubmit(){
+      // Mismo texto que "Copiar borrador": respeta ediciones manuales de la vista previa (con nota)
+      return copiarTextoSync((previewTa && previewTa.value) || buildPreviewText());
+    }
+
+    // Copia síncrona de un texto cualquiera (execCommand + respaldo async). Devuelve si execCommand copió.
+    function copiarTextoSync(txt){
+      try{
+        if (!txt) return false;
+        const prevFocus = document.activeElement;
+        const ta = document.createElement('textarea');
+        ta.value = txt;
+        // Fuera de pantalla; 16px evita el zoom de iOS al enfocar
+        ta.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0;font-size:16px;';
+        document.body.appendChild(ta);
+        let ok = false;
+        try{
+          try { ta.focus({ preventScroll: true }); } catch(_) {}
+          ta.select();
+          ta.setSelectionRange(0, txt.length);
+          ok = document.execCommand('copy');
+        }catch(_){ ok = false; }
+        ta.remove();
+        try { if (prevFocus && typeof prevFocus.focus === 'function') prevFocus.focus({ preventScroll: true }); } catch(_) {}
+        // Respaldo async por si execCommand no está soportado (puede no llegar antes de navegar)
+        if (!ok && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(txt).catch(function(){});
+        }
+        return ok;
+      }catch(_){ return false; }
+    }
 
     function buildPreviewText(){
       const empresaOpt = empresaSel.options[empresaSel.selectedIndex];
