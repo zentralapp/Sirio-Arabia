@@ -17,6 +17,21 @@
     white-space: normal;
     overflow-wrap: anywhere;
   }
+  /* Encabezado colapsable de "Pedidos anteriores": piso táctil de 44px */
+  .prev-orders-toggle {
+    min-height: 44px;
+    font-size: inherit;
+    font-weight: inherit;
+    color: inherit;
+    border: 0;
+  }
+  .prev-orders-chevron {
+    color: #64748b;
+    transition: transform .18s ease;
+  }
+  .prev-orders-toggle[aria-expanded="true"] .prev-orders-chevron {
+    transform: rotate(90deg);
+  }
 </style>
 <div class="d-flex flex-column flex-sm-row justify-content-between align-items-stretch align-items-sm-center gap-2 mb-4">
   <h1 class="h4 mb-0">{% if edit_order %}Editando pedido{% else %}Registro de Venta / Pedido{% endif %}</h1>
@@ -152,11 +167,19 @@
         <input type="file" name="attachments" id="pedido_attachments" class="form-control" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/csv">
       </div>
       <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center">
-          <h6 class="mb-2">Pedidos anteriores del cliente en esta empresa</h6>
-          <button class="btn btn-sm btn-outline-secondary" type="button" id="refresh-prev">Actualizar</button>
+        <!-- Colapsado por defecto en cada carga; se abre con click en el encabezado -->
+        <h6 class="mb-2">
+          <button class="btn prev-orders-toggle w-100 d-flex align-items-center justify-content-between gap-2 px-0 text-start" type="button" data-bs-toggle="collapse" data-bs-target="#prevOrdersCollapse" aria-expanded="false" aria-controls="prevOrdersCollapse">
+            <span>Pedidos anteriores del cliente en esta empresa <span id="prev-orders-count" class="text-muted fw-normal"></span></span>
+            <i class="bi bi-chevron-right prev-orders-chevron" aria-hidden="true"></i>
+          </button>
+        </h6>
+        <div class="collapse" id="prevOrdersCollapse">
+          <div class="d-flex justify-content-end mb-2">
+            <button class="btn btn-sm btn-outline-secondary" type="button" id="refresh-prev">Actualizar</button>
+          </div>
+          <div id="prev-orders" class="list-group small"></div>
         </div>
-        <div id="prev-orders" class="list-group small"></div>
       </div>
       <div class="col-12">
         <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
@@ -233,6 +256,7 @@
     const alertBox = document.getElementById('pedido-alert');
     const prevWrap = document.getElementById('prev-orders');
     const refreshPrevBtn = document.getElementById('refresh-prev');
+    const prevCountEl = document.getElementById('prev-orders-count');
     const copyPrevBtn = document.getElementById('copy-preview-btn');
     const previewTa = document.getElementById('pedido_preview');
     const draftsOpenBtn = document.getElementById('pending-open-btn');
@@ -879,15 +903,26 @@
 
     function updateEnabledBySelection(){ return; }
 
+    // Token de secuencia: el change del cliente y applyEditOrder / "Cargar" borrador
+    // disparan llamadas solapadas. Sólo la última puede poblar el select; las
+    // anteriores resuelven igual pero sin tocar nada (si no, duplican opciones).
+    let companiesSeq = 0;
+    // Idem para loadPrevOrders (declarado acá arriba para que exista antes de applyEditOrder)
+    let prevOrdersSeq = 0;
     async function loadCompanies(clientId){
       if(!empresaSel) return;
+      const seq = ++companiesSeq;
+      // Reset inmediato: que no se pueda elegir una empresa del cliente anterior mientras carga
       empresaSel.innerHTML = '<option value="">Empresa...</option>';
       if (mailInput) mailInput.value = '';
       if(!clientId) return;
       try{
         const res = await fetch(`/api/clientes/${clientId}/empresas`);
         const items = await res.json();
+        if (seq !== companiesSeq) return;
         if (!Array.isArray(items)) return;
+        // Limpiar y poblar en la misma pasada síncrona (un solo rebuild de Tom Select)
+        empresaSel.innerHTML = '<option value="">Empresa...</option>';
         for(const e of items){
           const opt = document.createElement('option');
           opt.value = e.id;
@@ -1002,8 +1037,24 @@
       } catch(e) {}
     });
 
+    // Evitar doble envío (doble click / Enter) que crea pedidos duplicados
+    const submitBtn = form?.querySelector('button[type="submit"]');
+    let submitting = false;
+    function setSubmitting(on){
+      submitting = on;
+      if (!submitBtn) return;
+      submitBtn.disabled = on;
+      if (on) submitBtn.setAttribute('aria-busy', 'true');
+      else submitBtn.removeAttribute('aria-busy');
+    }
+    // bfcache: al volver con "atrás" la página se restaura con el botón deshabilitado
+    window.addEventListener('pageshow', function(e){
+      if (e.persisted) setSubmitting(false);
+    });
+
     // Validación antes de enviar: evitar salir de la página con Bad Request
     form?.addEventListener('submit', function(e){
+      if (submitting) { e.preventDefault(); return false; }
       const cid = (clienteSel && clienteSel.value) || '';
       const eid = (empresaSel && empresaSel.value) || '';
       const tipo = (document.getElementById('pedido_tipo_comprobante') && document.getElementById('pedido_tipo_comprobante').value) || '';
@@ -1056,6 +1107,9 @@
       if (!e.defaultPrevented && !document.querySelector('input[name="order_id"]')) {
         copyPreviewOnSubmit();
       }
+
+      // Recién acá el envío sigue de verdad: bloquear el botón
+      if (!e.defaultPrevented) setSubmitting(true);
     });
 
     // Copia SÍNCRONA (execCommand) dentro del gesto del submit: la página redirige
@@ -1371,11 +1425,17 @@
 
     async function loadPrevOrders(){
       if(!prevWrap) return;
+      // Sólo la última llamada renderiza (edición / borrador / cambios rápidos la disparan solapada)
+      const seq = ++prevOrdersSeq;
+      const isLatest = function(){ return seq === prevOrdersSeq; };
+      // No mostrar pedidos del par anterior mientras carga
       prevWrap.innerHTML = '';
+      if (prevCountEl) prevCountEl.textContent = '';
       const cid = clienteSel?.value; const eid = empresaSel?.value;
       if(!cid || !eid) return;
       try{
         const res = await fetch(`/api/pedidos/anteriores?client_id=${encodeURIComponent(cid)}&company_id=${encodeURIComponent(eid)}&limit=10`);
+        if (!isLatest()) return;
         if (!res.ok) {
           prevWrap.innerHTML = '<div class="text-danger">Error al cargar</div>';
           return;
@@ -1386,8 +1446,11 @@
           return;
         }
         const items = await res.json();
+        if (!isLatest()) return;
         const hiddenIds = new Set(getHiddenPrevIds(cid, eid));
         const visibleItems = (Array.isArray(items) ? items : []).filter(function(o){ return !hiddenIds.has(String(o.id)); });
+        // Cantidad visible en el encabezado (útil con la sección colapsada)
+        if (prevCountEl) prevCountEl.textContent = `(${visibleItems.length})`;
         if(!visibleItems.length){ prevWrap.innerHTML = '<div class="text-muted">Sin pedidos anteriores para este cliente y empresa.</div>'; return; }
 
         const fr = document.createDocumentFragment();
@@ -1449,8 +1512,10 @@
           row.appendChild(detail);
           fr.appendChild(row);
         });
+        // Limpiar y renderizar juntos, después de la respuesta
+        prevWrap.innerHTML = '';
         prevWrap.appendChild(fr);
-      }catch(e){ prevWrap.innerHTML = '<div class="text-danger">Error al cargar</div>'; }
+      }catch(e){ if (isLatest()) prevWrap.innerHTML = '<div class="text-danger">Error al cargar</div>'; }
     }
 
     refreshPrevBtn?.addEventListener('click', loadPrevOrders);

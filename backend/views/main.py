@@ -17415,6 +17415,9 @@ def api_prev_orders():
 
         .filter_by(client_id=client_id, company_id=company_id)
 
+        # Excluir pedidos borrados (soft delete).
+        .filter(Order.deleted_at.is_(None))
+
         .outerjoin(LogisticsStatus, LogisticsStatus.order_id == Order.id)
 
     )
