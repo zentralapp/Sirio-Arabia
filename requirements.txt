@@ -7,5 +7,12 @@ psycopg[binary]==3.2.3
 requests==2.32.3
 gunicorn==22.0.0
 
+# PDF del reporte diario (fpdf2). Pillow/fonttools pinneados: sus versiones
+# siguientes exigen Python >= 3.11 y prod corre 3.10.
+fpdf2==2.8.9
+Pillow==12.3.0
+fonttools==4.65.0
+defusedxml==0.7.1
+
 pandas==2.2.2
 openpyxl==3.1.5
