@@ -13,7 +13,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parent.parent
 
-MODULOS_DEL_JOB = ("backend.jobs.app_job",)
+MODULOS_DEL_JOB = ("backend.jobs.app_job", "backend.services.reporte_diario.pdf")
 
 _SCRIPT = """
 import importlib, sys
@@ -27,6 +27,30 @@ print(",".join(prohibidos))
 def test_job_no_importa_backend_app_ni_views(modulo):
     resultado = subprocess.run(
         [sys.executable, "-c", _SCRIPT.format(modulo=modulo)],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert resultado.returncode == 0, resultado.stderr
+    assert resultado.stdout.strip() == ""
+
+
+_SCRIPT_PURO = """
+import sys
+import backend.services.reporte_diario.pdf
+cargados = sorted(
+    m for m in sys.modules
+    if m.split(".")[0] in ("flask", "flask_sqlalchemy", "sqlalchemy", "psycopg")
+    or m in ("backend.models", "backend.extensions")
+)
+print(",".join(cargados))
+"""
+
+
+def test_render_pdf_es_puro_sin_flask_ni_db():
+    resultado = subprocess.run(
+        [sys.executable, "-c", _SCRIPT_PURO],
         cwd=REPO,
         capture_output=True,
         text=True,
