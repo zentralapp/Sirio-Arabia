@@ -18,6 +18,7 @@ MODULOS_DEL_JOB = (
     "backend.services.reporte_diario.pdf",
     "backend.services.mailer",
     "backend.services.mailer.archivo",
+    "backend.services.mailer.gmail_api",
 )
 
 _SCRIPT = """
