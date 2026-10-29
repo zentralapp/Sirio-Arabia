@@ -13,7 +13,12 @@ import pytest
 
 REPO = Path(__file__).resolve().parent.parent
 
-MODULOS_DEL_JOB = ("backend.jobs.app_job", "backend.services.reporte_diario.pdf")
+MODULOS_DEL_JOB = (
+    "backend.jobs.app_job",
+    "backend.services.reporte_diario.pdf",
+    "backend.services.mailer",
+    "backend.services.mailer.archivo",
+)
 
 _SCRIPT = """
 import importlib, sys
