@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Solo para desarrollo/tests y para autorizar Gmail una vez (NO van a prod).
+pytest==9.2.0
+google-auth-oauthlib==1.5.0
