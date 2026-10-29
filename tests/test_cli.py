@@ -433,3 +433,18 @@ def test_modulo_ejecutable_help():
     assert res.returncode == 0, res.stderr
     for opcion in ("--fecha", "--dry-run", "--out", "--force"):
         assert opcion in res.stdout
+
+
+def test_logging_silencia_el_detalle_de_fonttools():
+    """fontTools.subset loguea en INFO cada glifo del PDF: taparía el log del cron."""
+    script = (
+        "import logging, backend.jobs.reporte_diario as rd\n"
+        "rd._configurar_logging()\n"
+        "print(logging.getLogger('fontTools.subset').getEffectiveLevel(),"
+        " logging.getLogger('backend.jobs.reporte_diario').getEffectiveLevel())"
+    )
+    res = subprocess.run([sys.executable, "-c", script], cwd=REPO, capture_output=True, text=True, timeout=60)
+    assert res.returncode == 0, res.stderr
+    nivel_fonttools, nivel_job = map(int, res.stdout.split())
+    assert nivel_fonttools >= logging.WARNING
+    assert nivel_job == logging.INFO

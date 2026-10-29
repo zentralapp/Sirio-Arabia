@@ -371,6 +371,8 @@ def _configurar_logging() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stdout,
     )
+    # fpdf2 subsetea la fuente con fontTools, que loguea cada glifo en INFO.
+    logging.getLogger("fontTools").setLevel(logging.WARNING)
 
 
 def main(argv=None) -> int:
