@@ -142,10 +142,19 @@ class TestSecciones:
         assert secciones["Pagos parciales"].total == "600,00"
         assert secciones["Cobranzas que vencen en la semana"].total == "2.500,50"
 
-    def test_seccion_vacia_con_total_muestra_cero(self):
+    def test_seccion_vacia_no_lleva_total(self):
+        # Vacía = solo "Sin registros"; un "Total saldo: 0,00" ahí es ruido.
         secciones = por_titulo(armar_secciones(reporte()))
 
-        assert secciones["ATRASADAS"].total == "0,00"
+        assert all(s.total is None for s in secciones.values())
+
+    def test_seccion_vacia_no_lleva_total_aunque_otras_si(self):
+        secciones = por_titulo(armar_secciones(reporte([cobranza(1, venc=JUEVES)])))
+
+        assert secciones["Cobranzas que vencen hoy"].total == "1.000,00"
+        assert secciones["ATRASADAS"].total is None
+        assert secciones["Cobranzas que vencen en la semana"].total is None
+        assert secciones["Pagos parciales"].total is None
 
     def test_sin_monto_en_monto_y_saldo(self):
         secciones = por_titulo(armar_secciones(reporte([cobranza(6, venc=date(2026, 10, 20), monto=None, pagado="100")])))
@@ -285,6 +294,13 @@ class TestTextoExtraido:
         assert "Sin novedades" in texto
         assert "Sin registros" in texto
         assert "Sin fecha de vencimiento" not in texto
+        assert "Total saldo" not in texto
+
+    def test_seccion_vacia_sin_linea_de_total(self, tmp_path):
+        texto = self.texto(render_pdf(reporte([cobranza(1, venc=JUEVES)]), GENERADO), tmp_path)
+
+        # Solo "vencen hoy" tiene filas: una única línea de total.
+        assert texto.count("Total saldo") == 1
 
     def test_encabezado_y_pie(self, tmp_path):
         texto = self.texto(render_pdf(reporte_completo(), GENERADO), tmp_path)

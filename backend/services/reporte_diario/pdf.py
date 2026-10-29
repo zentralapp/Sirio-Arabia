@@ -101,13 +101,15 @@ def _fila_cobranza(f: FilaCobranza, *, dias: bool, estado: bool) -> tuple[str, .
 
 
 def _seccion(titulo, columnas, filas, total=None) -> Seccion:
+    filas = tuple(filas)
     return Seccion(
         titulo=titulo,
         columnas=tuple(c[0] for c in columnas),
         anchos=tuple(c[1] for c in columnas),
         alineacion=tuple(c[2] for c in columnas),
-        filas=tuple(filas),
-        total=total,
+        filas=filas,
+        # Vacía: solo "Sin registros", sin un "Total saldo: 0,00" que no dice nada.
+        total=total if filas else None,
     )
 
 
@@ -120,7 +122,8 @@ def armar_secciones(reporte: Reporte) -> tuple[Seccion, ...]:
     """Secciones en el orden de la spec, con celdas ya formateadas.
 
     Totales SOLO en vencen hoy, semana, ATRASADAS y parciales (excluyen
-    "Sin monto"; las pagadas sin registrar nunca están en esas secciones).
+    "Sin monto"; las pagadas sin registrar nunca están en esas secciones), y
+    solo si la sección tiene filas: vacía muestra únicamente "Sin registros".
     "Sin fecha de vencimiento" solo aparece si tiene filas.
     """
     tot = {k: fmt_plata_es(v) for k, v in totales(reporte).items()}
@@ -198,9 +201,6 @@ def _dibujar_seccion(pdf: _Documento, s: Seccion) -> None:
         pdf.set_text_color(*_GRIS)
         pdf.cell(0, 6, s.vacia_texto, new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(*_TINTA)
-        if s.total is not None:
-            pdf.set_font(FAMILIA, "B", 9)
-            pdf.cell(0, 6, f"Total saldo: {s.total}", align="R", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(3)
         return
 
