@@ -1356,7 +1356,8 @@
           if (!label) return;
           const opt = document.createElement('option');
           opt.value = String(c.id);
-          opt.textContent = label;
+          // "Razón social (Marca)" igual que Pedidos; `label` sigue siendo la razón social
+          opt.textContent = (c.display_label || '').trim() || label;
           companySel && companySel.appendChild(opt);
         });
       })

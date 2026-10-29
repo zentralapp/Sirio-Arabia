@@ -17,6 +17,21 @@
     white-space: normal;
     overflow-wrap: anywhere;
   }
+  /* Encabezado colapsable de "Pedidos anteriores": piso táctil de 44px */
+  .prev-orders-toggle {
+    min-height: 44px;
+    font-size: inherit;
+    font-weight: inherit;
+    color: inherit;
+    border: 0;
+  }
+  .prev-orders-chevron {
+    color: #64748b;
+    transition: transform .18s ease;
+  }
+  .prev-orders-toggle[aria-expanded="true"] .prev-orders-chevron {
+    transform: rotate(90deg);
+  }
 </style>
 <div class="d-flex flex-column flex-sm-row justify-content-between align-items-stretch align-items-sm-center gap-2 mb-4">
   <h1 class="h4 mb-0">{% if edit_order %}Editando pedido{% else %}Registro de Venta / Pedido{% endif %}</h1>
@@ -152,11 +167,19 @@
         <input type="file" name="attachments" id="pedido_attachments" class="form-control" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,text/csv">
       </div>
       <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center">
-          <h6 class="mb-2">Pedidos anteriores del cliente en esta empresa</h6>
-          <button class="btn btn-sm btn-outline-secondary" type="button" id="refresh-prev">Actualizar</button>
+        <!-- Colapsado por defecto en cada carga; se abre con click en el encabezado -->
+        <h6 class="mb-2">
+          <button class="btn prev-orders-toggle w-100 d-flex align-items-center justify-content-between gap-2 px-0 text-start" type="button" data-bs-toggle="collapse" data-bs-target="#prevOrdersCollapse" aria-expanded="false" aria-controls="prevOrdersCollapse">
+            <span>Pedidos anteriores del cliente en esta empresa <span id="prev-orders-count" class="text-muted fw-normal"></span></span>
+            <i class="bi bi-chevron-right prev-orders-chevron" aria-hidden="true"></i>
+          </button>
+        </h6>
+        <div class="collapse" id="prevOrdersCollapse">
+          <div class="d-flex justify-content-end mb-2">
+            <button class="btn btn-sm btn-outline-secondary" type="button" id="refresh-prev">Actualizar</button>
+          </div>
+          <div id="prev-orders" class="list-group small"></div>
         </div>
-        <div id="prev-orders" class="list-group small"></div>
       </div>
       <div class="col-12">
         <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
@@ -165,7 +188,10 @@
         </div>
         <textarea class="form-control mt-2" id="pedido_preview" rows="4" placeholder="Borrador del pedido"></textarea>
       </div>
-      <div class="col-12">
+      {# OCULTO A PROPÓSITO (28/10/2026): hoy no se usa; el mail de pedido se abre sin destinatario.
+         No borrar: el HTML y su JS (toConfirmed, renderRecipients, loadRecipientsFromCompany) siguen vivos.
+         Para reactivarlo: sacar "d-none" de este div y volver a armar el "to" en el click de #gmail-draft-btn. #}
+      <div class="col-12 d-none" id="destinatarios-pedido">
         <div class="d-flex flex-column flex-sm-row align-items-stretch align-items-sm-center justify-content-between gap-2">
           <label class="form-label m-0" style="color:#0f766e; font-weight:600">Destinatarios del pedido</label>
           <div class="d-flex flex-column flex-sm-row gap-2">
@@ -233,6 +259,7 @@
     const alertBox = document.getElementById('pedido-alert');
     const prevWrap = document.getElementById('prev-orders');
     const refreshPrevBtn = document.getElementById('refresh-prev');
+    const prevCountEl = document.getElementById('prev-orders-count');
     const copyPrevBtn = document.getElementById('copy-preview-btn');
     const previewTa = document.getElementById('pedido_preview');
     const draftsOpenBtn = document.getElementById('pending-open-btn');
@@ -697,6 +724,9 @@
       };
     }
     function saveDraft(){
+      // En modo edición no autoguardar: el server sólo borra el borrador al crear
+      // (sin order_id), así que quedaría un "Pendiente" huérfano para siempre.
+      if (document.querySelector('input[name="order_id"]')) return;
       try{
         const d = collectDraft();
         if (!d) return;
@@ -876,19 +906,31 @@
 
     function updateEnabledBySelection(){ return; }
 
+    // Token de secuencia: el change del cliente y applyEditOrder / "Cargar" borrador
+    // disparan llamadas solapadas. Sólo la última puede poblar el select; las
+    // anteriores resuelven igual pero sin tocar nada (si no, duplican opciones).
+    let companiesSeq = 0;
+    // Idem para loadPrevOrders (declarado acá arriba para que exista antes de applyEditOrder)
+    let prevOrdersSeq = 0;
     async function loadCompanies(clientId){
       if(!empresaSel) return;
+      const seq = ++companiesSeq;
+      // Reset inmediato: que no se pueda elegir una empresa del cliente anterior mientras carga
       empresaSel.innerHTML = '<option value="">Empresa...</option>';
       if (mailInput) mailInput.value = '';
       if(!clientId) return;
       try{
         const res = await fetch(`/api/clientes/${clientId}/empresas`);
         const items = await res.json();
+        if (seq !== companiesSeq) return;
         if (!Array.isArray(items)) return;
+        // Limpiar y poblar en la misma pasada síncrona (un solo rebuild de Tom Select)
+        empresaSel.innerHTML = '<option value="">Empresa...</option>';
         for(const e of items){
           const opt = document.createElement('option');
           opt.value = e.id;
-          opt.textContent = e.label;
+          // "Razón social (Marca)"; el server ya viene ordenado por razón social
+          opt.textContent = e.display_label || e.label;
           opt.setAttribute('data-mail', e.mail_pedido || '');
           opt.setAttribute('data-mail-pago', e.mail_pago || '');
           opt.setAttribute('data-pedido-std', e.pedido_estandar_recomendado || '');
@@ -998,8 +1040,24 @@
       } catch(e) {}
     });
 
+    // Evitar doble envío (doble click / Enter) que crea pedidos duplicados
+    const submitBtn = form?.querySelector('button[type="submit"]');
+    let submitting = false;
+    function setSubmitting(on){
+      submitting = on;
+      if (!submitBtn) return;
+      submitBtn.disabled = on;
+      if (on) submitBtn.setAttribute('aria-busy', 'true');
+      else submitBtn.removeAttribute('aria-busy');
+    }
+    // bfcache: al volver con "atrás" la página se restaura con el botón deshabilitado
+    window.addEventListener('pageshow', function(e){
+      if (e.persisted) setSubmitting(false);
+    });
+
     // Validación antes de enviar: evitar salir de la página con Bad Request
     form?.addEventListener('submit', function(e){
+      if (submitting) { e.preventDefault(); return false; }
       const cid = (clienteSel && clienteSel.value) || '';
       const eid = (empresaSel && empresaSel.value) || '';
       const tipo = (document.getElementById('pedido_tipo_comprobante') && document.getElementById('pedido_tipo_comprobante').value) || '';
@@ -1047,18 +1105,201 @@
         const eid = empresaSel?.value || '';
         if (cid && eid) localStorage.removeItem(draftKey(cid, eid));
       }catch(err){}
+
+      // Pedido nuevo: copiar la Vista previa al portapapeles antes de navegar
+      if (!e.defaultPrevented && !document.querySelector('input[name="order_id"]')) {
+        copyPreviewOnSubmit();
+      }
+
+      // Recién acá el envío sigue de verdad: bloquear el botón
+      if (!e.defaultPrevented) setSubmitting(true);
     });
 
-    function buildPreviewText(){
+    // Copia SÍNCRONA (execCommand) dentro del gesto del submit: la página redirige
+    // enseguida y un navigator.clipboard.writeText async puede quedar cortado.
+    // Nunca debe frenar el envío: cualquier error se ignora.
+    function copyPreviewOnSubmit(){
+      // Mismo texto que "Copiar borrador": respeta ediciones manuales de la vista previa (con nota)
+      return copiarTextoSync((previewTa && previewTa.value) || buildPreviewText());
+    }
+
+    // Copia síncrona de un texto cualquiera (execCommand + respaldo async). Devuelve si execCommand copió.
+    function copiarTextoSync(txt){
+      try{
+        if (!txt) return false;
+        const prevFocus = document.activeElement;
+        const ta = document.createElement('textarea');
+        ta.value = txt;
+        // Fuera de pantalla; 16px evita el zoom de iOS al enfocar
+        ta.style.cssText = 'position:fixed;top:0;left:-9999px;opacity:0;font-size:16px;';
+        document.body.appendChild(ta);
+        let ok = false;
+        try{
+          try { ta.focus({ preventScroll: true }); } catch(_) {}
+          ta.select();
+          ta.setSelectionRange(0, txt.length);
+          ok = document.execCommand('copy');
+        }catch(_){ ok = false; }
+        ta.remove();
+        try { if (prevFocus && typeof prevFocus.focus === 'function') prevFocus.focus({ preventScroll: true }); } catch(_) {}
+        // Respaldo async por si execCommand no está soportado (puede no llegar antes de navegar)
+        if (!ok && navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(txt).catch(function(){});
+        }
+        return ok;
+      }catch(_){ return false; }
+    }
+
+    // "Enviar pedido por mail": abre el redactor de Gmail con
+    // asunto = título de la Vista previa, cuerpo = Vista previa (con ediciones manuales y con la nota),
+    // y SIN destinatario (decidido 28/10/2026: el "para" lo completa quien envía).
+    // Además copia el borrador completo al portapapeles antes de abrir Gmail.
+    // Todo síncrono dentro del click: window.open fuera del gesto lo bloquea el popup blocker (iOS Safari).
+    // En iOS se abre directo la app de Gmail (googlegmail://): el link web lo agarra la app
+    // por universal links e ignora los parámetros (redactor vacío).
+    const GMAIL_URL_MAX = 8000;
+    const GMAIL_APP_TIMEOUT_MS = 1500;
+    let gmailAppCheck = null; // chequeo pendiente de "¿se abrió la app?" (uno solo a la vez)
+
+    // iPhone/iPad/iPod, incluido iPadOS en modo escritorio (se presenta como Mac, pero con touch)
+    function esIOS(){
+      try{
+        if (/iPhone|iPad|iPod/i.test(navigator.userAgent || '')) return true;
+        return navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1;
+      }catch(_){ return false; }
+    }
+
+    // URL del redactor, sin destinatario. 'web': mail.google.com; 'app': esquema de la app iOS (usa subject, no su)
+    function buildGmailUrl(target, subject, body){
+      const s = encodeURIComponent(subject);
+      const b = encodeURIComponent(body);
+      if (target === 'app') return `googlegmail://co?subject=${s}&body=${b}`;
+      return `https://mail.google.com/mail/?view=cm&fs=1&su=${s}&body=${b}`;
+    }
+
+    // Navegación al esquema propio. window.open con esquemas propios no es confiable en iOS Safari.
+    function navegarAUrlApp(url){
+      window.location.href = url;
+    }
+
+    function cancelarChequeoGmailApp(){
+      if (!gmailAppCheck) return;
+      clearTimeout(gmailAppCheck.timer);
+      document.removeEventListener('visibilitychange', gmailAppCheck.onHide);
+      window.removeEventListener('pagehide', gmailAppCheck.onHide);
+      gmailAppCheck = null;
+    }
+
+    // La app no abrió: aviso con botón a Gmail web (el tap es un gesto real, así no lo bloquea el popup blocker)
+    function mostrarFallbackGmailWeb(webUrl, avisoPrevio){
+      if (!alertBox) return;
+      alertBox.textContent = (avisoPrevio ? avisoPrevio + ' ' : '') + 'No se pudo abrir la app de Gmail (¿está instalada?).';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-link alert-link p-0 ms-1 align-baseline js-gmail-web-btn';
+      btn.style.fontSize = 'inherit';
+      btn.textContent = 'Abrir en Gmail web';
+      btn.addEventListener('click', function(){
+        try { window.open(webUrl, '_blank'); } catch(_) {}
+        alertBox.classList.add('d-none');
+      });
+      alertBox.appendChild(btn);
+      alertBox.classList.remove('d-none');
+      try { alertBox.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch(_) {}
+    }
+
+    // Intenta abrir la app; si a los ~1.5s la página sigue visible (no hubo pagehide ni visibilitychange
+    // a hidden), se asume que no está instalada. No se usa blur: el diálogo de error de Safari puede dispararlo.
+    function abrirGmailApp(appUrl, webUrl, avisoPrevio){
+      cancelarChequeoGmailApp();
+      const chk = { salio: false, timer: null, onHide: null };
+      chk.onHide = function(e){
+        if (e.type === 'pagehide' || document.visibilityState === 'hidden') chk.salio = true;
+      };
+      document.addEventListener('visibilitychange', chk.onHide);
+      window.addEventListener('pagehide', chk.onHide);
+      chk.timer = setTimeout(function(){
+        const salio = chk.salio || document.visibilityState !== 'visible';
+        cancelarChequeoGmailApp();
+        if (!salio) mostrarFallbackGmailWeb(webUrl, avisoPrevio);
+      }, GMAIL_APP_TIMEOUT_MS);
+      gmailAppCheck = chk;
+      try { navegarAUrlApp(appUrl); }
+      catch(_) { cancelarChequeoGmailApp(); mostrarFallbackGmailWeb(webUrl, avisoPrevio); }
+    }
+
+    const gmailBtn = document.getElementById('gmail-draft-btn');
+    gmailBtn?.addEventListener('click', function(){
+      // Un click nuevo descarta el chequeo anterior (sin timers ni avisos apilados)
+      cancelarChequeoGmailApp();
+      const cid = (clienteSel && clienteSel.value) || '';
+      const eid = (empresaSel && empresaSel.value) || '';
+      let msg = '';
+      if (!cid) msg = 'Debe seleccionar un cliente registrado.';
+      else if (!eid) msg = 'Debe seleccionar una empresa vinculada al cliente.';
+      if (msg) {
+        if (alertBox) {
+          alertBox.textContent = msg;
+          alertBox.classList.remove('d-none');
+          try { alertBox.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch(_) {}
+        } else {
+          alert(msg);
+        }
+        try { const f = !cid ? clienteSel : empresaSel; if (f && typeof f.focus === 'function') f.focus(); } catch(_) {}
+        return;
+      }
+      if (alertBox) alertBox.classList.add('d-none');
+
+      const subject = buildPreviewTitle();
+      // Misma fuente que "Copiar borrador" (respeta ediciones manuales, incluye la nota)
+      let body = (previewTa && previewTa.value) || buildPreviewText();
+      // Copia síncrona dentro del click, ANTES de abrir Gmail / navegar al esquema de la app
+      const copiado = copiarTextoSync(body);
+      const destino = esIOS() ? 'app' : 'web';
+      let aviso = '';
+      if (buildGmailUrl(destino, subject, body).length > GMAIL_URL_MAX) {
+        // URL demasiado larga para Gmail: el texto completo ya quedó copiado, pedir que lo peguen.
+        // Si la copia falló, se manda completo igual (nunca truncar en silencio).
+        if (copiado) {
+          body = 'El pedido completo se copió al portapapeles: pegalo acá (Ctrl/Cmd + V).';
+          aviso = 'El pedido es muy largo para Gmail: se copió al portapapeles, pegalo en el cuerpo del mail.';
+          if (alertBox) {
+            alertBox.textContent = aviso;
+            alertBox.classList.remove('d-none');
+          }
+        }
+      }
+      const webUrl = buildGmailUrl('web', subject, body);
+      if (destino === 'app') {
+        // Sin toast: si la app no abre, el aviso de respaldo ya avisa que se copió
+        if (copiado && !aviso) aviso = 'El pedido se copió al portapapeles.';
+        abrirGmailApp(buildGmailUrl('app', subject, body), webUrl, aviso);
+        return;
+      }
+      // Toast global del layout (sólo si existe: su respaldo es un alert() bloqueante)
+      if (copiado && !aviso && window.showToast && document.getElementById('appToast')) {
+        window.showToast('Pedido copiado al portapapeles.', 'success');
+      }
+      window.open(webUrl, '_blank');
+    });
+
+    // Título del pedido (primera línea de la Vista previa y asunto del mail).
+    // Única fuente: así el asunto y la vista previa no pueden divergir.
+    function buildPreviewTitle(){
       const empresaOpt = empresaSel.options[empresaSel.selectedIndex];
       const clienteOpt = clienteSel.options[clienteSel.selectedIndex];
       const clienteText = clienteOpt?.getAttribute('data-razon') || clienteOpt?.text || '';
       const empresaText = empresaOpt?.text || '';
       const branchOpt2 = branchSel?.options[branchSel.selectedIndex];
-      const nota = notaInput?.value || '';
-      const desc = descInput?.value || '';
       let title = `Pedido ${clienteText} - ${empresaText}`;
       if (branchSel && branchSel.value && branchOpt2) { title += ` / Sucursal: ${branchOpt2.text}`; }
+      return title;
+    }
+
+    function buildPreviewText(){
+      const nota = notaInput?.value || '';
+      const desc = descInput?.value || '';
+      const title = buildPreviewTitle();
       const normalizeBlock = function(txt){
         return (txt || '')
           .replace(/\r\n/g, '\n')
@@ -1327,11 +1568,17 @@
 
     async function loadPrevOrders(){
       if(!prevWrap) return;
+      // Sólo la última llamada renderiza (edición / borrador / cambios rápidos la disparan solapada)
+      const seq = ++prevOrdersSeq;
+      const isLatest = function(){ return seq === prevOrdersSeq; };
+      // No mostrar pedidos del par anterior mientras carga
       prevWrap.innerHTML = '';
+      if (prevCountEl) prevCountEl.textContent = '';
       const cid = clienteSel?.value; const eid = empresaSel?.value;
       if(!cid || !eid) return;
       try{
         const res = await fetch(`/api/pedidos/anteriores?client_id=${encodeURIComponent(cid)}&company_id=${encodeURIComponent(eid)}&limit=10`);
+        if (!isLatest()) return;
         if (!res.ok) {
           prevWrap.innerHTML = '<div class="text-danger">Error al cargar</div>';
           return;
@@ -1342,8 +1589,11 @@
           return;
         }
         const items = await res.json();
+        if (!isLatest()) return;
         const hiddenIds = new Set(getHiddenPrevIds(cid, eid));
         const visibleItems = (Array.isArray(items) ? items : []).filter(function(o){ return !hiddenIds.has(String(o.id)); });
+        // Cantidad visible en el encabezado (útil con la sección colapsada)
+        if (prevCountEl) prevCountEl.textContent = `(${visibleItems.length})`;
         if(!visibleItems.length){ prevWrap.innerHTML = '<div class="text-muted">Sin pedidos anteriores para este cliente y empresa.</div>'; return; }
 
         const fr = document.createDocumentFragment();
@@ -1405,8 +1655,10 @@
           row.appendChild(detail);
           fr.appendChild(row);
         });
+        // Limpiar y renderizar juntos, después de la respuesta
+        prevWrap.innerHTML = '';
         prevWrap.appendChild(fr);
-      }catch(e){ prevWrap.innerHTML = '<div class="text-danger">Error al cargar</div>'; }
+      }catch(e){ if (isLatest()) prevWrap.innerHTML = '<div class="text-danger">Error al cargar</div>'; }
     }
 
     refreshPrevBtn?.addEventListener('click', loadPrevOrders);
