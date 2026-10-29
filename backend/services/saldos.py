@@ -10,8 +10,8 @@ Glosario (spec reporte-diario):
 - Pagada sin registrar cobro: monto > 0, pagado + NC > 0 y saldo <= umbral.
 - Parcial: monto > 0, pagado + NC > 0 y saldo > umbral.
 
-Acá van solo las funciones puras; la consulta agregada (`saldos_por_pedido`)
-se agrega aparte.
+Las funciones puras no tocan DB ni Flask; `saldos_por_pedido` (la consulta
+agregada) importa SQLAlchemy y los modelos adentro de la función.
 """
 from dataclasses import dataclass
 from decimal import Decimal
@@ -82,3 +82,52 @@ def saldo_efectivo(s: Saldo) -> Decimal | None:
     if _CERO < s.saldo <= UMBRAL_SALDO:
         return _CERO
     return s.saldo
+
+
+def saldos_por_pedido(order_ids, session=None) -> dict[int, Saldo]:
+    """Saldo de cada pedido en UNA query agregada: {order_id: Saldo}.
+
+    Pagado = sum(abs(amount)) de kind PAYMENT; NC = ídem kind CREDIT_NOTE;
+    se excluyen DRAFT y anulados (voided_at). Se clasifica por `kind`, no por
+    `method`. Si `order_ids` está vacío no consulta.
+
+    Los imports de SQLAlchemy/modelos van acá adentro para que las funciones
+    puras de este módulo se puedan testear sin Flask ni DB.
+    """
+    ids = sorted({int(i) for i in order_ids})
+    if not ids:
+        return {}
+
+    from sqlalchemy import func, select
+
+    from backend.extensions import db
+    from backend.models import Collection, CollectionPayment, LogisticsStatus, Order
+
+    session = session if session is not None else db.session
+    importe = func.abs(CollectionPayment.amount)
+    pagos = (
+        select(
+            CollectionPayment.order_id,
+            func.coalesce(func.sum(importe).filter(CollectionPayment.kind == "PAYMENT"), 0).label("pagado"),
+            func.coalesce(func.sum(importe).filter(CollectionPayment.kind == "CREDIT_NOTE"), 0).label("nc"),
+        )
+        .where(
+            CollectionPayment.kind != "DRAFT",
+            CollectionPayment.voided_at.is_(None),
+            CollectionPayment.order_id.in_(ids),
+        )
+        .group_by(CollectionPayment.order_id)
+        .subquery()
+    )
+    q = (
+        select(Order.id, Collection.monto, Order.precio_final, LogisticsStatus.precio, pagos.c.pagado, pagos.c.nc)
+        .select_from(Order)
+        .outerjoin(Collection, Collection.order_id == Order.id)
+        .outerjoin(LogisticsStatus, LogisticsStatus.order_id == Order.id)
+        .outerjoin(pagos, pagos.c.order_id == Order.id)
+        .where(Order.id.in_(ids))
+    )
+    return {
+        order_id: armar_saldo(col_monto, precio_final, log_precio, pagado, nc)
+        for order_id, col_monto, precio_final, log_precio, pagado, nc in session.execute(q)
+    }
