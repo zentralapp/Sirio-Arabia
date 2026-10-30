@@ -525,6 +525,31 @@ def test_falla_al_registrar_failed_igual_exit1(job, monkeypatch):
     assert rd.main([]) == 1
 
 
+def test_enviado_pero_falla_registrar_sent_exit1_queda_pending(job, monkeypatch, caplog):
+    """Gmail aceptó el mail y el UPDATE a SENT falla: NO se marca FAILED (un
+    FAILED común se reintentaría solo = duplicado). La fila queda PENDING, que
+    bloquea reintentos sin --force y el banner muestra "Estado incierto"."""
+    caplog.set_level(logging.INFO)
+
+    def registrar_envio(session, id_, message_id):
+        raise RuntimeError("se cayó la base con datos sensibles postgres://u:clave@host/db")
+
+    monkeypatch.setattr(rd, "registrar_envio", registrar_envio)
+
+    assert rd.main([]) == 1
+
+    assert len(job.mailer.enviados) == 1
+    assert job.fallas == []  # ni FAILED ni "estado incierto": queda PENDING
+    errores = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert any(
+        "enviado (id=id-gmail-123) pero no se pudo registrar SENT: NO reenviar" in m and "Enviados" in m
+        for m in errores
+    )
+    assert "RuntimeError" in caplog.text
+    assert "clave" not in caplog.text
+    assert "falló el reporte" not in caplog.text  # no invita a --force
+
+
 def test_log_no_contiene_refresh_token(monkeypatch, job, caplog, capsys):
     """Con el mailer REAL de gmail_api (sin red): el secreto nunca se loguea."""
     caplog.set_level(logging.DEBUG)

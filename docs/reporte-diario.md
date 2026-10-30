@@ -449,7 +449,7 @@ las **09:00 ART** o más; si no, el día hábil anterior. Lunes antes de las
 | Mensaje | Qué pasó | Qué hacer |
 |---|---|---|
 | **No se envió el reporte del DD/MM.** | No hay fila: el cron no corrió o falló antes de reclamar el envío (config, DB, tabla). | Mirá los logs del servicio cron (`railway cron list` / logs del run). Corregí la causa y corrélo a mano (`railway cron run`; si ya pasó ese día, ver [§8.4](#84-reenviar-un-día)). |
-| **Estado incierto …** | El envío se cortó después de mandar (timeout de lectura), o quedó PENDING más de 30 minutos (el proceso murió). Puede haber salido. | Revisá **Enviados** de la cuenta del negocio. Si el mail está, no hagas nada. Si **no** está, reenviá con `--force` ([§8.4](#84-reenviar-un-día)). |
+| **Estado incierto …** | El envío se cortó después de mandar (timeout de lectura), o quedó PENDING más de 30 minutos (el proceso murió, o Gmail aceptó el mail pero no se pudo grabar SENT). Puede haber salido. | Revisá **Enviados** de la cuenta del negocio. Si el mail está, no hagas nada. Si **no** está, reenviá con `--force` ([§8.4](#84-reenviar-un-día)). |
 | **Falló el reporte del DD/MM: hay que re-autorizar Gmail …** | El token fue revocado (cambio de contraseña, acceso quitado, app en Testing a los 7 días) → `invalid_grant`. | Corré `scripts/autorizar_gmail.py` ([§3.4](#34-autorizar-y-obtener-el-refresh-token)), actualizá `REPORTE_GMAIL_REFRESH_TOKEN` en el cron y reenviá ese día. |
 | **Falló el reporte del DD/MM.** + detalle | Cualquier otra falla: Google, PDF, datos, DB. El detalle es la primera línea del error, sin URLs, mails ni cadenas que parezcan secretos. | Mirá el log del run y la columna `error` de la fila. Corregí la causa y reenviá. |
 
@@ -471,7 +471,7 @@ Hay una fila por `(report_key='diario', fecha_negocio)`.
 
 | `status` | Significado | ¿El cron la reintenta sola? |
 |---|---|---|
-| `PENDING` | Reclamado, enviándose. Si queda así, el proceso murió entre el envío y el registro. | No: queda salteada para no duplicar. Después de 30 min el banner la marca como incierta. |
+| `PENDING` | Reclamado, enviándose. Si queda así, el proceso murió entre el envío y el registro, o Gmail aceptó el mail y falló el UPDATE a SENT (el log del run dice `enviado (id=…) pero no se pudo registrar SENT: NO reenviar`). | No: queda salteada para no duplicar. Después de 30 min el banner la marca como incierta. |
 | `SENT` | Enviado. `message_id` y `sent_at` cargados. | No. |
 | `FAILED` | Falló. El motivo está en `error`, truncado a 2000 caracteres y sin secretos. | **Sí** en la siguiente corrida, **salvo** que el error empiece con `estado incierto` (eso exige `--force`). |
 

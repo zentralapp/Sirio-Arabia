@@ -368,7 +368,21 @@ def _enviar(session, fecha: date, mailer, *, force: bool, out: Path | None) -> i
         return 1
 
     log.info("reporte del %s enviado: %s", dia, message_id)
-    registrar_envio(session, reclamo.id, message_id)
+    try:
+        registrar_envio(session, reclamo.id, message_id)
+    except Exception as exc_registro:  # noqa: BLE001
+        # El mail YA salió. No se marca FAILED: un FAILED común se reintentaría
+        # solo (duplicado). La fila queda PENDING: bloquea reintentos sin
+        # --force y a los 30 min el banner muestra "Estado incierto".
+        # Solo el tipo de la excepción: su texto puede traer la URL de la DB.
+        log.error(
+            "reporte del %s enviado (id=%s) pero no se pudo registrar SENT: NO reenviar; revisar "
+            "Enviados de la cuenta del negocio (la fila queda PENDING). Error: %s",
+            dia,
+            message_id,
+            type(exc_registro).__name__,
+        )
+        return 1
     return 0
 
 
