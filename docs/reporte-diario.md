@@ -17,6 +17,7 @@ Contenido:
 9. [Rollback](#9-rollback)
 10. [Dependencias](#10-dependencias)
 11. [Apéndice: VPS con systemd](#11-apéndice-vps-con-systemd)
+12. [Checklist de puesta en producción](#12-checklist-de-puesta-en-producción)
 
 ---
 
@@ -568,3 +569,97 @@ journalctl -u reporte-diario
 
 `Persistent=true` corre una ejecución perdida, por ejemplo si el servidor
 estaba apagado a las 08:00. La idempotencia por fecha evita los duplicados.
+
+---
+
+## 12. Checklist de puesta en producción
+
+### 12.1 Antes del merge (verificación manual)
+
+Durante el desarrollo se verificaron en local la suite en 3.12 y 3.10, el
+flujo end-to-end en modo `archivo` y los estados del banner. Antes de mergear,
+conviene repasarlos con la rama ya rebaseada sobre `main`. Entre corchetes va
+el criterio de aceptación de la spec que cubre cada punto.
+
+- [ ] `env -u DATABASE_URL .venv/bin/python -m pytest` verde en Python 3.12 y
+      en 3.10 [J Compatibilidad].
+- [ ] Dry-run del viernes (`--dry-run --fecha <viernes> --out …`) contra la
+      base local. Tiene que incluir los vencimientos y cumpleaños del sábado y
+      el domingo [A Ventana, G Vista previa].
+- [ ] Revisar el PDF a ojo:
+  - orden de las secciones y conteos;
+  - "Sin registros" en las secciones vacías;
+  - totales solo en 4 secciones;
+  - "Sin monto" en los pedidos sin precio, fuera del total;
+  - ATRASADAS con días de atraso y encabezado repetido en cada página;
+  - ñ / “ ” / — bien renderizados;
+  - pie con la hora real
+
+  [D, C ATRASADAS / Sin monto].
+- [ ] Ninguna "pagada sin registrar" aparece en ATRASADAS. Si no hay datos
+      locales, lo cubre `tests/test_clasificar.py` [C Clasificación
+      exclusiva].
+- [ ] Sábado sin `--force`: exit 0 y sin fila [A Negativa en fin de semana].
+- [ ] Idempotencia: la segunda corrida con SENT sale con exit 0 sin enviar;
+      `--force` hace attempts+1; dos corridas concurrentes dejan un solo SENT
+      [F].
+- [ ] `REPORTE_MAILER=gmail_api` con config incompleta y `GMAIL_*` presentes:
+      exit 1, sin fila y sin usar `GMAIL_*` [E Canal].
+- [ ] El log muestra `localhost/sirioarabia`, la fecha, los conteos y el
+      message id, sin tokens [E Secretos, G Log].
+- [ ] La tabla `collection` no tiene filas nuevas después de correr el job
+      [I].
+- [ ] Banner:
+  - apagado: no muestra aviso;
+  - prendido: lo ve un admin y no lo ve un usuario no admin;
+  - corte a las 08:59 vs 09:01;
+  - con la tabla inexistente, la página no se rompe
+
+  [H].
+- [ ] /deudas y el dashboard muestran lo mismo que antes del cambio [J Web
+      intacta].
+
+### 12.2 Puesta en producción (en este orden)
+
+- [ ] 1. **Mergear el PR #18** (`feat/pedidos-cliente-oct`) después de
+      probarlo en un iPhone. Esta rama está apilada sobre esa.
+- [ ] 2. **Rebasear** `feat/reporte-diario` sobre `main` y volver a correr la
+      suite.
+- [ ] 3. **Abrir el PR** de `feat/reporte-diario` y mergearlo.
+- [ ] 4. **Deploy de la web** (migración). Verificar que `alembic_version` sea
+      `c3e5a9d1f7b2` y que la web ande igual que antes. Dejar
+      `REPORTE_BANNER` sin definir por ahora. Ver [§5.1](#51-orden-obligatorio-primero-la-web).
+- [ ] 5. **Google Cloud**: proyecto, Gmail API, consentimiento External solo
+      con `gmail.send`, **publicada "In production"** y cliente Desktop app.
+      Ver [§3.1–3.3](#3-google-cloud-y-gmail-paso-a-paso).
+- [ ] 6. **Correr `scripts/autorizar_gmail.py` una sola vez** con la cuenta
+      del negocio y guardar el refresh token en un lugar seguro. Ver
+      [§3.4](#34-autorizar-y-obtener-el-refresh-token).
+- [ ] 7. **Variables de Railway** del servicio cron. Ver
+      [§4](#4-variables-de-entorno).
+- [ ] 8. **Crear el servicio cron**: start
+      `python -m backend.jobs.reporte_diario`, schedule `0 11 * * 1-5`,
+      restart policy **Never**, sin dominio. Ver
+      [§5.2](#52-crear-el-servicio-cron).
+- [ ] 9. **Primera corrida manual:**
+  - antes, una vista previa con `--dry-run --out` en local, contra la base
+    local;
+  - después, en un **día hábil**, un envío real en Railway: `railway cron run`
+    si ese día todavía no tiene fila, o `--force` si ya la tiene (ver
+    [§8.4](#84-reenviar-un-día));
+  - confirmar en el log que corrió el job y **no** gunicorn.
+- [ ] 10. **Revisar el mail recibido:**
+  - asunto y adjunto;
+  - que el From muestre "Arabia Representaciones" (Google no garantiza el
+    display name);
+  - que **el celular notifique** un mail enviado a uno mismo. Esto no está
+    verificado. Si no notifica, las alternativas son un filtro de Gmail que lo
+    marque importante o con una etiqueta que notifique, o usar otra casilla
+    destino en `REPORTE_MAIL_TO`.
+- [ ] 11. **Prender `REPORTE_BANNER=1` en el servicio web.** Verificar que,
+      con el reporte del día en SENT, un admin no ve ningún aviso.
+- [ ] 12. **Vigilar la primera corrida programada:**
+  - el siguiente día hábil, ~08:00 ART, revisar que llegó el mail y que
+    `railway cron list` muestra el run OK;
+  - **a los 8 días**, confirmar que sigue llegando. Eso prueba que el token no
+    quedó en modo Testing.
