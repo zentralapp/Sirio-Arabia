@@ -412,6 +412,61 @@ def test_log_no_contiene_refresh_token(monkeypatch, job, caplog, capsys):
 
 
 # --------------------------------------------------------------------------
+#  Claim con --force sobre una fila SENT (sin DB: se mira el UPDATE emitido)
+# --------------------------------------------------------------------------
+
+class _Resultado:
+    def __init__(self, valor):
+        self.valor = valor
+
+    def scalar(self):
+        return self.valor
+
+    def scalar_one(self):
+        return self.valor
+
+    def one(self):
+        return self.valor
+
+
+class SesionFalsa:
+    """INSERT en conflicto -> SELECT de una fila SENT -> UPDATE del reclamo."""
+
+    def __init__(self, fila):
+        self.respuestas = [None, fila, fila.attempts + 1]
+        self.sentencias = []
+        self.commits = 0
+
+    def execute(self, stmt):
+        self.sentencias.append(stmt)
+        return _Resultado(self.respuestas.pop(0))
+
+    def commit(self):
+        self.commits += 1
+
+    def rollback(self):
+        pass
+
+
+def test_force_sobre_sent_limpia_message_id_y_sent_at_en_el_claim():
+    from types import SimpleNamespace
+
+    from sqlalchemy.dialects import postgresql
+
+    fila = SimpleNamespace(id=7, status=rd.SENT, attempts=1, error=None)
+    sesion = SesionFalsa(fila)
+
+    r = rd.reclamar_envio(sesion, JUEVES, force=True, destinatario="negocio@example.com")
+
+    assert (r.estado, r.id, r.attempts) == (rd.RECLAMADO, 7, 2)
+    update = sesion.sentencias[-1]
+    params = update.compile(dialect=postgresql.dialect()).params
+    assert params["status"] == rd.PENDING
+    assert params["message_id"] is None and params["sent_at"] is None and params["error"] is None
+    assert sesion.commits == 1  # mismo commit que el reclamo
+
+
+# --------------------------------------------------------------------------
 #  Aislamiento (I "Módulos importados") y entrada por -m
 # --------------------------------------------------------------------------
 

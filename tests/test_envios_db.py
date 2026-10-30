@@ -60,6 +60,8 @@ def test_sent_sin_force_saltea_y_con_force_reclama(sesion):
     assert (r2.estado, r2.id, r2.attempts) == (rd.RECLAMADO, r.id, 2)
     fila = _fila(sesion)
     assert fila.status == "PENDING" and fila.attempts == 2 and fila.error is None
+    # La fila refleja solo el intento nuevo: nada del envío anterior.
+    assert fila.message_id is None and fila.sent_at is None
 
 
 def test_pending_sin_force_queda_en_curso(sesion):
@@ -207,3 +209,27 @@ def test_segundo_claim_espera_al_primero_y_pierde(engine_limpio):
         a.commit()
         hilo.join(timeout=30)
         assert resultado == [rd.EN_CURSO]
+
+
+def test_force_sobre_sent_limpia_message_id_en_el_commit_del_claim(engine_limpio):
+    """Con commits reales: otra conexión ya ve la fila sin message_id/sent_at apenas
+    se reclama, y si el reintento falla queda FAILED sin el message_id viejo."""
+
+    def fila():
+        with Session(engine_limpio) as otra:
+            return _fila(otra, FECHA_CONCURRENCIA)
+
+    with Session(engine_limpio) as s:
+        r = rd.reclamar_envio(s, FECHA_CONCURRENCIA, force=False, destinatario=DEST)
+        rd.registrar_envio(s, r.id, "id-viejo")
+        assert (fila().status, fila().message_id) == ("SENT", "id-viejo")
+
+        r2 = rd.reclamar_envio(s, FECHA_CONCURRENCIA, force=True, destinatario=DEST)
+        assert (r2.estado, r2.attempts) == (rd.RECLAMADO, 2)
+        reclamada = fila()
+        assert (reclamada.status, reclamada.message_id, reclamada.sent_at) == ("PENDING", None, None)
+
+        rd.registrar_falla(s, r.id, "MailerError: 503 persistente")
+        fallida = fila()
+        assert (fallida.status, fallida.message_id, fallida.sent_at) == ("FAILED", None, None)
+        assert fallida.error == "MailerError: 503 persistente"

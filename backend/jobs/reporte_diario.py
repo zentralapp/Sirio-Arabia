@@ -23,7 +23,9 @@ Idempotencia: UNA fila por (report_key, fecha_negocio). El claim es
 `INSERT ... ON CONFLICT DO NOTHING RETURNING id`; si ya existe se toma con
 `SELECT ... FOR UPDATE`. FAILED se reintenta; SENT y PENDING no (salvo
 --force). Un FAILED en "estado incierto" (el mail pudo haber salido) tampoco
-se reintenta solo: hay que revisar Enviados y usar --force.
+se reintenta solo: hay que revisar Enviados y usar --force. Todo reclamo de
+una fila existente limpia error, message_id y sent_at en el mismo commit: la
+fila refleja solo el último intento.
 
 NUNCA importa `backend.app` ni `backend.views` (tests/test_aislamiento.py).
 Nunca loguea tokens, client secret ni el PDF.
@@ -157,6 +159,8 @@ def reclamar_envio(session, fecha: date, *, force: bool, destinatario: str) -> R
                 session.rollback()
                 return Reclamo(salteo, fila.id, fila.attempts)
 
+        # Reclamo nuevo (FAILED, o --force sobre SENT/PENDING): la fila refleja
+        # SOLO este intento. Si falla, queda FAILED sin el message_id viejo.
         attempts = session.execute(
             update(t)
             .where(t.c.id == fila.id)
@@ -164,6 +168,8 @@ def reclamar_envio(session, fecha: date, *, force: bool, destinatario: str) -> R
                 status=PENDING,
                 attempts=t.c.attempts + 1,
                 error=None,
+                message_id=None,
+                sent_at=None,
                 recipient=destinatario,
                 updated_at=ahora,
             )
