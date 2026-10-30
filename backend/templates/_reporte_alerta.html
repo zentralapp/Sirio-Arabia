@@ -1,0 +1,10 @@
+{# Aviso del reporte diario (solo admins, REPORTE_BANNER=1). Lo inyecta backend/views/reporte_estado.py. #}
+{% if reporte_alerta %}
+<div class="alert alert-{{ 'warning' if reporte_alerta.nivel == 'warning' else 'danger' }} d-flex align-items-start gap-2" role="alert" id="reporteAlerta">
+  <i class="bi bi-exclamation-triangle-fill flex-shrink-0" aria-hidden="true"></i>
+  <div class="text-break">
+    <strong>Reporte diario:</strong> {{ reporte_alerta.mensaje }}
+    {% if reporte_alerta.detalle %}<div class="small mt-1">Detalle: {{ reporte_alerta.detalle }}</div>{% endif %}
+  </div>
+</div>
+{% endif %}
