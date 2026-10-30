@@ -14,10 +14,10 @@ Exit codes: 0 = enviado o salteado a propósito (fin de semana, ya SENT,
 PENDING en curso, último intento incierto); 1 = falla (config, DB, tabla
 inexistente, datos, PDF, envío); 2 = uso incorrecto de las opciones.
 
-Orden (design §6): opciones -> fecha -> [--dry-run: leer, render, --out] ->
-guard de fin de semana -> mailer (valida config) -> app liviana -> claim en
-report_send_log (commit propio) -> lectura READ ONLY -> render -> envío ->
-SENT | FAILED.
+Orden (design §6): .env local (sin pisar env vars reales) -> opciones ->
+fecha -> [--dry-run: leer, render, --out] -> guard de fin de semana ->
+mailer (valida config) -> app liviana -> claim en report_send_log (commit
+propio) -> lectura READ ONLY -> render -> envío -> SENT | FAILED.
 
 Idempotencia: UNA fila por (report_key, fecha_negocio). El claim es
 `INSERT ... ON CONFLICT DO NOTHING RETURNING id`; si ya existe se toma con
@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+from dotenv import load_dotenv
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -382,6 +383,9 @@ def _configurar_logging() -> None:
 
 
 def main(argv=None) -> int:
+    # Antes de get_mailer(): REPORTE_* de un .env local valen. override=False:
+    # en Railway (y con export) ganan las env vars reales.
+    load_dotenv(override=False)
     _configurar_logging()
     try:
         args = _parsear(argv)

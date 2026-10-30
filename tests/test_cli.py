@@ -5,6 +5,7 @@ la lectura de datos, el render y el mailer. Lo que se prueba es la
 orquestación: guard de fin de semana, opciones, idempotencia y exit codes.
 """
 import logging
+import os
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -57,11 +58,17 @@ class Registro:
         self.error_mailer: Exception | None = None
         self.error_claim: Exception | None = None
         self.error_render: Exception | None = None
+        self.cargas_dotenv = []
 
 
 @pytest.fixture
 def job(monkeypatch):
     r = Registro()
+
+    def load_dotenv(*args, **kwargs):
+        # Nunca el .env real del desarrollador: contaminaría os.environ.
+        r.cargas_dotenv.append({"args": args, "kwargs": kwargs, "mailers_antes": r.mailers_construidos})
+        return False
 
     @contextmanager
     def abrir_sesion():
@@ -91,6 +98,7 @@ def job(monkeypatch):
         r.renders += 1
         return PDF
 
+    monkeypatch.setattr(rd, "load_dotenv", load_dotenv)
     monkeypatch.setattr(rd, "abrir_sesion", abrir_sesion)
     monkeypatch.setattr(rd, "get_mailer", get_mailer)
     monkeypatch.setattr(rd, "reclamar_envio", reclamar_envio)
@@ -305,6 +313,79 @@ def test_falla_de_db_en_claim_exit1(job):
     job.error_claim = RuntimeError("conexión rechazada")
     assert rd.main([]) == 1
     assert job.mailer.enviados == []
+
+
+# --------------------------------------------------------------------------
+#  .env local: se carga al arrancar main, antes del mailer; el entorno real gana
+# --------------------------------------------------------------------------
+
+@pytest.fixture
+def entorno_aislado():
+    """os.environ sin REPORTE_* del shell, restaurado entero al terminar
+    (load_dotenv escribe en os.environ y monkeypatch no lo registra)."""
+    entorno = dict(os.environ)
+    for nombre in [n for n in os.environ if n.startswith("REPORTE_")]:
+        del os.environ[nombre]
+    try:
+        yield os.environ
+    finally:
+        os.environ.clear()
+        os.environ.update(entorno)
+
+
+def test_main_carga_dotenv_antes_del_mailer_sin_pisar_el_entorno(job):
+    assert rd.main([]) == 0
+
+    (carga,) = job.cargas_dotenv
+    assert carga["mailers_antes"] == 0
+    assert carga["kwargs"].get("override", False) is False
+    assert job.mailers_construidos == 1
+
+
+def test_main_carga_dotenv_aunque_sea_fin_de_semana_o_dry_run(job, monkeypatch, tmp_path):
+    _hoy(monkeypatch, SABADO)
+    assert rd.main([]) == 0
+    assert rd.main(["--dry-run", "--out", str(tmp_path / "r.pdf")]) == 0
+    assert len(job.cargas_dotenv) == 2
+
+
+def test_dotenv_se_respeta_y_el_entorno_real_gana(job, monkeypatch, tmp_path, entorno_aislado):
+    """REPORTE_* del .env llegan al mailer; una variable ya exportada no se pisa."""
+    from dotenv import load_dotenv as load_dotenv_real
+
+    from backend.services import mailer as mailer_pkg
+
+    archivo_env = tmp_path / ".env"
+    archivo_env.write_text(
+        "REPORTE_MAIL_TO=desde-dotenv@example.com\n"
+        "REPORTE_MAIL_FROM=from-dotenv@example.com\n"
+        "REPORTE_REMITENTE_NOMBRE=Remitente Dotenv\n"
+        f"REPORTE_ARCHIVO_DIR={tmp_path / 'enviados'}\n",
+        encoding="utf-8",
+    )
+    entorno_aislado["REPORTE_MAIL_FROM"] = "from-real@example.com"
+
+    def cargar_tmp(*args, **kwargs):
+        assert args == ()
+        return load_dotenv_real(dotenv_path=archivo_env, **kwargs)  # respeta el override de main
+
+    construidos = []
+
+    def get_mailer_real():
+        construidos.append(mailer_pkg.get_mailer())
+        return construidos[-1]
+
+    monkeypatch.setattr(rd, "load_dotenv", cargar_tmp)
+    monkeypatch.setattr(rd, "get_mailer", get_mailer_real)
+
+    assert rd.main([]) == 0
+
+    (mailer,) = construidos
+    assert mailer.destinatario == "desde-dotenv@example.com"
+    assert mailer.remitente_nombre == "Remitente Dotenv"
+    assert mailer.remitente == "from-real@example.com"
+    assert job.claims[0]["destinatario"] == "desde-dotenv@example.com"
+    assert len(list((tmp_path / "enviados").iterdir())) == 1
 
 
 # --------------------------------------------------------------------------
