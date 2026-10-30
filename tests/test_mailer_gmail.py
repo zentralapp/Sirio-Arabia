@@ -316,6 +316,52 @@ def test_send_429_se_reintenta():
     assert len(sesion.a(SEND_URL)) == 2
 
 
+@pytest.mark.parametrize("status", [500, 502, 504])
+def test_send_500_502_504_es_incierto_sin_reintento(status):
+    """Un 500/502/504 al send puede venir DESPUÉS de que Gmail aceptó el mail
+    (error interno, gateway que cortó la respuesta): no se reintenta."""
+    sesion = SesionFalsa(token=[ok_token()], send=[error_gmail(status)])
+    reloj = Reloj()
+
+    with pytest.raises(EnvioIncierto) as exc:
+        enviar(mailer(sesion, reloj))
+
+    assert str(exc.value).startswith("estado incierto")
+    assert f"HTTP {status}" in str(exc.value)
+    assert len(sesion.a(SEND_URL)) == 1
+    assert reloj.esperas == []
+
+
+def test_send_503_y_despues_500_es_incierto():
+    sesion = SesionFalsa(token=[ok_token()], send=[error_gmail(503), error_gmail(500)])
+    reloj = Reloj()
+
+    with pytest.raises(EnvioIncierto):
+        enviar(mailer(sesion, reloj))
+
+    assert len(sesion.a(SEND_URL)) == 2
+    assert reloj.esperas == [2]
+
+
+def test_send_500_sin_body_json_es_incierto():
+    sesion = SesionFalsa(token=[ok_token()], send=[RespuestaFalsa(502)])
+
+    with pytest.raises(EnvioIncierto):
+        enviar(mailer(sesion))
+    assert len(sesion.a(SEND_URL)) == 1
+
+
+@pytest.mark.parametrize("status", [500, 502, 504])
+def test_refresh_500_502_504_se_sigue_reintentando(status):
+    """Solo cambia el send: el refresh del token es idempotente."""
+    sesion = SesionFalsa(token=[error_token("backend_error", status), ok_token()], send=[ok_send()])
+
+    enviar(mailer(sesion))
+
+    assert len(sesion.a(TOKEN_URL)) == 2
+    assert len(sesion.a(SEND_URL)) == 1
+
+
 def test_send_read_timeout_envio_incierto_sin_reintento():
     sesion = SesionFalsa(token=[ok_token()], send=[requests.exceptions.ReadTimeout("lento")])
     reloj = Reloj()
@@ -400,6 +446,7 @@ ESCENARIOS_DE_FALLA = {
     "invalid_client": dict(token=[error_token("invalid_client", 401)]),
     "refresh_caido": dict(token=[requests.exceptions.ConnectTimeout(f"x {REFRESH_TOKEN}")] * 3),
     "send_503": dict(token=[ok_token()], send=[error_gmail(503)] * 3),
+    "send_500": dict(token=[ok_token()], send=[error_gmail(500)]),
     "send_403": dict(token=[ok_token()], send=[error_gmail(403)]),
     "send_read_timeout": dict(token=[ok_token()], send=[requests.exceptions.ReadTimeout(f"x {ACCESS_TOKEN}")]),
     "send_401_x2": dict(token=[ok_token(), ok_token()], send=[error_gmail(401)] * 2),

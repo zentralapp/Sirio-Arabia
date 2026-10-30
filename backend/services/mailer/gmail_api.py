@@ -7,10 +7,13 @@ Flujo:
    sin reintento. 5xx/429/timeout/sin conexión -> reintento (el refresh es
    idempotente).
 2. Send: POST gmail/v1/users/me/messages/send {"raw": base64url(MIME)}.
-   401 -> refresca UNA vez. 400/403 -> sin reintento. 429/5xx con respuesta o
-   "no se pudo conectar" -> reintento. Timeout de lectura o conexión cortada
-   después de mandar el pedido -> EnvioIncierto, SIN reintento (pudo haber
-   salido; at-most-once).
+   401 -> refresca UNA vez. 400/403 -> sin reintento. 429/503 (y otros 5xx)
+   o "no se pudo conectar" -> reintento. 500/502/504, timeout de lectura o
+   conexión cortada después de mandar el pedido -> EnvioIncierto, SIN
+   reintento (pudo haber salido; at-most-once): un 500 puede ser un error
+   interno después de aceptar el mail, y 502/504 son un gateway que perdió la
+   respuesta del backend. 503 (no disponible) y 429 (rate limit) indican que
+   el pedido no se procesó.
 
 Como máximo 3 intentos por paso, esperando 2 s y 4 s entre ellos (el sleep es
 inyectable para los tests). Timeouts (connect=5 s, read=30 s).
@@ -56,6 +59,9 @@ MENSAJE_INCIERTO = (
 )
 
 _CODIGO_SEGURO = re.compile(r"[^A-Za-z0-9_.\-]")
+
+# Solo para el send (el refresh del token es idempotente y los reintenta).
+STATUS_SEND_INCIERTO = frozenset({500, 502, 504})
 
 
 def _codigo(valor) -> str:
@@ -230,6 +236,9 @@ class GmailApiMailer:
                     access_token = self._refrescar()
                     continue
                 motivo = f"HTTP {status} {error}"
+                if status in STATUS_SEND_INCIERTO:
+                    log.error("Gmail send: %s; no se reintenta (posible envío)", motivo)
+                    raise EnvioIncierto(f"{MENSAJE_INCIERTO} ({motivo})")
                 if not _transitorio(status):
                     raise MailerError(f"Gmail rechazó el envío: {motivo}.")
             if intento >= MAX_INTENTOS:

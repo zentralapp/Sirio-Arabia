@@ -95,8 +95,10 @@ Las queries están en `backend/services/reporte_diario/datos.py`.
 - **PDF:** se genera con fpdf2 y la fuente Poppins
   (`backend/services/reporte_diario/pdf.py`).
 - **Envío:** usa la Gmail API con OAuth (`backend/services/mailer/`), con
-  reintentos acotados. Si se corta la conexión **después** de mandar, el envío
-  queda en "estado incierto" y no se reintenta solo, para no duplicar el mail.
+  reintentos acotados (hasta 3 intentos ante 429/503 o si no pudo conectar).
+  Si se corta la conexión **después** de mandar, o Gmail responde 500/502/504
+  al envío, el envío queda en "estado incierto" y no se reintenta solo, para
+  no duplicar el mail.
 - **Aviso en la web:** los admins ven un banner si el reporte del último día
   hábil no salió (`backend/services/reporte_estado.py`). Se prende con
   `REPORTE_BANNER=1`.
@@ -449,7 +451,7 @@ las **09:00 ART** o más; si no, el día hábil anterior. Lunes antes de las
 | Mensaje | Qué pasó | Qué hacer |
 |---|---|---|
 | **No se envió el reporte del DD/MM.** | No hay fila: el cron no corrió o falló antes de reclamar el envío (config, DB, tabla). | Mirá los logs del servicio cron (`railway cron list` / logs del run). Corregí la causa y corrélo a mano (`railway cron run`; si ya pasó ese día, ver [§8.4](#84-reenviar-un-día)). |
-| **Estado incierto …** | El envío se cortó después de mandar (timeout de lectura), o quedó PENDING más de 30 minutos (el proceso murió, o Gmail aceptó el mail pero no se pudo grabar SENT). Puede haber salido. | Revisá **Enviados** de la cuenta del negocio. Si el mail está, no hagas nada. Si **no** está, reenviá con `--force` ([§8.4](#84-reenviar-un-día)). |
+| **Estado incierto …** | El envío se cortó después de mandar (timeout de lectura o Gmail respondió 500/502/504), o quedó PENDING más de 30 minutos (el proceso murió, o Gmail aceptó el mail pero no se pudo grabar SENT). Puede haber salido. | Revisá **Enviados** de la cuenta del negocio. Si el mail está, no hagas nada. Si **no** está, reenviá con `--force` ([§8.4](#84-reenviar-un-día)). |
 | **Falló el reporte del DD/MM: hay que re-autorizar Gmail …** | El token fue revocado (cambio de contraseña, acceso quitado, app en Testing a los 7 días) → `invalid_grant`. | Corré `scripts/autorizar_gmail.py` ([§3.4](#34-autorizar-y-obtener-el-refresh-token)), actualizá `REPORTE_GMAIL_REFRESH_TOKEN` en el cron y reenviá ese día. |
 | **Falló el reporte del DD/MM.** + detalle | Cualquier otra falla: Google, PDF, datos, DB. El detalle es la primera línea del error, sin URLs, mails ni cadenas que parezcan secretos. | Mirá el log del run y la columna `error` de la fila. Corregí la causa y reenviá. |
 
