@@ -202,7 +202,7 @@ El job usa **solo** variables `REPORTE_*`. También las lista `.env.example`.
 | Variable | ¿Obligatoria? | Default | Para qué |
 |---|---|---|---|
 | `DATABASE_URL` | Sí | — | Postgres. En Railway, la del plugin. |
-| `REPORTE_MAILER` | No | `archivo` | `gmail_api` (manda de verdad) o `archivo` (escribe un `.eml` en disco). |
+| `REPORTE_MAILER` | Local: no. **Railway: sí, `gmail_api`** | `archivo` (solo fuera de Railway) | `gmail_api` (manda de verdad) o `archivo` (escribe un `.eml` en disco). |
 | `REPORTE_GMAIL_CLIENT_ID` | Sí con `gmail_api` | — | Client ID del cliente OAuth Desktop. |
 | `REPORTE_GMAIL_CLIENT_SECRET` | Sí con `gmail_api` | — | Client secret. |
 | `REPORTE_GMAIL_REFRESH_TOKEN` | Sí con `gmail_api` | — | Salida de `scripts/autorizar_gmail.py`. |
@@ -215,6 +215,19 @@ El job usa **solo** variables `REPORTE_*`. También las lista `.env.example`.
 Si con `gmail_api` falta alguna variable obligatoria, el job sale con exit 1
 **antes** de tocar `report_send_log`. El error nombra las variables que
 faltan, nunca sus valores.
+
+**En Railway el modo `archivo` está prohibido.** El job detecta que corre en
+Railway por las variables que Railway inyecta en todo deploy
+(`RAILWAY_ENVIRONMENT_NAME`, `RAILWAY_ENVIRONMENT_ID`, `RAILWAY_PROJECT_ID`,
+`RAILWAY_SERVICE_ID`, y la vieja `RAILWAY_ENVIRONMENT`). Si `REPORTE_MAILER`
+falta o dice `archivo`, sale con exit 1 sin escribir fila y loguea
+`REPORTE_MAILER no configurado en Railway: el reporte no se envió` (o
+`REPORTE_MAILER=archivo no se permite en Railway`). A las 09:00 el banner
+muestra "No se envió el reporte". Sin esta regla, el `.eml` quedaría en el
+disco efímero del contenedor, la fila quedaría SENT y nadie se enteraría.
+Fuera de Railway el default sigue siendo `archivo`. Ojo: `railway run` también
+inyecta esas variables, así que bajo `railway run` el modo `archivo` falla
+(igual no hay que usar `railway run`, ver [§5.3](#53-correr-el-cron-a-mano)).
 
 Ejemplo para el servicio cron. Los valores son **placeholders**:
 
@@ -275,7 +288,9 @@ servicio nuevo:
 | Variables | las de [§4](#4-variables-de-entorno), con `DATABASE_URL` referenciando al mismo Postgres que la web |
 
 En el cron **no** van `AUTO_MIGRATE`, `SECRET_KEY`, `GMAIL_*` ni
-`REPORTE_BANNER`.
+`REPORTE_BANNER`. `REPORTE_MAILER=gmail_api` es **obligatoria**: sin ella (o
+con `archivo`) el job falla con exit 1 y no manda nada (ver
+[§4](#4-variables-de-entorno)).
 
 > **Verificá el start command en el primer run.** En la raíz hay un
 > `Railway.toml` con el start de gunicorn de la web. Según la documentación de

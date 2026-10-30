@@ -169,6 +169,58 @@ def test_config_no_lee_gmail_viejas():
     assert config.mail_to != CASILLA
 
 
+# ---------------------------------------------------------------- Railway: archivo prohibido
+
+# Las que Railway documenta en https://docs.railway.com/reference/variables
+# (RAILWAY_ENVIRONMENT_NAME/_ID, RAILWAY_PROJECT_ID, RAILWAY_SERVICE_ID) y la
+# legacy RAILWAY_ENVIRONMENT.
+VARIABLES_RAILWAY = [
+    "RAILWAY_ENVIRONMENT_NAME",
+    "RAILWAY_ENVIRONMENT_ID",
+    "RAILWAY_ENVIRONMENT",
+    "RAILWAY_PROJECT_ID",
+    "RAILWAY_SERVICE_ID",
+]
+
+
+@pytest.mark.parametrize("variable", VARIABLES_RAILWAY)
+def test_railway_sin_reporte_mailer_falla(variable, tmp_path):
+    with pytest.raises(MailerError) as exc:
+        get_mailer({variable: "production", "REPORTE_ARCHIVO_DIR": str(tmp_path)})
+
+    assert "REPORTE_MAILER no configurado en Railway" in str(exc.value)
+    assert "no se envió" in str(exc.value)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("valor", ["archivo", "ARCHIVO", " archivo "])
+def test_railway_con_archivo_explicito_tambien_falla(valor):
+    with pytest.raises(MailerError) as exc:
+        leer_config({ENV_MAILER: valor, "RAILWAY_ENVIRONMENT_NAME": "production"})
+
+    assert "REPORTE_MAILER=archivo" in str(exc.value)
+    assert "Railway" in str(exc.value)
+    assert "no se envió" in str(exc.value)
+
+
+def test_railway_variable_vacia_no_cuenta(tmp_path):
+    mailer = get_mailer({"RAILWAY_ENVIRONMENT_NAME": "  ", "REPORTE_ARCHIVO_DIR": str(tmp_path)})
+
+    assert isinstance(mailer, ArchivoMailer)
+
+
+def test_railway_con_gmail_api_completo_anda():
+    config = leer_config(dict(ENV_GMAIL_COMPLETO, RAILWAY_ENVIRONMENT_NAME="production"))
+
+    assert config.modo == "gmail_api"
+
+
+def test_local_sin_railway_archivo_sigue_siendo_el_default(tmp_path):
+    mailer = get_mailer({ENV_MAILER: "archivo", "REPORTE_ARCHIVO_DIR": str(tmp_path)})
+
+    assert isinstance(mailer, ArchivoMailer)
+
+
 # ---------------------------------------------------------------- armado MIME
 
 

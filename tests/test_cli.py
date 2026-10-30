@@ -260,6 +260,71 @@ def test_config_invalida_exit1_sin_claim(job):
     assert job.claims == []
 
 
+@pytest.fixture
+def mailer_real(monkeypatch, tmp_path):
+    """El get_mailer de verdad, con un entorno sin REPORTE_* ni RAILWAY_*."""
+    from backend.services import mailer as mailer_pkg
+
+    for nombre in [n for n in os.environ if n.startswith(("REPORTE_", "RAILWAY_"))]:
+        monkeypatch.delenv(nombre)
+    monkeypatch.setenv("REPORTE_ARCHIVO_DIR", str(tmp_path / "eml"))
+    monkeypatch.setattr(rd, "get_mailer", mailer_pkg.get_mailer)
+    return tmp_path / "eml"
+
+
+def test_railway_sin_reporte_mailer_exit1_sin_claim(job, mailer_real, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "production")
+
+    assert rd.main([]) == 1
+
+    assert job.sesiones_abiertas == 0
+    assert job.claims == [] and job.enviados == [] and job.fallas == []
+    assert not mailer_real.exists()
+    assert any(
+        r.levelno == logging.ERROR and "REPORTE_MAILER no configurado en Railway: el reporte no se envió" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_railway_con_archivo_explicito_exit1_sin_claim(job, mailer_real, monkeypatch, caplog):
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT", "production")
+    monkeypatch.setenv("REPORTE_MAILER", "archivo")
+
+    assert rd.main([]) == 1
+
+    assert job.sesiones_abiertas == 0
+    assert job.claims == []
+    assert not mailer_real.exists()
+    assert "REPORTE_MAILER=archivo" in caplog.text
+
+
+def test_railway_fin_de_semana_sigue_siendo_exit0(job, mailer_real, monkeypatch):
+    """El guard de fin de semana va antes del mailer: sáb/dom no falla por config."""
+    _hoy(monkeypatch, SABADO)
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "production")
+
+    assert rd.main([]) == 0
+    assert job.claims == []
+
+
+def test_railway_dry_run_no_valida_el_mailer(job, mailer_real, monkeypatch, tmp_path):
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "production")
+    out = tmp_path / "r.pdf"
+
+    assert rd.main(["--dry-run", "--out", str(out)]) == 0
+    assert out.read_bytes() == PDF
+
+
+def test_local_sin_railway_archivo_envia(job, mailer_real):
+    assert rd.main([]) == 0
+
+    assert len(job.claims) == 1
+    ((_, message_id),) = job.enviados
+    assert message_id.startswith("archivo:")
+    assert len(list(mailer_real.iterdir())) == 1
+
+
 def test_claim_salteado_sent_exit0(job, caplog):
     caplog.set_level(logging.INFO)
     job.reclamo = rd.Reclamo(rd.YA_ENVIADO, id=7, attempts=1)
