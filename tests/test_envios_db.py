@@ -92,6 +92,27 @@ def test_failed_incierto_exige_force(sesion):
     assert (r2.estado, r2.attempts) == (rd.RECLAMADO, 2)
 
 
+def test_failed_incierto_no_se_reintenta_y_la_fila_no_cambia(sesion):
+    """Un EnvioIncierto sin prefijo igual queda marcado y las corridas siguientes no lo tocan.
+
+    El mail pudo haber salido: reintentarlo solo podría duplicarlo (ADR-7).
+    """
+    r = rd.reclamar_envio(sesion, FECHA, force=False, destinatario=DEST)
+    error = rd._texto_error(rd.EnvioIncierto("Gmail respondió 200 sin id"))
+    rd.registrar_falla(sesion, r.id, error)
+    antes = _fila(sesion)
+
+    for _ in range(2):
+        r2 = rd.reclamar_envio(sesion, FECHA, force=False, destinatario=DEST)
+        assert (r2.estado, r2.id, r2.attempts) == (rd.INCIERTO, r.id, 1)
+
+    despues = _fila(sesion)
+    assert despues.status == "FAILED"
+    assert despues.error == error and despues.error.startswith(rd.PREFIJO_INCIERTO)
+    assert (despues.attempts, despues.updated_at) == (antes.attempts, antes.updated_at)
+    assert sesion.get_nested_transaction() is None  # el salteo no deja el lock tomado
+
+
 def test_registrar_falla_trunca_a_2000(sesion):
     r = rd.reclamar_envio(sesion, FECHA, force=False, destinatario=DEST)
     rd.registrar_falla(sesion, r.id, "e" * 5000)

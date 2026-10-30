@@ -280,6 +280,9 @@ def test_claim_salteado_incierto_exit0_con_advertencia(job, caplog):
     assert rd.main([]) == 0
 
     assert job.mailer.enviados == []
+    # Ni lee, ni arma el PDF, ni pisa la fila: sigue FAILED "estado incierto".
+    assert job.lecturas == [] and job.renders == 0
+    assert job.enviados == [] and job.fallas == []
     assert any(r.levelno == logging.WARNING and "--force" in r.getMessage() for r in caplog.records)
 
 
