@@ -79,6 +79,29 @@ Una sección vacía dice "Sin registros". Si están todas vacías, el PDF dice
 Código de la clasificación: `backend/services/reporte_diario/clasificar.py`.
 Las queries están en `backend/services/reporte_diario/datos.py`.
 
+### Diferencias esperadas con el dashboard y `/deudas`
+
+Los conteos del reporte pueden no coincidir con los del dashboard o
+`/deudas`. **No es un bug**, son reglas distintas a propósito:
+
+1. **Pagadas sin registrar cobro.** Una cobranza vencida con pagos que cubren
+   el monto, pero sin fecha de cobro, cuenta como ATRASADO en el dashboard.
+   En el reporte va **solo** a "Pagadas sin registrar cobro" y no suma a
+   ATRASADAS.
+2. **Pedidos sin fila de cobranza.** El dashboard parte de la tabla de
+   cobranzas (`Collection`), así que un pedido sin esa fila no aparece. El
+   reporte parte de los pedidos y sí lo incluye.
+3. **Pagos parciales.** En el dashboard, PARCIAL es "tiene algún pago no
+   borrador **o** un borrador de cobranza (`CollectionDraft`)". En el reporte
+   es "tiene pagos o notas de crédito guardados **y** le queda saldo > 0,01".
+   Un borrador nunca cuenta como plata.
+4. **Alcance.** Un usuario no admin ve en el dashboard solo sus pedidos. El
+   reporte es global: todos los pedidos de todos los usuarios, incluidos los
+   que tienen la alerta silenciada.
+
+Si aparece una diferencia que **no** entra en ninguno de estos cuatro casos,
+eso sí hay que revisarlo.
+
 ---
 
 ## 2. Cómo está armado
