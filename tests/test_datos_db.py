@@ -13,16 +13,21 @@ from sqlalchemy import event, func, select, text
 from sqlalchemy.exc import DBAPIError
 
 from backend.models import (
+    AppUser,
     Client,
+    ClientAlertState,
     ClientBirthday,
     ClientCompanyLink,
     Collection,
+    CollectionDraft,
     CollectionPayment,
     Company,
     LogisticsStatus,
     Order,
     RelationStatus,
 )
+from backend.services.reporte_diario.clasificar import clasificar_cobranzas
+from backend.services.reporte_diario.fechas import fin_de_semana
 from backend.services.reporte_diario.datos import (
     armar_reporte,
     leer_cobranzas,
@@ -183,6 +188,101 @@ def test_cobranza_sin_vencimiento(base):
 
     assert f.vencimiento is None
     assert f.estado == EN_CAMINO
+
+
+def _secciones(sesion):
+    """{nombre de sección: {order_id, ...}} con la clasificación real del reporte."""
+    secciones = clasificar_cobranzas(leer_cobranzas(sesion, HOY), HOY, fin_de_semana(HOY))
+    return {nombre: {f.order_id for f in filas} for nombre, filas in secciones.items()}
+
+
+def _donde(secciones, order_id):
+    return sorted(nombre for nombre, ids in secciones.items() if order_id in ids)
+
+
+def test_universo_ignora_owner_y_alerta_silenciada(base):
+    """C "Pedido de otro usuario / alerta silenciada": el alcance es global."""
+    sesion, cliente, empresa = base
+    otro = AppUser(username=f"prueba-{uuid.uuid4().hex[:10]}", password_hash="x", is_admin=False)
+    sesion.add(otro)
+    sesion.flush()
+
+    vencida = {"fecha_pago_estimada": datetime(2026, 10, 19)}
+    de_otro = _pedido(sesion, cliente, empresa, precio=D("1000"), coll=vencida)
+    de_otro.owner_user_id = otro.id
+    silenciada = _pedido(sesion, cliente, empresa, precio=D("2000"), coll=vencida)
+    silenciada.owner_user_id = otro.id
+    sesion.add(
+        ClientAlertState(
+            client_id=cliente.id,
+            order_id=silenciada.id,
+            owner_user_id=otro.id,
+            kind="COBRANZA",
+            dismissed_at=datetime(2026, 10, 20),
+            snoozed_until=datetime(2027, 1, 1),
+        )
+    )
+    sesion.flush()
+
+    secciones = _secciones(sesion)
+
+    assert _donde(secciones, de_otro.id) == ["atrasadas"]
+    assert _donde(secciones, silenciada.id) == ["atrasadas"]
+
+
+def test_solo_collection_draft_no_es_parcial(base):
+    """C Pagos parciales "Solo CollectionDraft": un borrador nunca es plata."""
+    sesion, cliente, empresa = base
+    pedido = _pedido(sesion, cliente, empresa, precio=D("1000"),
+                     coll={"fecha_pago_estimada": datetime(2026, 10, 31)})
+    sesion.add(CollectionDraft(client_id=cliente.id, company_id=empresa.id, order_id=pedido.id, notes="borrador"))
+    sesion.flush()
+
+    fila = _por_id(leer_cobranzas(sesion, HOY))[pedido.id]
+    secciones = _secciones(sesion)
+
+    assert (fila.saldo.pagado, fila.saldo.nc, fila.saldo.saldo) == (D("0"), D("0"), D("1000"))
+    assert _donde(secciones, pedido.id) == ["vencen_semana"]
+
+
+def _pago(sesion, pedido, kind, method, monto):
+    sesion.add(CollectionPayment(order_id=pedido.id, kind=kind, method=method, amount=D(monto)))
+    sesion.flush()
+
+
+def test_nota_de_credito_como_la_graba_la_app_cuenta_como_nc(base):
+    """La app graba las NC con kind=CREDIT_NOTE y method="NC" (monto positivo)."""
+    sesion, cliente, empresa = base
+    vencida = {"fecha_pago_estimada": datetime(2026, 10, 19)}
+    parcial = _pedido(sesion, cliente, empresa, precio=D("1000"), coll=vencida)
+    _pago(sesion, parcial, "CREDIT_NOTE", "NC", "200")
+    saldada = _pedido(sesion, cliente, empresa, precio=D("1000"), coll=vencida)
+    _pago(sesion, saldada, "PAYMENT", "TRANSFERENCIA", "600")
+    _pago(sesion, saldada, "CREDIT_NOTE", "NC", "400")
+
+    filas = _por_id(leer_cobranzas(sesion, HOY))
+    secciones = _secciones(sesion)
+
+    p = filas[parcial.id].saldo
+    assert (p.pagado, p.nc, p.saldo) == (D("0"), D("200"), D("800"))
+    assert _donde(secciones, parcial.id) == ["atrasadas", "parciales"]
+    s_ = filas[saldada.id].saldo
+    assert (s_.pagado, s_.nc, s_.saldo) == (D("600"), D("400"), D("0"))
+    assert _donde(secciones, saldada.id) == ["pagadas_sin_registrar"]
+
+
+def test_payment_con_method_nc_cuenta_como_pagado(base):
+    """Glosario: se clasifica por `kind`, NO por `method`. Un PAYMENT con
+    method "NC" va a Pagado (el saldo es el mismo)."""
+    sesion, cliente, empresa = base
+    pedido = _pedido(sesion, cliente, empresa, precio=D("1000"),
+                     coll={"fecha_pago_estimada": datetime(2026, 10, 19)})
+    _pago(sesion, pedido, "PAYMENT", "NC", "300")
+
+    s_ = _por_id(leer_cobranzas(sesion, HOY))[pedido.id].saldo
+
+    assert (s_.pagado, s_.nc, s_.saldo) == (D("300"), D("0"), D("700"))
+    assert _donde(_secciones(sesion), pedido.id) == ["atrasadas", "parciales"]
 
 
 # ---------------------------------------------------------------- cumpleaños

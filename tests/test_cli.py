@@ -641,6 +641,24 @@ def test_force_sobre_sent_limpia_message_id_y_sent_at_en_el_claim():
 #  Aislamiento (I "Módulos importados") y entrada por -m
 # --------------------------------------------------------------------------
 
+def test_abrir_sesion_loguea_host_y_base_sin_credenciales(monkeypatch, caplog):
+    """G "Log del host": con una URL falsa (no se conecta: el engine es lazy)."""
+    import backend.jobs.app_job as app_job
+
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(app_job, "load_dotenv", lambda *a, **k: False)  # nunca el .env real
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql://usuario-secreto:clave-super-secreta@localhost:5432/sirioarabia"
+    )
+
+    with rd.abrir_sesion():
+        pass
+
+    assert "base de datos: localhost/sirioarabia" in caplog.text
+    for dato in ("usuario-secreto", "clave-super-secreta"):
+        assert dato not in caplog.text
+
+
 def test_job_no_importa_backend_app():
     script = (
         "import sys, backend.jobs.reporte_diario\n"
