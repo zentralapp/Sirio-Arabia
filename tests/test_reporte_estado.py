@@ -320,3 +320,37 @@ def test_consultar_fila_contra_la_base_local(sesion_tx):
     fila = re_.consultar_fila(sesion_tx.connection(), date(1990, 1, 2))
     assert fila == FilaEstado("FAILED", "boom", AHORA_UTC)
     assert re_.consultar_fila(sesion_tx.connection(), date(1990, 1, 3)) is None
+
+
+# --- filas 'prueba' del botón: el aviso las ignora (spec F) ------------------------
+
+
+@pytest.mark.db
+def test_fila_prueba_no_cuenta_para_el_aviso(sesion_tx):
+    """Contra la base LOCAL, en la transacción descartable de `sesion_tx`."""
+    from sqlalchemy import delete, text
+
+    from backend.models import ReportSendLog
+    from backend.services.reporte_diario import envios
+
+    if not sesion_tx.execute(text("select to_regclass('public.report_send_log')")).scalar():
+        pytest.skip("report_send_log no existe en la base local")
+    fecha = date(1990, 1, 5)
+    sesion_tx.execute(delete(ReportSendLog.__table__).where(ReportSendLog.report_key == "prueba"))
+    sesion_tx.commit()
+
+    # Solo una 'prueba' FAILED en la fecha esperada: para el aviso no hay fila.
+    r = envios.reclamar_prueba(sesion_tx, fecha, destinatario="x@example.com")
+    envios.registrar_falla(sesion_tx, r.id, "MailerError: 503")
+    assert re_.consultar_fila(sesion_tx.connection(), fecha) is None
+
+    # 'diario' FAILED + 'prueba' SENT: el aviso sigue mostrando la falla.
+    d = envios.reclamar_envio(sesion_tx, fecha, force=False, destinatario="x@example.com")
+    envios.registrar_falla(sesion_tx, d.id, "MailerError: 503 persistente")
+    r2 = envios.reclamar_prueba(sesion_tx, fecha, destinatario="x@example.com")
+    envios.registrar_envio(sesion_tx, r2.id, "id-prueba")
+
+    fila = re_.consultar_fila(sesion_tx.connection(), fecha)
+    assert fila.status == "FAILED"
+    alerta = evaluar_estado(fila, fecha, datetime(1990, 1, 5, 13, 0))
+    assert alerta["nivel"] == "danger" and alerta["mensaje"].startswith("Falló el reporte del 05/01")

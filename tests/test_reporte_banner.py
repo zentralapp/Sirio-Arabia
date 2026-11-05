@@ -203,3 +203,47 @@ def test_vista_no_importa_app_ni_main():
     resultado = subprocess.run([sys.executable, "-c", script], cwd=REPO, capture_output=True, text=True, timeout=60)
     assert resultado.returncode == 0, resultado.stderr
     assert resultado.stdout.strip() == ""
+
+
+# --- link al botón "Generar reporte" (spec L "Ubicación") ----------------------
+
+
+@pytest.mark.parametrize("boton,admin,esperado", [("1", True, True), (None, True, False), ("1", False, False)])
+def test_parcial_muestra_link_al_boton_solo_con_reporte_boton(app, consultas, monkeypatch, boton, admin, esperado):
+    monkeypatch.setenv("REPORTE_BANNER", "1")
+    if boton is None:
+        monkeypatch.delenv("REPORTE_BOTON", raising=False)
+    else:
+        monkeypatch.setenv("REPORTE_BOTON", boton)
+    usuario = Usuario(admin=admin)
+    _como(monkeypatch, usuario)
+    with app.test_request_context("/"):
+        html = render_template("_reporte_alerta.html", reporte_alerta=dict(ALERTA_FALLA))
+    assert ("Generar / reenviar prueba" in html) is esperado
+    if esperado:
+        assert 'href="/reporte"' in html
+
+
+def test_layout_tiene_el_link_en_los_dos_navs():
+    layout = (TEMPLATES / "layout.html").read_text(encoding="utf-8")
+    assert layout.count("url_for('reporte_estado.generar')") == 2
+    assert layout.count("{% if reporte_boton %}") == 2
+    # Después de "Usuarios" en cada nav.
+    for marca in ("url_for('main.usuarios') }}\"><i class=\"bi bi-person-badge me-2\"></i>Usuarios",):
+        primero = layout.index(marca)
+        segundo = layout.index(marca, primero + 1)
+        links = [i for i in range(len(layout)) if layout.startswith("url_for('reporte_estado.generar')", i)]
+        assert primero < links[0] < segundo < links[1]
+
+
+def test_layout_sin_flag_no_muestra_el_link(app, monkeypatch):
+    """Render real del bloque del nav: sin reporte_boton no aparece."""
+    from jinja2 import Environment
+
+    layout = (TEMPLATES / "layout.html").read_text(encoding="utf-8")
+    inicio = layout.index("{% if reporte_boton %}")
+    fin = layout.index("{% endif %}", layout.index("</li>", inicio)) + len("{% endif %}")
+    bloque = Environment().from_string(layout[inicio:fin])
+    url_for = lambda ep: "/reporte"  # noqa: E731
+    assert "Generar reporte" not in bloque.render(url_for=url_for)
+    assert "Generar reporte" in bloque.render(url_for=url_for, reporte_boton=True)

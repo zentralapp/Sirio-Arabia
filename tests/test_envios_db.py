@@ -233,3 +233,250 @@ def test_force_sobre_sent_limpia_message_id_en_el_commit_del_claim(engine_limpio
         fallida = fila()
         assert (fallida.status, fallida.message_id, fallida.sent_at) == ("FAILED", None, None)
         assert fallida.error == "MailerError: 503 persistente"
+
+
+# --------------------------------------------------------------------------
+#  Envío de prueba del botón (report_key='prueba', spec F y L)
+# --------------------------------------------------------------------------
+# reclamar_prueba vive en envios.py y llama a envios.reclamar_envio: estos
+# tests usan el módulo envios directamente (parchar rd.* no lo afecta).
+
+from datetime import timedelta  # noqa: E402
+
+from backend.services.reporte_diario import envios  # noqa: E402
+
+FECHA_PRUEBA_OTRA = date(1990, 1, 3)
+
+
+def _fila_key(sesion, key, fecha=FECHA):
+    return sesion.execute(
+        select(ReportSendLog.__table__).where(
+            ReportSendLog.report_key == key, ReportSendLog.fecha_negocio == fecha
+        )
+    ).one()
+
+
+@pytest.fixture
+def sesion_prueba(sesion):
+    """Sin filas 'prueba' de otras fechas (las guardas son globales).
+
+    El DELETE vive en la transacción externa del fixture: se descarta al final.
+    El commit solo libera el savepoint, así un rollback del claim no lo deshace.
+    """
+    sesion.execute(delete(ReportSendLog.__table__).where(ReportSendLog.report_key == envios.REPORT_KEY_PRUEBA))
+    sesion.commit()
+    return sesion
+
+
+def _ahora():
+    return envios._ahora_utc()
+
+
+def test_prueba_primera_reclama_pending(sesion_prueba):
+    r = envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST)
+
+    assert (r.estado, r.attempts) == (envios.RECLAMADO, 1)
+    fila = _fila_key(sesion_prueba, "prueba")
+    assert (fila.id, fila.status, fila.attempts, fila.recipient) == (r.id, "PENDING", 1, DEST)
+    # No crea fila 'diario'.
+    assert sesion_prueba.execute(
+        select(ReportSendLog.id).where(ReportSendLog.report_key == "diario", ReportSendLog.fecha_negocio == FECHA)
+    ).first() is None
+
+
+def test_prueba_sent_viejo_se_re_reclama_limpio(sesion_prueba):
+    r = envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST)
+    envios.registrar_envio(sesion_prueba, r.id, "id-1")
+
+    r2 = envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST, ahora=_ahora() + timedelta(seconds=61))
+
+    assert (r2.estado, r2.id, r2.attempts) == (envios.RECLAMADO, r.id, 2)
+    fila = _fila_key(sesion_prueba, "prueba")
+    assert (fila.status, fila.message_id, fila.sent_at, fila.error) == ("PENDING", None, None, None)
+
+
+def test_prueba_pending_reciente_queda_en_curso_sin_tocar(sesion_prueba):
+    r = envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST)
+    antes = _fila_key(sesion_prueba, "prueba")
+
+    r2 = envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST, ahora=_ahora() + timedelta(minutes=4))
+
+    assert (r2.estado, r2.id) == (envios.EN_CURSO, r.id)
+    despues = _fila_key(sesion_prueba, "prueba")
+    assert (despues.attempts, despues.updated_at, despues.status) == (antes.attempts, antes.updated_at, "PENDING")
+
+
+def test_prueba_pending_reciente_de_otra_fecha_tambien_bloquea(sesion_prueba):
+    envios.reclamar_prueba(sesion_prueba, FECHA_PRUEBA_OTRA, destinatario=DEST)
+    r = envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST)
+    assert r.estado == envios.EN_CURSO
+    assert sesion_prueba.execute(
+        select(ReportSendLog.id).where(
+            ReportSendLog.report_key == "prueba", ReportSendLog.fecha_negocio == FECHA
+        )
+    ).first() is None
+
+
+def test_prueba_pending_de_10_minutos_se_re_reclama(sesion_prueba):
+    r = envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST)
+
+    r2 = envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST, ahora=_ahora() + timedelta(minutes=10))
+
+    assert (r2.estado, r2.id, r2.attempts) == (envios.RECLAMADO, r.id, 2)
+    assert _fila_key(sesion_prueba, "prueba").status == "PENDING"
+
+
+def test_prueba_sent_hace_30_s_en_otra_fecha_es_demasiado_pronto(sesion_prueba):
+    r = envios.reclamar_prueba(sesion_prueba, FECHA_PRUEBA_OTRA, destinatario=DEST)
+    envios.registrar_envio(sesion_prueba, r.id, "id-otra")
+
+    r2 = envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST, ahora=_ahora() + timedelta(seconds=30))
+
+    assert r2.estado == envios.DEMASIADO_PRONTO
+    assert sesion_prueba.execute(
+        select(ReportSendLog.id).where(
+            ReportSendLog.report_key == "prueba", ReportSendLog.fecha_negocio == FECHA
+        )
+    ).first() is None
+
+
+def test_prueba_failed_se_re_reclama(sesion_prueba):
+    r = envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST)
+    envios.registrar_falla(sesion_prueba, r.id, envios.texto_error(envios.EnvioIncierto("timeout")))
+
+    r2 = envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST)
+    assert (r2.estado, r2.attempts) == (envios.RECLAMADO, 2)
+
+
+def test_prueba_no_toca_la_fila_diario_de_la_misma_fecha(sesion_prueba):
+    rd_r = rd.reclamar_envio(sesion_prueba, FECHA, force=False, destinatario=DEST)
+    rd.registrar_envio(sesion_prueba, rd_r.id, "id-diario")
+    antes = _fila_key(sesion_prueba, "diario")
+
+    r = envios.reclamar_prueba(sesion_prueba, FECHA, destinatario="otro@example.com")
+    envios.registrar_falla(sesion_prueba, r.id, "MailerError: 503")
+    r2 = envios.reclamar_prueba(sesion_prueba, FECHA, destinatario="otro@example.com")
+    envios.registrar_envio(sesion_prueba, r2.id, "id-prueba")
+
+    despues = _fila_key(sesion_prueba, "diario")
+    assert despues == antes
+    assert r.id != rd_r.id
+    # Y el job sigue viendo SU fila: SENT sin --force.
+    assert rd.reclamar_envio(sesion_prueba, FECHA, force=False, destinatario=DEST).estado == rd.YA_ENVIADO
+
+
+def test_prueba_pending_no_bloquea_al_job(sesion_prueba):
+    envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST)
+    r = rd.reclamar_envio(sesion_prueba, FECHA, force=False, destinatario=DEST)
+    assert (r.estado, r.attempts) == (rd.RECLAMADO, 1)
+
+
+def test_diario_pending_no_bloquea_la_prueba(sesion_prueba):
+    rd.reclamar_envio(sesion_prueba, FECHA, force=False, destinatario=DEST)
+    assert envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST).estado == envios.RECLAMADO
+
+
+def test_reclamar_envio_sin_report_key_usa_diario(sesion_prueba):
+    r = envios.reclamar_envio(sesion_prueba, FECHA, force=False, destinatario=DEST)
+    assert _fila_key(sesion_prueba, "diario").id == r.id
+
+
+def test_prueba_deja_la_sesion_sin_transaccion_abierta(sesion_prueba):
+    """El lock es de transacción: tras el claim (o el rechazo) no queda nada abierto."""
+    envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST)
+    assert sesion_prueba.get_nested_transaction() is None
+    envios.reclamar_prueba(sesion_prueba, FECHA, destinatario=DEST)  # EN_CURSO
+    assert sesion_prueba.get_nested_transaction() is None
+
+
+def test_ultimas_pruebas_solo_lee_prueba(sesion_prueba):
+    rd.reclamar_envio(sesion_prueba, FECHA, force=False, destinatario=DEST)
+    r = envios.reclamar_prueba(sesion_prueba, FECHA_PRUEBA_OTRA, destinatario=DEST)
+    envios.registrar_envio(sesion_prueba, r.id, "id-x")
+
+    filas = envios.ultimas_pruebas(sesion_prueba.connection())
+
+    assert [(f.fecha_negocio, f.status, f.attempts) for f in filas] == [(FECHA_PRUEBA_OTRA, "SENT", 1)]
+
+
+# --- concurrencia real de la prueba (commits de verdad, limpieza explícita) --
+
+FECHA_PRUEBA_CONCURRENCIA = date(1990, 1, 4)
+
+
+@pytest.fixture
+def engine_prueba(db_ctx):
+    """Base LOCAL (el conftest ya garantiza localhost). Limpia las filas 'prueba'
+    de la fecha del test antes y después. Si hay pruebas reales recientes en la
+    base local (las guardas son globales) se saltea en vez de borrarlas."""
+    engine = db_ctx.engine
+    with engine.connect() as conn:
+        if not conn.execute(text("select to_regclass('public.report_send_log')")).scalar():
+            pytest.skip("report_send_log no existe en la base local (falta la migración)")
+
+    def limpiar():
+        with engine.begin() as conn:
+            conn.execute(
+                delete(ReportSendLog.__table__).where(
+                    ReportSendLog.report_key == envios.REPORT_KEY_PRUEBA,
+                    ReportSendLog.fecha_negocio == FECHA_PRUEBA_CONCURRENCIA,
+                )
+            )
+
+    limpiar()
+    with Session(engine) as s:
+        r = envios.reclamar_prueba(s, FECHA_PRUEBA_CONCURRENCIA, destinatario=DEST)
+        if r.estado != envios.RECLAMADO:
+            pytest.skip("hay una prueba real reciente en la base local; reintentar en unos minutos")
+    limpiar()
+    try:
+        yield engine
+    finally:
+        limpiar()
+
+
+def test_pruebas_concurrentes_solo_una_reclama(engine_prueba):
+    barrera = threading.Barrier(2)
+    resultados = []
+    errores = []
+
+    def correr():
+        try:
+            with Session(engine_prueba) as s:
+                barrera.wait(timeout=10)
+                resultados.append(envios.reclamar_prueba(s, FECHA_PRUEBA_CONCURRENCIA, destinatario=DEST).estado)
+        except Exception as exc:  # noqa: BLE001
+            errores.append(exc)
+
+    hilos = [threading.Thread(target=correr) for _ in range(2)]
+    for h in hilos:
+        h.start()
+    for h in hilos:
+        h.join(timeout=30)
+
+    assert errores == []
+    assert sorted(resultados) == sorted([envios.RECLAMADO, envios.EN_CURSO])
+    with Session(engine_prueba) as s:
+        fila = _fila_key(s, "prueba", FECHA_PRUEBA_CONCURRENCIA)
+        assert (fila.status, fila.attempts) == ("PENDING", 1)
+
+
+def test_segunda_prueba_espera_el_advisory_lock(engine_prueba):
+    """Mientras A tiene el lock (sin commitear), B espera; cuando A reclama, B queda EN_CURSO."""
+    with Session(engine_prueba) as a, Session(engine_prueba) as b:
+        a.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": envios.LOCK_PRUEBA})
+        resultado = []
+        hilo = threading.Thread(
+            target=lambda: resultado.append(
+                envios.reclamar_prueba(b, FECHA_PRUEBA_CONCURRENCIA, destinatario=DEST).estado
+            )
+        )
+        hilo.start()
+        hilo.join(timeout=1)
+        assert hilo.is_alive(), "la segunda prueba tenía que esperar el advisory lock"
+        # A termina su reclamo en la MISMA transacción (el commit suelta el lock).
+        assert envios.reclamar_envio(
+            a, FECHA_PRUEBA_CONCURRENCIA, force=True, destinatario=DEST, report_key="prueba"
+        ).estado == envios.RECLAMADO
+        hilo.join(timeout=30)
+        assert resultado == [envios.EN_CURSO]

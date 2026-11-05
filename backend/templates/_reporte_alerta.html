@@ -4,6 +4,7 @@
   <i class="bi bi-exclamation-triangle-fill flex-shrink-0" aria-hidden="true"></i>
   <div class="text-break">
     <strong>Reporte diario:</strong> {{ reporte_alerta.mensaje }}
+    {% if reporte_boton %}<a class="alert-link ms-1" href="{{ url_for('reporte_estado.generar') }}">Generar / reenviar prueba</a>{% endif %}
     {% if reporte_alerta.detalle %}<div class="small mt-1">Detalle: {{ reporte_alerta.detalle }}</div>{% endif %}
   </div>
 </div>

@@ -386,6 +386,9 @@
             {% if current_user.is_authenticated and current_user.is_admin and (can_view is not defined or can_view('usuarios')) %}
             <li class="nav-item"><a class="nav-link {% if active=='usuarios' %}active{% endif %}" href="{{ url_for('main.usuarios') }}"><i class="bi bi-person-badge me-2"></i>Usuarios</a></li>
             {% endif %}
+            {% if reporte_boton %}
+            <li class="nav-item"><a class="nav-link {% if active=='reporte' %}active{% endif %}" href="{{ url_for('reporte_estado.generar') }}"><i class="bi bi-file-earmark-pdf me-2"></i>Generar reporte</a></li>
+            {% endif %}
             {% if can_view is not defined or can_view('status') %}<li class="nav-item"><a class="nav-link {% if active=='status' %}active{% endif %}" href="{{ nav_url('main.status') }}"><i class="bi bi-truck me-2"></i>Status Mercadería</a></li>{% endif %}
             {% if can_view is not defined or can_view('nueva_cobranza') %}<li class="nav-item"><a class="nav-link {% if active=='nueva_cobranza' %}active{% endif %}" href="{{ url_for('main.nueva_cobranza') }}"><i class="bi bi-plus-circle me-2"></i>Nuevas cobranzas</a></li>{% endif %}
             <li class="nav-item"><a class="nav-link logout-link" href="{{ url_for('auth.logout') }}"><i class="bi bi-box-arrow-right me-2"></i>Cerrar sesión</a></li>
@@ -421,6 +424,9 @@
               {% endif %}
               {% if current_user.is_authenticated and current_user.is_admin and (can_view is not defined or can_view('usuarios')) %}
               <li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='usuarios' %}active{% endif %}" href="{{ url_for('main.usuarios') }}"><i class="bi bi-person-badge me-2"></i>Usuarios</a></li>
+              {% endif %}
+              {% if reporte_boton %}
+              <li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='reporte' %}active{% endif %}" href="{{ url_for('reporte_estado.generar') }}"><i class="bi bi-file-earmark-pdf me-2"></i>Generar reporte</a></li>
               {% endif %}
               {% if can_view is not defined or can_view('status') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='status' %}active{% endif %}" href="{{ nav_url('main.status') }}"><i class="bi bi-truck me-2"></i>Status Mercadería</a></li>{% endif %}
               {% if can_view is not defined or can_view('nueva_cobranza') %}<li class="nav-item"><a class="nav-link nav-link-ghost {% if active=='nueva_cobranza' %}active{% endif %}" href="{{ url_for('main.nueva_cobranza') }}"><i class="bi bi-plus-circle me-2"></i>Nuevas cobranzas</a></li>{% endif %}
