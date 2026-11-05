@@ -22,7 +22,10 @@
         <label for="reporteFecha" class="form-label">Fecha de negocio</label>
         <input type="date" class="form-control" id="reporteFecha" value="{{ fecha.isoformat() }}"
                min="{{ fecha_min.isoformat() }}" max="{{ fecha_max.isoformat() }}" required>
-        <div class="form-text">Reporte: {{ modo }}</div>
+        {# Texto fijo a propósito: el tipo depende solo del día de la semana (fechas.modo_reporte)
+           y un texto calculado al cargar quedaba viejo al cambiar la fecha. #}
+        <div class="form-text" id="reporteTipos">Lunes: extendido (semana, vencen más adelante, total general y regularidad).
+          Martes a domingo: del día (viernes, sábado y domingo cubren hasta el domingo).</div>
       </div>
       <div class="col-12 col-md-8 d-flex flex-wrap gap-2">
         <form method="get" action="{{ url_for('reporte_estado.pdf') }}" target="_blank" class="m-0" id="formVerPdf">

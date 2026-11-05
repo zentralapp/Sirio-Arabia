@@ -9,7 +9,10 @@ plantillas. Lo muestra `_reporte_alerta.html` (incluido desde layout.html).
 
 Botón (rutas /reporte, /reporte/pdf y /reporte/enviar), design §6:
 - Existe solo con REPORTE_BOTON=1: si no, 404 para todos, admins incluidos.
-  El flag se evalúa ANTES que la autorización.
+  El flag se evalúa ANTES que la autorización. Aun con el flag, si la app
+  tiene la SECRET_KEY por defecto ("dev-secret-key") o ninguna, el botón
+  queda APAGADO (404 y sin links) y se loguea un WARNING una vez: el token
+  CSRF vive en la sesión firmada con esa clave.
 - Solo admin global: autenticado, is_admin y fuera de modo soporte
   (`impersonate_user_id`). Si no, 403. Sin login: `login_manager.unauthorized()`.
 - "Ver PDF" (GET) no construye mailer ni escribe nada.
@@ -51,13 +54,14 @@ from flask_login import current_user
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from backend.config import SECRET_KEY_POR_DEFECTO
 from backend.extensions import db
 from backend.services.mailer import OPCIONES_WEB, SERVICIO_WEB, get_mailer
 from backend.services.mailer.base import EnvioIncierto, MailerError, TokenRevocadoError, nombre_adjunto
 from backend.services.reporte_diario import envios, generar
-from backend.services.reporte_diario.fechas import EXTENDIDO, TZ_NEGOCIO, hoy_negocio, modo_reporte
+from backend.services.reporte_diario.fechas import TZ_NEGOCIO, hoy_negocio
 from backend.services.reporte_estado import estado_reporte
-from backend.utils.formato import DIAS_ABREV, fmt_fecha_es
+from backend.utils.formato import fmt_fecha_es
 
 bp = Blueprint("reporte_estado", __name__)
 
@@ -78,6 +82,7 @@ _TZ = ZoneInfo(TZ_NEGOCIO)
 # --------------------------------------------------------------------------
 
 auditoria = logging.getLogger("backend.reporte.auditoria")
+log = logging.getLogger(__name__)
 
 
 def _configurar_auditoria(logger: logging.Logger) -> None:
@@ -131,8 +136,36 @@ def banner_activo() -> bool:
     return os.getenv("REPORTE_BANNER", "").strip() == "1"
 
 
+MSG_SECRET_KEY_DEFAULT = (
+    "REPORTE_BOTON=1 pero la app no tiene una SECRET_KEY real (falta o es la default de "
+    "backend/config.py): el botón \"Generar reporte\" queda APAGADO. Configurar SECRET_KEY."
+)
+_aviso_secret_key_emitido = False
+
+
+def _secret_key_insegura() -> bool:
+    """True si la app no tiene SECRET_KEY o tiene la default de desarrollo.
+
+    Nunca loguea ni devuelve el valor. Sin app context -> insegura (fail closed).
+    """
+    try:
+        clave = current_app.config.get("SECRET_KEY")
+    except RuntimeError:
+        return True
+    return not clave or clave == SECRET_KEY_POR_DEFECTO
+
+
 def boton_activo() -> bool:
-    return os.getenv(ENV_BOTON, "").strip() == "1"
+    """REPORTE_BOTON=1 Y una SECRET_KEY real. Con la default, False + WARNING (una vez)."""
+    global _aviso_secret_key_emitido
+    if os.getenv(ENV_BOTON, "").strip() != "1":
+        return False
+    if _secret_key_insegura():
+        if not _aviso_secret_key_emitido:
+            _aviso_secret_key_emitido = True
+            log.warning(MSG_SECRET_KEY_DEFAULT)
+        return False
+    return True
 
 
 def _autenticado() -> bool:
@@ -235,13 +268,6 @@ def enmascarar(direccion: str) -> str:
         return "(sin configurar)"
     usuario, dominio = direccion.split("@", 1)
     return f"{usuario[:1]}***@{dominio}"
-
-
-def describir_modo(fecha: date) -> str:
-    dia = DIAS_ABREV[fecha.weekday()]
-    if modo_reporte(fecha) == EXTENDIDO:
-        return f"{dia} {fmt_fecha_es(fecha)}: extendido (semana, vencen más adelante, total general y regularidad)"
-    return f"{dia} {fmt_fecha_es(fecha)}: del día"
 
 
 MSG_CONFIG = (
@@ -376,7 +402,6 @@ def pagina():
         fecha_min=desde,
         fecha_max=hasta,
         error_fecha=error,
-        modo=describir_modo(fecha),
         destinatario=enmascarar(os.getenv("REPORTE_MAIL_TO", "")),
         csrf_token=_token_csrf(),
         pruebas=_ultimas_pruebas(),

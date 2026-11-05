@@ -78,6 +78,7 @@ def entorno_limpio(monkeypatch):
             monkeypatch.delenv(nombre, raising=False)
     monkeypatch.setenv("REPORTE_BOTON", "1")
     monkeypatch.setattr(vista, "_ahora", lambda: AHORA)
+    monkeypatch.setattr(vista, "_aviso_secret_key_emitido", False)
 
 
 @pytest.fixture
@@ -297,13 +298,14 @@ def test_pagina_fecha_por_defecto_hoy_art(cliente, como, renders, monkeypatch):
     assert ctx["active"] == "reporte"
 
 
-def test_pagina_lunes_dice_extendido_y_token_estable(cliente, como, renders):
+def test_pagina_fecha_pedida_y_token_estable(cliente, como, renders):
     cliente.get(f"/reporte?fecha={LUNES}")
     cliente.get("/reporte")
     _, ctx1 = renders[0]
     _, ctx2 = renders[1]
-    assert ctx1["fecha"] == date(2026, 11, 9) and "extendido" in ctx1["modo"]
-    assert "del día" in ctx2["modo"]
+    assert ctx1["fecha"] == date(2026, 11, 9) and ctx2["fecha"] == HOY
+    # B7: sin etiqueta de modo calculada en el servidor (quedaba vieja al cambiar la fecha).
+    assert "modo" not in ctx1
     assert ctx1["csrf_token"] == ctx2["csrf_token"]
 
 
@@ -334,7 +336,6 @@ def test_plantilla_compila_y_lleva_csrf_y_flashes(app):
             fecha_min=date(2025, 11, 5),
             fecha_max=date(2026, 12, 6),
             error_fecha="",
-            modo="lun 09/11/2026: extendido",
             destinatario="j***@negocio.com",
             csrf_token="TOKEN-XYZ",
             pruebas=[
@@ -350,6 +351,90 @@ def test_plantilla_compila_y_lleva_csrf_y_flashes(app):
     assert "Enviando…" in html and "disabled = true" in html
     assert "09/11/2026" in html and "05/11 11:00" in html  # 14:00 UTC = 11:00 ART
     assert 'name="to"' not in html
+    # B7: la regla de tipos es texto fijo, válido para cualquier fecha elegida.
+    assert "Lunes: extendido" in html and "Martes a domingo: del día" in html
+
+
+def test_plantilla_no_tiene_etiqueta_de_modo_dinamica():
+    fuente = (TEMPLATES / "reporte_generar.html").read_text(encoding="utf-8")
+    assert "{{ modo }}" not in fuente and "Reporte: " not in fuente
+
+
+# --- SECRET_KEY por defecto (B7, verify S4) ------------------------------------
+
+
+def _app_con_clave(clave):
+    app = Flask(__name__, template_folder=str(TEMPLATES))
+    app.config.update(TESTING=True)
+    if clave is not None:
+        app.config["SECRET_KEY"] = clave
+    LoginManager().init_app(app)
+    app.register_blueprint(vista.bp)
+    return app
+
+
+@pytest.mark.parametrize("clave", ["dev-secret-key", "", None])
+@pytest.mark.parametrize("metodo,ruta", RUTAS)
+def test_secret_key_por_defecto_apaga_el_boton_404(como, backend_falso, caplog, clave, metodo, ruta):
+    from backend.config import SECRET_KEY_POR_DEFECTO
+
+    assert SECRET_KEY_POR_DEFECTO == "dev-secret-key"
+    cliente = _app_con_clave(clave).test_client()
+    caplog.set_level(logging.WARNING, logger=vista.log.name)
+    resp = getattr(cliente, metodo)(ruta, data={"fecha": LUNES, "csrf_token": TOKEN}, headers=ORIGEN)
+    assert resp.status_code == 404
+    assert backend_falso.reclamos == [] and backend_falso.pdfs == [] and backend_falso.mailer.envios == []
+    assert backend_falso.get_mailer_llamadas == []
+    avisos = [r for r in caplog.records if r.name == vista.log.name and r.levelno == logging.WARNING]
+    assert len(avisos) == 1 and "SECRET_KEY" in avisos[0].getMessage()
+
+
+def test_secret_key_por_defecto_avisa_una_sola_vez_y_sin_el_valor(como, backend_falso, caplog):
+    cliente = _app_con_clave("dev-secret-key").test_client()
+    caplog.set_level(logging.WARNING, logger=vista.log.name)
+    for _ in range(3):
+        assert cliente.get("/reporte").status_code == 404
+    avisos = [r.getMessage() for r in caplog.records if r.name == vista.log.name]
+    assert len(avisos) == 1
+    assert "dev-secret-key" not in caplog.text
+
+
+def test_secret_key_real_no_avisa(app, caplog):
+    caplog.set_level(logging.WARNING, logger=vista.log.name)
+    with app.app_context():
+        assert vista.boton_activo() is True
+    assert not [r for r in caplog.records if r.name == vista.log.name]
+
+
+def test_secret_key_real_no_se_loguea(app, monkeypatch, caplog):
+    """Ni con la clave real ni con la default aparece el valor en ningún log."""
+    caplog.set_level(logging.DEBUG)
+    app.config["SECRET_KEY"] = "clave-real-que-no-debe-aparecer"
+    with app.app_context():
+        vista.boton_activo()
+    app.config["SECRET_KEY"] = "dev-secret-key"
+    with app.app_context():
+        vista.boton_activo()
+    assert "clave-real-que-no-debe-aparecer" not in caplog.text and "dev-secret-key" not in caplog.text
+
+
+def test_flag_apagado_con_clave_default_no_avisa(monkeypatch, caplog):
+    monkeypatch.delenv("REPORTE_BOTON", raising=False)
+    caplog.set_level(logging.WARNING, logger=vista.log.name)
+    with _app_con_clave("dev-secret-key").app_context():
+        assert vista.boton_activo() is False
+    assert not [r for r in caplog.records if r.name == vista.log.name]
+
+
+def test_boton_activo_sin_app_context_es_false():
+    assert vista.boton_activo() is False
+
+
+def test_secret_key_por_defecto_sin_links(monkeypatch):
+    """Context processor: con la default, `reporte_boton` es False aun para admin global."""
+    monkeypatch.setattr(vista, "current_user", Usuario())
+    with _app_con_clave("dev-secret-key").test_request_context("/"):
+        assert not vista.inyectar_reporte_boton().get("reporte_boton")
 
 
 # --- validación de fecha (pura) -------------------------------------------------
@@ -685,3 +770,56 @@ def test_auditoria_logger_idempotente_y_a_stdout():
 def test_enmascarar():
     assert vista.enmascarar("jefe@negocio.com") == "j***@negocio.com"
     assert vista.enmascarar("") == "(sin configurar)"
+
+
+# --- Ver PDF contra la base LOCAL (B7, verify S7) -------------------------------
+
+
+@pytest.mark.db
+def test_ver_pdf_real_despues_de_que_db_session_ya_consulto(app_db, como, monkeypatch):
+    """Spec L "MUST funcionar aunque la request web ya haya consultado la base"
+    e I "Ver PDF no escribe": generar_pdf REAL (sin parches) contra la base local.
+
+    Un before_request de la app consulta `db.session` (como flask-login al cargar
+    el usuario) y deja su transacción abierta; Ver PDF igual devuelve el PDF
+    porque usa una Session propia, y report_send_log no cambia.
+    """
+    from sqlalchemy import text
+
+    from backend.extensions import db
+
+    app = Flask(__name__, template_folder=str(TEMPLATES))
+    app.config.update(
+        SECRET_KEY="test-no-default",
+        TESTING=True,
+        SQLALCHEMY_DATABASE_URI=app_db.config["SQLALCHEMY_DATABASE_URI"],
+        SQLALCHEMY_ENGINE_OPTIONS=app_db.config.get("SQLALCHEMY_ENGINE_OPTIONS", {}),
+    )
+    db.init_app(app)
+    LoginManager().init_app(app)
+    consultas_previas = []
+
+    @app.before_request
+    def consulta_previa():
+        consultas_previas.append(db.session.execute(text("SELECT count(*) FROM report_send_log")).scalar_one())
+        assert db.session().in_transaction()  # la tx de db.session sigue abierta
+
+    app.register_blueprint(vista.bp)
+
+    def contar():
+        with app.app_context(), db.engine.connect() as conn:
+            return conn.execute(text("SELECT count(*) FROM report_send_log")).scalar_one()
+
+    try:
+        antes = contar()
+        resp = app.test_client().get(f"/reporte/pdf?fecha={LUNES}")
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert resp.mimetype == "application/pdf"
+        assert resp.headers["Cache-Control"] == "no-store"
+        assert resp.data.startswith(b"%PDF")
+        assert consultas_previas == [antes]
+        assert contar() == antes
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.engine.dispose()

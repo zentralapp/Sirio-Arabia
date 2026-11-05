@@ -298,6 +298,45 @@ def test_fecha_con_force_usa_esa_fecha(job):
     assert job.mailer.enviados[0]["subject"] == "Reporte diario – mié 28/10/2026"
 
 
+def test_lunes_fallido_regenerado_el_martes_sale_extendido(job, monkeypatch, caplog):
+    """Spec A "Lunes fallido regenerado con --force --fecha": el martes 10/11 se
+    corre `--force --fecha 2026-11-09` y sale el LUNES del 09/11 (sin arrastre al
+    revés: el modo depende solo de --fecha), con regularidad y vencen más adelante.
+    Con el componer_reporte REAL; solo se reemplaza la lectura (generar.*).
+    """
+    from decimal import Decimal
+
+    from backend.services.reporte_diario.clasificar import componer_reporte
+    from backend.services.reporte_diario.modelo import A_COBRAR, ComprasPar, FilaCobranza
+    from backend.services.saldos import armar_saldo
+
+    lunes, martes = date(2026, 11, 9), date(2026, 11, 10)
+    _hoy(monkeypatch, martes)
+    saldo = armar_saldo(Decimal("1000"), None, None, Decimal(0), Decimal(0))
+    # Vence el 30/11 (> domingo 15/11): solo el LUNES la muestra, en "Vencen más adelante".
+    cobranzas = [FilaCobranza(1, "Cliente", "Empresa", date(2026, 11, 30), A_COBRAR, saldo, client_id=1, company_id=1)]
+    # Spec K "Día retrofechado en el futuro": P = 14, N = 27 -> dispara el lunes 09/11.
+    compras = [ComprasPar(1, 1, "Cliente", "Empresa", (date(2026, 9, 1), date(2026, 9, 15), date(2026, 9, 29), date(2026, 10, 13)))]
+
+    def armar_reporte(hoy, session=None):
+        job.lecturas.append(hoy)
+        return componer_reporte(hoy, cobranzas, [], compras)
+
+    monkeypatch.setattr(generar, "armar_reporte", armar_reporte)
+    caplog.set_level(logging.INFO)
+
+    assert rd.main(["--force", "--fecha", "2026-11-09"]) == 0
+
+    assert job.claims == [{"fecha": lunes, "force": True, "destinatario": "negocio@example.com"}]
+    assert job.lecturas == [lunes]
+    assert "conteos: modo=extendido" in caplog.text
+    assert "vencen_mas_adelante=1" in caplog.text and "regularidad=1" in caplog.text
+    (mail,) = job.mailer.enviados
+    assert mail["subject"] == "Reporte diario – lun 09/11/2026"
+    assert mail["attachments"][0].filename == "reporte-diario-2026-11-09.pdf"
+    assert job.enviados == [(7, "id-gmail-123")] and job.fallas == []
+
+
 def test_dry_run_no_construye_mailer_ni_toca_log(job, tmp_path):
     out = tmp_path / "vie.pdf"
 

@@ -669,6 +669,8 @@ env -u DATABASE_URL .venv/bin/python -m pytest
 env -u DATABASE_URL REPORTE_BOTON=1 .venv/bin/flask --app backend.app run --port 5050 --debug
 ```
 
+- El `.env` local necesita un `SECRET_KEY` distinto de `dev-secret-key`: con
+  la default el botón queda apagado (404) y se loguea un WARNING.
 - Sin `REPORTE_MAILER` (modo `archivo`), "Enviar prueba" escribe el `.eml` en
   `REPORTE_ARCHIVO_DIR`, deja una fila `'prueba'` SENT con
   `message_id=archivo:<ruta>` y muestra "Guardado en <ruta>". No sale ningún
@@ -1042,6 +1044,9 @@ El PR #18 (`feat/pedidos-cliente-oct`) ya está mergeado en `main`.
       cargala en el web, sin pegarla en ningún otro lado. Ojo: cambiarla
       **cierra la sesión de todos los usuarios**; hacelo en un horario
       tranquilo. **No prender `REPORTE_BOTON` hasta tener esto confirmado.**
+      (Además, el código lo exige: con `SECRET_KEY` ausente o en
+      `dev-secret-key`, el botón queda apagado aunque `REPORTE_BOTON=1`,
+      con 404 y sin links, y el web loguea un WARNING una vez, sin la clave.)
 - [ ] 2. **Variables.**
   - Google Cloud: proyecto, Gmail API, consentimiento External solo con
     `gmail.send`, **publicada "In production"** y cliente Desktop app. Ver

@@ -37,6 +37,8 @@ class Usuario:
 @pytest.fixture
 def app():
     app = Flask(__name__, template_folder=str(TEMPLATES))
+    # B7: con REPORTE_BOTON=1 el botón exige una SECRET_KEY real (no la default ni ninguna).
+    app.config["SECRET_KEY"] = "test-no-default"
     app.register_blueprint(vista.bp)
     return app
 
@@ -222,6 +224,17 @@ def test_parcial_muestra_link_al_boton_solo_con_reporte_boton(app, consultas, mo
     assert ("Generar / reenviar prueba" in html) is esperado
     if esperado:
         assert 'href="/reporte"' in html
+
+
+def test_parcial_sin_link_con_secret_key_por_defecto(app, consultas, monkeypatch):
+    monkeypatch.setenv("REPORTE_BANNER", "1")
+    monkeypatch.setenv("REPORTE_BOTON", "1")
+    monkeypatch.setattr(vista, "_aviso_secret_key_emitido", False)
+    app.config["SECRET_KEY"] = "dev-secret-key"
+    _como(monkeypatch, Usuario(admin=True))
+    with app.test_request_context("/"):
+        html = render_template("_reporte_alerta.html", reporte_alerta=dict(ALERTA_FALLA))
+    assert "Generar / reenviar prueba" not in html
 
 
 def test_layout_tiene_el_link_en_los_dos_navs():

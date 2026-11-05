@@ -1,6 +1,10 @@
 import os
 from urllib.parse import urlsplit
 
+# Default de desarrollo de SECRET_KEY. Con este valor la sesion firmada no
+# protege nada: el boton "Generar reporte" se niega a prenderse (reporte_estado).
+SECRET_KEY_POR_DEFECTO = "dev-secret-key"
+
 _HELP_DATABASE_URL = (
     "DATABASE_URL no esta definida.\n"
     "\n"
@@ -91,7 +95,7 @@ class Config:
     """
 
     def __init__(self) -> None:
-        self.SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
+        self.SECRET_KEY = os.getenv("SECRET_KEY", SECRET_KEY_POR_DEFECTO)
 
         database_url = (os.getenv("DATABASE_URL") or "").strip()
         if not database_url:
