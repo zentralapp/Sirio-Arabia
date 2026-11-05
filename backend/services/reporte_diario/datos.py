@@ -1,22 +1,26 @@
 """Lectura de la base para el reporte diario (SOLO LECTURA, sin N+1).
 
-Cuatro queries en total:
+Cuatro queries de martes a domingo y cinco los lunes:
   A. cobranzas vigentes sin cobrar (vencimiento y estado de la fuente única
      de models.py: `condiciones_estado_cobranza`);
   B. saldos agregados de esos pedidos (`saldos_por_pedido`);
   C. cumpleaños con fecha de clientes no archivados (+ su cliente);
-  D. vínculos cliente-empresa de esos clientes con su empresa (selectinload).
+  D. vínculos cliente-empresa de esos clientes con su empresa (selectinload);
+  E. (solo lunes) días de compra distintos por par cliente-empresa, a lo sumo
+     los MAX_INTERVALOS + 1 más recientes, sin clientes ni empresas archivados.
 
 `armar_reporte(hoy)` abre una transacción READ ONLY (primera sentencia), lee,
 hace rollback y clasifica en Python con las funciones puras de clasificar.py.
 
 Alcance GLOBAL: sin filtro por owner_user_id ni ClientAlertState. Clientes
-archivados: sus cobranzas SÍ entran; sus cumpleaños NO.
+archivados: sus cobranzas SÍ entran; sus cumpleaños NO; su regularidad NO
+(tampoco la de las empresas archivadas).
 """
 from contextlib import contextmanager
 from datetime import date, datetime
+from itertools import groupby
 
-from sqlalchemy import case, select, text
+from sqlalchemy import Date, case, cast, func, select, text
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
 from backend.extensions import db
@@ -32,14 +36,17 @@ from backend.models import (
     condiciones_estado_cobranza,
 )
 from backend.services.reporte_diario.clasificar import componer_reporte
+from backend.services.reporte_diario.fechas import EXTENDIDO, modo_reporte
 from backend.services.reporte_diario.modelo import (
     A_COBRAR,
     ATRASADO,
     EN_CAMINO,
+    ComprasPar,
     FilaCobranza,
     FilaCumple,
     Reporte,
 )
+from backend.services.reporte_diario.regularidad import MAX_INTERVALOS
 from backend.services.saldos import saldos_por_pedido
 
 
@@ -175,10 +182,72 @@ def leer_cumples(session: Session) -> list[FilaCumple]:
     ]
 
 
+def leer_compras_por_par(session: Session, hoy: date) -> list[ComprasPar]:
+    """Días de compra DISTINTOS por par (query E, una sola sentencia).
+
+    Día = coalesce(fecha_compra, created_at)::date (UTC naive, como el
+    dashboard), sobre Order con deleted_at NULL (los OrderDraft son otra
+    tabla), solo días <= hoy y a lo sumo los MAX_INTERVALOS + 1 más recientes
+    por par. Quedan fuera los clientes archivados Y las empresas archivadas
+    (estado actual: al desarchivar vuelve todo el historial). Días ascendentes.
+    """
+    dia = cast(func.coalesce(LogisticsStatus.fecha_compra, Order.created_at), Date).label("dia")
+    dias = (
+        select(Order.client_id, Order.company_id, dia)
+        .select_from(Order)
+        .outerjoin(LogisticsStatus, LogisticsStatus.order_id == Order.id)
+        .where(Order.deleted_at.is_(None))
+        .group_by(Order.client_id, Order.company_id, dia)
+        .subquery()
+    )
+    rn = func.row_number().over(
+        partition_by=(dias.c.client_id, dias.c.company_id), order_by=dias.c.dia.desc()
+    ).label("rn")
+    ranking = select(dias.c.client_id, dias.c.company_id, dias.c.dia, rn).where(dias.c.dia <= hoy).subquery()
+    q = (
+        select(
+            ranking.c.client_id,
+            ranking.c.company_id,
+            Client.apellido,
+            Client.nombre,
+            Company.nombre.label("empresa"),
+            Company.marca,
+            ranking.c.dia,
+        )
+        .select_from(ranking)
+        .join(Client, Client.id == ranking.c.client_id)
+        .join(Company, Company.id == ranking.c.company_id)
+        .where(
+            ranking.c.rn <= MAX_INTERVALOS + 1,
+            Client.archived.is_(False),
+            Company.archived.is_(False),
+        )
+        .order_by(ranking.c.client_id, ranking.c.company_id, ranking.c.dia)
+    )
+    pares = []
+    for (client_id, company_id), grupo in groupby(session.execute(q).all(), key=lambda f: (f.client_id, f.company_id)):
+        filas = list(grupo)
+        primera = filas[0]
+        pares.append(
+            ComprasPar(
+                client_id=client_id,
+                company_id=company_id,
+                cliente=nombre_cliente(primera.apellido, primera.nombre),
+                empresa=nombre_empresa(primera.empresa, primera.marca),
+                dias=tuple(_fecha(f.dia) for f in filas),
+            )
+        )
+    return pares
+
+
 def armar_reporte(hoy: date, session: Session | None = None) -> Reporte:
-    """Lee todo en una transacción READ ONLY y devuelve el Reporte clasificado."""
+    """Lee todo en una transacción READ ONLY y devuelve el Reporte clasificado.
+
+    La query E (regularidad) corre solo los lunes, dentro de la misma transacción.
+    """
     session = session if session is not None else db.session()  # Session real, no el proxy
     with solo_lectura(session):
         cobranzas = leer_cobranzas(session, hoy)
         cumples = leer_cumples(session)
-    return componer_reporte(hoy, cobranzas, cumples)
+        compras = leer_compras_por_par(session, hoy) if modo_reporte(hoy) == EXTENDIDO else []
+    return componer_reporte(hoy, cobranzas, cumples, compras)

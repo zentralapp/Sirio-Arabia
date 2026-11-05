@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -641,3 +642,41 @@ class TestSinNovedadesPorModo:
         r = componer_reporte(date(2026, 11, 12), [], [cumple("Sab", date(1980, 11, 14))])
 
         assert r.sin_novedades is True
+
+
+# ---------------------------------------------------------------- regularidad (integración pura)
+
+
+def _compras_que_disparan(client_id=1, company_id=1):
+    """Par con intervalos 14,14,14 y última compra hace 27 días respecto del lunes 09/11."""
+    from backend.services.reporte_diario.modelo import ComprasPar
+
+    ultimo = LUN - timedelta(days=27)
+    dias = tuple(ultimo - timedelta(days=14 * k) for k in (3, 2, 1, 0))
+    return ComprasPar(client_id=client_id, company_id=company_id, cliente="Cliente", empresa="Empresa", dias=dias)
+
+
+@pytest.mark.parametrize("hoy", [MAR, MIE, date(2026, 11, 13), date(2026, 11, 14)])
+def test_regularidad_no_se_calcula_fuera_del_lunes(hoy):
+    reporte = componer_reporte(hoy, [], [], [_compras_que_disparan()])
+
+    assert reporte.regularidad == ()
+
+
+def test_lunes_con_solo_regularidad_no_es_sin_novedades():
+    reporte = componer_reporte(LUN, [], [], [_compras_que_disparan()])
+
+    assert len(reporte.regularidad) == 1
+    assert not reporte.sin_novedades
+
+
+def test_deuda_del_par_usa_todas_las_cobranzas_antes_de_filtrar_por_modo():
+    # Las dos cobranzas son del par (1, 1): una vence más adelante, otra es atrasada.
+    lejana = replace(cobranza(1, venc=date(2026, 12, 20), monto="500"), client_id=1, company_id=1)
+    atrasada = replace(cobranza(2, venc=date(2026, 10, 1), monto=None), client_id=1, company_id=1)
+    pagada = replace(cobranza(3, venc=LUN, monto="100", pagado="100"), client_id=1, company_id=1)
+    otra_empresa = replace(cobranza(4, venc=LUN, monto="800"), client_id=1, company_id=2)
+
+    (fila,) = componer_reporte(LUN, [lejana, atrasada, pagada, otra_empresa], [], [_compras_que_disparan()]).regularidad
+
+    assert (fila.deuda.total, fila.deuda.sin_monto, fila.deuda.abiertas) == (D("500"), 1, 2)

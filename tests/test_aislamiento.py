@@ -44,8 +44,8 @@ def test_job_no_importa_backend_app_ni_views(modulo):
 
 
 _SCRIPT_PURO = """
-import sys
-import backend.services.reporte_diario.pdf
+import importlib, sys
+importlib.import_module({modulo!r})
 cargados = sorted(
     m for m in sys.modules
     if m.split(".")[0] in ("flask", "flask_sqlalchemy", "sqlalchemy", "psycopg")
@@ -55,9 +55,19 @@ print(",".join(cargados))
 """
 
 
-def test_render_pdf_es_puro_sin_flask_ni_db():
+MODULOS_PUROS = (
+    "backend.services.reporte_diario.pdf",
+    "backend.services.reporte_diario.regularidad",
+    "backend.services.reporte_diario.clasificar",
+    "backend.services.reporte_diario.modelo",
+    "backend.services.reporte_diario.fechas",
+)
+
+
+@pytest.mark.parametrize("modulo", MODULOS_PUROS)
+def test_modulos_puros_sin_flask_ni_db(modulo):
     resultado = subprocess.run(
-        [sys.executable, "-c", _SCRIPT_PURO],
+        [sys.executable, "-c", _SCRIPT_PURO.format(modulo=modulo)],
         cwd=REPO,
         capture_output=True,
         text=True,

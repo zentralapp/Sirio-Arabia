@@ -159,6 +159,62 @@ def test_log_del_lunes_tiene_modo_extendido_y_vencen_mas_adelante(job, monkeypat
     assert job.mailer.enviados[0]["subject"] == "Reporte diario – lun 09/11/2026"
 
 
+def test_log_del_lunes_cuenta_la_regularidad_sin_secretos(job, monkeypatch, caplog, capsys):
+    from dataclasses import replace
+
+    from backend.services.reporte_diario.modelo import DeudaPar, FilaRegularidad
+
+    caplog.set_level(logging.DEBUG)
+    lunes = date(2026, 11, 9)
+    _hoy(monkeypatch, lunes)
+    monkeypatch.setenv("REPORTE_GMAIL_REFRESH_TOKEN", SECRETO)
+    fila = FilaRegularidad("Cliente", "Empresa", date(2026, 10, 13), 27, 14, 4, DeudaPar())
+    original = rd.armar_reporte
+    monkeypatch.setattr(rd, "armar_reporte", lambda hoy, session=None: replace(original(hoy), regularidad=(fila, fila)))
+
+    assert rd.main([]) == 0
+
+    assert "conteos: modo=extendido" in caplog.text
+    assert "regularidad=2" in caplog.text
+    assert "vencen_mas_adelante=0" in caplog.text
+    assert SECRETO not in caplog.text + capsys.readouterr().out
+
+
+def test_log_de_un_martes_tiene_regularidad_en_cero(job, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    _hoy(monkeypatch, date(2026, 11, 10))
+
+    assert rd.main([]) == 0
+
+    assert "conteos: modo=del_dia" in caplog.text
+    assert "regularidad=0" in caplog.text
+
+
+def test_dry_run_del_viernes_sale_del_dia_sin_secciones_de_semana(job, monkeypatch, tmp_path, caplog):
+    """Con el componer_reporte REAL: el viernes 06/11 cubre sáb/dom en "hoy" y no tiene semana."""
+    from decimal import Decimal
+
+    from backend.services.reporte_diario.clasificar import componer_reporte
+    from backend.services.reporte_diario.modelo import A_COBRAR, FilaCobranza
+    from backend.services.saldos import armar_saldo
+
+    def cobranza(order_id, venc):
+        saldo = armar_saldo(Decimal("1000"), None, None, Decimal(0), Decimal(0))
+        return FilaCobranza(order_id, "Cliente", "Empresa", venc, A_COBRAR, saldo, client_id=1, company_id=1)
+
+    filas = [cobranza(1, date(2026, 11, 7)), cobranza(2, date(2026, 11, 8)), cobranza(3, date(2026, 11, 11))]
+    monkeypatch.setattr(rd, "armar_reporte", lambda hoy, session=None: componer_reporte(hoy, filas, []))
+    caplog.set_level(logging.INFO)
+
+    assert rd.main(["--dry-run", "--out", str(tmp_path / "vie.pdf"), "--fecha", "2026-11-06"]) == 0
+
+    assert "conteos: modo=del_dia" in caplog.text
+    assert "vencen_hoy=2" in caplog.text
+    for vacia in ("cumples_semana=0", "vencen_semana=0", "vencen_mas_adelante=0", "parciales=0", "regularidad=0"):
+        assert vacia in caplog.text
+    assert job.claims == []
+
+
 def test_dry_run_de_un_lunes_corrido_otro_dia_sale_extendido(job, tmp_path, caplog):
     caplog.set_level(logging.INFO)
     out = tmp_path / "lunes.pdf"

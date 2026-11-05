@@ -5,11 +5,11 @@ Cada test carga sus propias filas dentro de una transacción que se descarta
 solo LEEN los datos existentes.
 """
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import event, func, select, text
+from sqlalchemy import event, func, select, text, update
 from sqlalchemy.exc import DBAPIError
 
 from backend.models import (
@@ -24,6 +24,7 @@ from backend.models import (
     Company,
     LogisticsStatus,
     Order,
+    OrderDraft,
     RelationStatus,
 )
 from backend.services.reporte_diario.clasificar import clasificar_cobranzas
@@ -31,6 +32,7 @@ from backend.services.reporte_diario.fechas import fin_de_semana
 from backend.services.reporte_diario.datos import (
     armar_reporte,
     leer_cobranzas,
+    leer_compras_por_par,
     leer_cumples,
     solo_lectura,
 )
@@ -406,3 +408,220 @@ def test_armar_reporte_lee_sin_escribir_y_sin_n_mas_1(db_ctx):
 
     despues = db.session.execute(select(func.count()).select_from(Collection)).scalar()
     assert despues == antes
+
+
+# ---------------------------------------------------------------- query E: días de compra por par
+
+LUNES = date(2026, 11, 9)
+MARTES = date(2026, 11, 10)
+
+
+def _compra(sesion, cliente, empresa, *, dia=None, creado=None, deleted_at=None, sin_logistica=False, cobrado=True,
+            precio=None):
+    """Pedido con fecha_compra `dia` (None = NULL) y created_at `creado` (default: `dia` o 01/01/2026).
+
+    `cobrado=True` le pone fecha_cobro_efectiva para que no aporte deuda (query A).
+    """
+    creado = creado or (datetime.combine(dia, datetime.min.time()) if dia else datetime(2026, 1, 1))
+    pedido = Order(client_id=cliente.id, company_id=empresa.id, created_at=creado, deleted_at=deleted_at,
+                   precio_final=precio)
+    sesion.add(pedido)
+    sesion.flush()
+    if not sin_logistica:
+        fecha = datetime.combine(dia, datetime.min.time().replace(hour=15)) if dia else None
+        logistica = LogisticsStatus(order_id=pedido.id, fecha_compra=fecha)
+        sesion.add(logistica)
+        sesion.flush()
+        if fecha is None:
+            # fecha_compra=None en el constructor NO pisa el default utcnow: hay que dejarla NULL con un UPDATE.
+            sesion.execute(update(LogisticsStatus).where(LogisticsStatus.id == logistica.id).values(fecha_compra=None))
+            sesion.expire(logistica)
+    if cobrado:
+        sesion.add(Collection(order_id=pedido.id, fecha_cobro_efectiva=datetime(2026, 1, 2)))
+    sesion.flush()
+    return pedido
+
+
+def _dias_del_par(sesion, cliente, empresa, hoy=LUNES):
+    pares = {(p.client_id, p.company_id): p for p in leer_compras_por_par(sesion, hoy)}
+    par = pares.get((cliente.id, empresa.id))
+    return None if par is None else par.dias
+
+
+def test_compras_varios_pedidos_el_mismo_dia_son_un_dia(base):
+    sesion, cliente, empresa = base
+    for _ in range(3):
+        _compra(sesion, cliente, empresa, dia=date(2026, 10, 28))
+    _compra(sesion, cliente, empresa, dia=date(2026, 10, 14))
+
+    assert _dias_del_par(sesion, cliente, empresa) == (date(2026, 10, 14), date(2026, 10, 28))
+
+
+def test_compras_pedido_borrado_no_cuenta(base):
+    sesion, cliente, empresa = base
+    _compra(sesion, cliente, empresa, dia=date(2026, 10, 1))
+    _compra(sesion, cliente, empresa, dia=date(2026, 10, 15), deleted_at=datetime(2026, 10, 16))
+
+    assert _dias_del_par(sesion, cliente, empresa) == (date(2026, 10, 1),)
+
+
+def test_compras_fecha_compra_null_usa_created_at(base):
+    sesion, cliente, empresa = base
+    con_null = _compra(sesion, cliente, empresa, dia=None, creado=datetime(2026, 10, 1, 13, 0))
+    _compra(sesion, cliente, empresa, sin_logistica=True, creado=datetime(2026, 10, 8, 9, 0))
+
+    assert sesion.get(LogisticsStatus, sesion.scalar(
+        select(LogisticsStatus.id).where(LogisticsStatus.order_id == con_null.id))).fecha_compra is None
+    assert _dias_del_par(sesion, cliente, empresa) == (date(2026, 10, 1), date(2026, 10, 8))
+
+
+def test_compras_fecha_compra_retrofechada_al_pasado(base):
+    sesion, cliente, empresa = base
+    _compra(sesion, cliente, empresa, dia=date(2026, 10, 5), creado=datetime(2026, 10, 20, 10, 0))
+
+    assert _dias_del_par(sesion, cliente, empresa) == (date(2026, 10, 5),)
+
+
+def test_compras_dia_futuro_no_cuenta(base):
+    sesion, cliente, empresa = base
+    for dia in (date(2026, 9, 1), date(2026, 9, 15), date(2026, 9, 29), date(2026, 10, 13)):
+        _compra(sesion, cliente, empresa, dia=dia)
+    _compra(sesion, cliente, empresa, dia=date(2026, 11, 20), creado=datetime(2026, 11, 2))
+
+    dias = _dias_del_par(sesion, cliente, empresa)
+
+    assert dias[-1] == date(2026, 10, 13)
+    assert date(2026, 11, 20) not in dias
+    # Visto el lunes posterior al 20/11, sí cuenta.
+    assert _dias_del_par(sesion, cliente, empresa, hoy=date(2026, 11, 23))[-1] == date(2026, 11, 20)
+
+
+def test_compras_ventana_trae_los_13_mas_recientes_ascendentes(base):
+    sesion, cliente, empresa = base
+    todos = [date(2026, 1, 5) + timedelta(days=7 * k) for k in range(15)]
+    for dia in todos:
+        _compra(sesion, cliente, empresa, dia=dia)
+
+    assert _dias_del_par(sesion, cliente, empresa) == tuple(todos[-13:])
+
+
+def test_compras_cliente_archivado_excluido_y_desarchivado_vuelve_con_todo(base):
+    sesion, cliente, empresa = base
+    dias = [date(2026, 8, 1) + timedelta(days=14 * k) for k in range(5)]
+    for dia in dias:
+        _compra(sesion, cliente, empresa, dia=dia)
+    cliente.archived = True
+    sesion.flush()
+
+    assert _dias_del_par(sesion, cliente, empresa) is None
+
+    cliente.archived = False
+    sesion.flush()
+
+    assert _dias_del_par(sesion, cliente, empresa) == tuple(dias)
+
+
+def test_compras_empresa_archivada_excluida_y_desarchivada_vuelve_con_todo(base):
+    sesion, cliente, empresa_y = base
+    empresa_x = Company(nombre=f"{_marca()} X SA", marca=None, plazo_pago_promedio_dias=30, archived=True)
+    sesion.add(empresa_x)
+    sesion.flush()
+    dias = [date(2026, 8, 1) + timedelta(days=14 * k) for k in range(5)]
+    for dia in dias:
+        _compra(sesion, cliente, empresa_x, dia=dia)
+        _compra(sesion, cliente, empresa_y, dia=dia)
+
+    assert _dias_del_par(sesion, cliente, empresa_x) is None
+    assert _dias_del_par(sesion, cliente, empresa_y) == tuple(dias)
+
+    empresa_x.archived = False
+    sesion.flush()
+
+    assert _dias_del_par(sesion, cliente, empresa_x) == tuple(dias)
+
+
+def test_compras_nombres_como_query_a(base):
+    sesion, cliente, empresa = base
+    _compra(sesion, cliente, empresa, dia=date(2026, 10, 1))
+
+    (par,) = [p for p in leer_compras_por_par(sesion, LUNES) if p.client_id == cliente.id]
+
+    assert par.cliente == f"{cliente.apellido} (Fantasia)"
+    assert par.empresa == f"{empresa.nombre} (Marca)"
+
+
+def test_compras_order_draft_no_aporta_dias(base):
+    sesion, cliente, empresa = base
+    sesion.add(OrderDraft(client_id=cliente.id, company_id=empresa.id, updated_at=datetime(2026, 10, 1)))
+    sesion.flush()
+
+    assert _dias_del_par(sesion, cliente, empresa) is None
+
+
+def test_compras_es_una_sola_sentencia(base, db_ctx):
+    sesion, cliente, empresa = base
+    for dia in (date(2026, 9, 1), date(2026, 9, 15)):
+        _compra(sesion, cliente, empresa, dia=dia)
+    sentencias = []
+
+    def _registrar(conn, cursor, statement, *args):
+        sentencias.append(statement)
+
+    event.listen(db_ctx.engine, "before_cursor_execute", _registrar)
+    try:
+        leer_compras_por_par(sesion, LUNES)
+    finally:
+        event.remove(db_ctx.engine, "before_cursor_execute", _registrar)
+
+    assert len(sentencias) == 1
+    assert "row_number" in sentencias[0].lower()
+
+
+# ---------------------------------------------------------------- armar_reporte con la query E
+
+
+def _contar_query_e(db_ctx, hoy, session=None):
+    sentencias = []
+
+    def _registrar(conn, cursor, statement, *args):
+        sentencias.append(statement)
+
+    event.listen(db_ctx.engine, "before_cursor_execute", _registrar)
+    try:
+        reporte = armar_reporte(hoy, session)
+    finally:
+        event.remove(db_ctx.engine, "before_cursor_execute", _registrar)
+    return reporte, sum(1 for s in sentencias if "row_number" in s.lower()), sentencias
+
+
+def test_armar_reporte_de_martes_no_ejecuta_la_query_e(db_ctx):
+    reporte, query_e, sentencias = _contar_query_e(db_ctx, MARTES)
+
+    assert reporte.regularidad == ()
+    assert query_e == 0
+    assert sentencias[0].strip().upper() == "SET TRANSACTION READ ONLY"
+
+
+def test_armar_reporte_de_lunes_ejecuta_la_query_e_una_vez_en_solo_lectura(db_ctx):
+    reporte, query_e, sentencias = _contar_query_e(db_ctx, LUNES)
+
+    assert query_e == 1
+    assert sentencias[0].strip().upper() == "SET TRANSACTION READ ONLY"
+    # SET + cobranzas + saldos + cumpleaños + vínculos + query E.
+    assert len(sentencias) <= 6
+    assert not db_ctx.session().in_transaction()
+
+
+def test_armar_reporte_de_lunes_con_un_par_que_dispara_trae_su_deuda(base):
+    sesion, cliente, empresa = base
+    # Intervalos 14, 14, 14; última compra 13/10 -> el lunes 09/11 N = 27, P = 14.
+    for dia in (date(2026, 9, 1), date(2026, 9, 15), date(2026, 9, 29)):
+        _compra(sesion, cliente, empresa, dia=dia)
+    _compra(sesion, cliente, empresa, dia=date(2026, 10, 13), cobrado=False, precio=D("1234.56"))
+    sesion.commit()  # libera el savepoint: solo_lectura exige una transacción nueva (la externa se descarta igual)
+
+    reporte = armar_reporte(LUNES, sesion)
+
+    (fila,) = [f for f in reporte.regularidad if f.cliente.startswith(cliente.apellido)]
+    assert (fila.ultima_compra, fila.dias_sin_comprar, fila.ritmo, fila.compras) == (date(2026, 10, 13), 27, 14, 4)
+    assert (fila.deuda.total, fila.deuda.sin_monto, fila.deuda.abiertas) == (D("1234.56"), 0, 1)

@@ -23,9 +23,11 @@ from backend.services.reporte_diario.modelo import (
     SECCIONES_POR_MODO,
     FilaCobranza,
     FilaCumple,
+    FilaRegularidad,
     Reporte,
     TotalGeneral,
 )
+from backend.services.reporte_diario.regularidad import texto_deuda
 from backend.utils.formato import DIAS_ABREV, fmt_dia_mes, fmt_fecha_es, fmt_plata_es
 
 FUENTES = Path(__file__).resolve().parent / "fuentes"
@@ -54,6 +56,15 @@ _COL_CLIENTE = (("Cliente", 52, _IZQ), ("Empresa", 38, _IZQ), ("Pedido #", 18, _
 _COL_DIAS = (("Días de atraso", 16, _CENTRO),)
 _COL_ESTADO = (("Estado", 22, _CENTRO),)
 _COL_PLATA = (("Monto", 26, _DER), ("Pagado", 24, _DER), ("NC", 20, _DER), ("Saldo", 26, _DER))
+
+_COL_REGULARIDAD = (
+    ("Cliente", 52, _IZQ),
+    ("Empresa", 38, _IZQ),
+    ("Última compra", 22, _CENTRO),
+    ("Días sin comprar", 18, _CENTRO),
+    ("Ritmo habitual", 18, _CENTRO),
+    ("Deuda", 72, _IZQ),
+)
 
 _ESTADOS = {"ATRASADO": "ATRASADO", "A_COBRAR": "A COBRAR", "EN_CAMINO": "EN CAMINO"}
 
@@ -117,6 +128,21 @@ def _fila_cobranza(f: FilaCobranza, *, dias: bool, estado: bool) -> tuple[str, .
     return tuple(celdas)
 
 
+def texto_ritmo(p: int) -> str:
+    return "cada 1 día" if p == 1 else f"cada {p} días"
+
+
+def _fila_regularidad(f: FilaRegularidad) -> tuple[str, ...]:
+    return (
+        f.cliente,
+        f.empresa or "",
+        fmt_fecha_es(f.ultima_compra),
+        str(f.dias_sin_comprar),
+        texto_ritmo(f.ritmo),
+        texto_deuda(f.deuda),
+    )
+
+
 def _seccion(titulo, columnas, filas, total=None) -> Seccion:
     filas = tuple(filas)
     return Seccion(
@@ -154,6 +180,7 @@ def _titulos(reporte: Reporte) -> dict[str, str]:
         "sin_vencimiento": "Sin fecha de vencimiento",
         "parciales": "Pagos parciales",
         "pagadas_sin_registrar": "Pagadas sin registrar cobro",
+        "regularidad": "Regularidad de compra (clientes que se pasaron de su ritmo habitual)",
     }
 
 
@@ -174,7 +201,8 @@ def armar_secciones(reporte: Reporte) -> tuple[Seccion | BloqueTotal, ...]:
     pagadas sin registrar nunca están en esas secciones), y solo si la sección
     tiene filas: vacía muestra únicamente "Sin registros". "Sin fecha de
     vencimiento" solo aparece si tiene filas. El lunes, el total general va
-    justo antes del lugar de la regularidad.
+    justo antes de la regularidad, que es la última sección (vacía: "Sin
+    registros").
     """
     tot = {k: fmt_plata_es(v) for k, v in totales(reporte).items()}
     titulo = _titulos(reporte)
@@ -200,8 +228,9 @@ def armar_secciones(reporte: Reporte) -> tuple[Seccion | BloqueTotal, ...]:
     partes: list[Seccion | BloqueTotal] = []
     for nombre in SECCIONES_POR_MODO[reporte.modo]:
         if nombre == "regularidad":
-            # El total general va justo antes; la tabla de regularidad todavía no se dibuja.
+            # El total general va justo antes de la regularidad (al final del lunes).
             partes.append(BloqueTotal(texto_total_general(total_general(reporte))))
+            partes.append(_seccion(titulo[nombre], _COL_REGULARIDAD, map(_fila_regularidad, reporte.regularidad)))
             continue
         if nombre == "sin_vencimiento" and not reporte.sin_vencimiento:
             continue

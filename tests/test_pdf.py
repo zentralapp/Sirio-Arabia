@@ -8,7 +8,8 @@ se verifica además el texto real del documento; si no, ese test se saltea.
 import re
 import shutil
 import subprocess
-from datetime import date, datetime, timezone
+from dataclasses import replace
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -19,8 +20,11 @@ from backend.services.reporte_diario.modelo import (
     A_COBRAR,
     ATRASADO,
     EN_CAMINO,
+    ComprasPar,
+    DeudaPar,
     FilaCobranza,
     FilaCumple,
+    FilaRegularidad,
     Reporte,
     TotalGeneral,
 )
@@ -33,6 +37,7 @@ from backend.services.reporte_diario.pdf import (
     armar_secciones,
     render_pdf,
     subtitulo,
+    texto_ritmo,
     texto_total_general,
 )
 from backend.services.saldos import armar_saldo
@@ -48,6 +53,7 @@ DOMINGO = date(2026, 11, 15)
 GENERADO = datetime(2026, 11, 9, 11, 3, tzinfo=timezone.utc)
 
 MAS_ADELANTE = "Cobranzas que vencen más adelante (después del domingo 15/11)"
+REGULARIDAD = "Regularidad de compra (clientes que se pasaron de su ritmo habitual)"
 TITULOS_LUNES = (
     "Cumpleaños de hoy",
     "Cumpleaños de la semana",
@@ -59,6 +65,7 @@ TITULOS_LUNES = (
     "Pagos parciales",
     "Pagadas sin registrar cobro",
     "Total general de deuda vigente",
+    REGULARIDAD,
 )
 TITULOS_DEL_DIA = (
     "Cumpleaños de hoy",
@@ -146,6 +153,7 @@ class TestSecciones:
             "Sin fecha de vencimiento": 1,
             "Pagos parciales": 1,
             "Pagadas sin registrar cobro": 1,
+            REGULARIDAD: 0,
         }
         assert secciones[4].encabezado == "ATRASADAS (3)"
 
@@ -382,6 +390,95 @@ class TestRender:
 
         assert rep.modo == EXTENDIDO and rep.sin_novedades
         assert render_pdf(rep, GENERADO).startswith(b"%PDF-")
+
+
+def fila_regularidad(cliente="Cliente", n=27, p=14, deuda=DeudaPar()):
+    return FilaRegularidad(
+        cliente=cliente,
+        empresa="Empresa (Marca)",
+        ultima_compra=LUNES - timedelta(days=n),
+        dias_sin_comprar=n,
+        ritmo=p,
+        compras=5,
+        deuda=deuda,
+    )
+
+
+def compras_que_disparan(client_id=1, company_id=1, cliente="Cliente"):
+    """Par con intervalos 14,14,14 y última compra hace 27 días (P=14, N=27)."""
+    ultimo = LUNES - timedelta(days=27)
+    dias = tuple(ultimo - timedelta(days=14 * k) for k in (3, 2, 1, 0))
+    return ComprasPar(client_id=client_id, company_id=company_id, cliente=cliente, empresa="Empresa", dias=dias)
+
+
+class TestRegularidad:
+    def test_lunes_completo_11_secciones_con_regularidad_al_final(self):
+        secciones = armar_secciones(replace(reporte_completo(), regularidad=(fila_regularidad(),)))
+
+        assert len(secciones) == 11
+        assert [s.titulo for s in secciones] == list(TITULOS_LUNES)
+        assert isinstance(secciones[-2], BloqueTotal)
+        assert secciones[-1].titulo == REGULARIDAD
+
+    def test_regularidad_vacia_dice_sin_registros(self):
+        regularidad = por_titulo(armar_secciones(reporte()))[REGULARIDAD]
+
+        assert regularidad.filas == ()
+        assert regularidad.vacia_texto == "Sin registros"
+        assert regularidad.total is None
+
+    def test_columnas_y_fila_con_texto_de_deuda_exacto(self):
+        deuda = DeudaPar(total=D("1000"), sin_monto=2, abiertas=3)
+        rep = replace(reporte(), regularidad=(fila_regularidad(deuda=deuda),))
+
+        seccion = por_titulo(armar_secciones(rep))[REGULARIDAD]
+
+        assert seccion.columnas == (
+            "Cliente", "Empresa", "Última compra", "Días sin comprar", "Ritmo habitual", "Deuda",
+        )
+        assert seccion.anchos == (52, 38, 22, 18, 18, 72)
+        assert seccion.filas == (
+            (
+                "Cliente",
+                "Empresa (Marca)",
+                "13/10/2026",
+                "27",
+                "cada 14 días",
+                "(tiene deudas pendientes de $1.000,00 + 2 sin monto)",
+            ),
+        )
+
+    def test_texto_ritmo(self):
+        assert texto_ritmo(14) == "cada 14 días"
+        assert texto_ritmo(1) == "cada 1 día"
+
+    def test_componer_lunes_calcula_regularidad_con_deuda_del_par(self):
+        deuda = FilaCobranza(
+            order_id=9, cliente="Cliente", empresa="Empresa", vencimiento=date(2026, 12, 20), estado=EN_CAMINO,
+            saldo=armar_saldo(D("500"), None, None, D(0), D(0)), client_id=1, company_id=1,
+        )
+        rep = componer_reporte(LUNES, [deuda], [], [compras_que_disparan()])
+
+        (fila,) = por_titulo(armar_secciones(rep))[REGULARIDAD].filas
+
+        assert fila[3:] == ("27", "cada 14 días", "(tiene deudas pendientes de $500,00)")
+
+    @pytest.mark.parametrize("hoy", [MARTES, JUEVES, VIERNES])
+    def test_sin_regularidad_de_martes_a_viernes(self, hoy):
+        rep = componer_reporte(hoy, [], [], [compras_que_disparan()])
+
+        assert rep.regularidad == ()
+        assert REGULARIDAD not in [s.titulo for s in armar_secciones(rep)]
+
+    def test_smoke_lunes_con_200_filas_de_regularidad(self):
+        filas = tuple(fila_regularidad(cliente=f"Cliente {i:03d}") for i in range(1, 201))
+        rep = replace(reporte(), regularidad=filas)
+
+        pdf = render_pdf(rep, GENERADO)
+
+        assert pdf.startswith(b"%PDF-")
+        assert paginas(pdf) > 1
+        assert len(por_titulo(armar_secciones(rep))[REGULARIDAD].filas) == 200
 
 
 class TestSubtitulo:

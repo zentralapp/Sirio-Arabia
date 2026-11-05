@@ -17,14 +17,16 @@ from datetime import date
 from decimal import Decimal
 from typing import Iterable
 
-from backend.services.reporte_diario.fechas import fin_de_hoy, fin_de_semana, modo_reporte, proyectar_cumple
+from backend.services.reporte_diario.fechas import EXTENDIDO, fin_de_hoy, fin_de_semana, modo_reporte, proyectar_cumple
 from backend.services.reporte_diario.modelo import (
     SECCIONES_POR_MODO,
+    ComprasPar,
     FilaCobranza,
     FilaCumple,
     Reporte,
     TotalGeneral,
 )
+from backend.services.reporte_diario.regularidad import calcular_regularidad, deuda_por_par
 from backend.services.saldos import es_pagada_sin_registrar, es_parcial
 
 # Secciones que llevan total de saldo al pie (y solo esas).
@@ -144,20 +146,26 @@ def componer_reporte(
     hoy: date,
     cobranzas: Iterable[FilaCobranza],
     cumples: Iterable[FilaCumple],
-    compras: Iterable = (),
+    compras: Iterable[ComprasPar] = (),
 ) -> Reporte:
     """Arma el Reporte del modo del día a partir de filas ya leídas (sin DB).
 
     Clasifica con la partición completa y deja vacías () las secciones que no
     son del modo, así el log de conteos y `sin_novedades` reflejan lo que se
-    dibuja. `compras` (regularidad) todavía no se usa.
+    dibuja. La regularidad se calcula SOLO el lunes, con la deuda por par de
+    TODAS las cobranzas leídas (antes de filtrar por modo).
     """
     modo = modo_reporte(hoy)
     domingo = fin_de_semana(hoy)
     fin_hoy = fin_de_hoy(hoy)
+    cobranzas = tuple(cobranzas)
+    regularidad = (
+        calcular_regularidad(compras, hoy, deuda_por_par(cobranzas)) if modo == EXTENDIDO else ()
+    )
     secciones = {
         **clasificar_cumples(cumples, hoy, domingo, fin_hoy=fin_hoy),
         **clasificar_cobranzas(cobranzas, hoy, domingo, fin_hoy=fin_hoy),
+        "regularidad": regularidad,
     }
     del_modo = SECCIONES_POR_MODO[modo]
     return Reporte(
