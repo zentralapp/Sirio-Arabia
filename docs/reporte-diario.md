@@ -1030,9 +1030,10 @@ Antes de cualquier corrida local, verificá que el `.env` apunte a `localhost`
 ### 12.2 Puesta en producción (en este orden)
 
 El PR #18 (`feat/pedidos-cliente-oct`) ya está mergeado en `main`.
-`feat/reporte-regularidad` está apilada sobre `feat/reporte-diario`
-(PR #19). Esta rama **no** agrega migraciones: la única es
-`c3e5a9d1f7b2` (`report_send_log`), que viene con #19.
+Hay **un solo merge**: el PR #19 (`feat/reporte-diario`), que ya incluye la
+regularidad, los modos por día y el botón (`feat/reporte-regularidad` se
+integró a #19 por fast-forward). La única migración es `c3e5a9d1f7b2`
+(`report_send_log`), que viene con #19.
 
 - [ ] 1. **PRIMERO: confirmar que el web tiene un `SECRET_KEY` real.** En las
       Variables del servicio `sirio-arabia-crm`, `SECRET_KEY` tiene que
@@ -1063,9 +1064,9 @@ El PR #18 (`feat/pedidos-cliente-oct`) ya está mergeado en `main`.
     [§5.4](#54-variables-compartidas-webcron).
   - Dejar `REPORTE_BOTON` y `REPORTE_BANNER` **sin definir** por ahora.
 - [ ] 3. **Mergear** (y con eso deployar la web con la migración).
-      Rebasear `feat/reporte-diario` sobre `main`, correr la suite, mergear
-      #19; después el PR de `feat/reporte-regularidad`. El deploy del web
-      aplica `c3e5a9d1f7b2` al arrancar (`AUTO_MIGRATE=1` en
+      Rebasear `feat/reporte-diario` sobre `main`, correr la suite y mergear
+      #19, que es el único merge (trae la regularidad, los modos por día y el
+      botón). El deploy del web aplica `c3e5a9d1f7b2` al arrancar (`AUTO_MIGRATE=1` en
       `Railway.toml`). Verificar que `alembic_version` sea `c3e5a9d1f7b2`, que
       el log no tenga errores de migración y que la web ande igual que antes
       (sin link "Generar reporte"). Ver
