@@ -180,6 +180,16 @@ def test_universo_de_cobranzas(base):
     assert c.vencimiento == date(2026, 12, 20)
 
 
+def test_cobranza_trae_client_id_y_company_id(base):
+    """Base de la deuda por par (cliente, empresa) de la regularidad."""
+    sesion, cliente, empresa = base
+    pedido = _pedido(sesion, cliente, empresa, precio=D("1000"), coll={"fecha_pago_estimada": datetime(2026, 10, 19)})
+
+    f = _por_id(leer_cobranzas(sesion, HOY))[pedido.id]
+
+    assert (f.client_id, f.company_id) == (cliente.id, empresa.id) == (pedido.client_id, pedido.company_id)
+
+
 def test_cobranza_sin_vencimiento(base):
     sesion, cliente, empresa = base
     pedido = _pedido(sesion, cliente, empresa, precio=D("1000"), coll={})

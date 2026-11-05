@@ -3,10 +3,14 @@ from datetime import date, datetime, time, timezone
 import pytest
 
 from backend.services.reporte_diario.fechas import (
+    DEL_DIA,
+    EXTENDIDO,
     TZ_NEGOCIO,
     es_habil,
+    fin_de_hoy,
     fin_de_semana,
     hoy_negocio,
+    modo_reporte,
     proyectar_cumple,
     ultimo_habil_esperado,
 )
@@ -25,6 +29,50 @@ from backend.services.reporte_diario.fechas import (
 )
 def test_fin_de_semana(hoy, domingo):
     assert fin_de_semana(hoy) == domingo
+
+
+def test_semana_del_lunes_con_cruce_de_anio():
+    # Lunes 28/12/2026: la semana es (29/12/2026, 03/01/2027].
+    assert fin_de_semana(date(2026, 12, 28)) == date(2027, 1, 3)
+    assert fin_de_hoy(date(2026, 12, 28)) == date(2026, 12, 28)
+
+
+@pytest.mark.parametrize(
+    "fecha,modo",
+    [
+        (date(2026, 11, 9), EXTENDIDO),  # lun (también si es feriado: no hay calendario)
+        (date(2026, 11, 10), DEL_DIA),  # mar
+        (date(2026, 11, 11), DEL_DIA),  # mié
+        (date(2026, 11, 12), DEL_DIA),  # jue
+        (date(2026, 11, 13), DEL_DIA),  # vie
+        (date(2026, 11, 14), DEL_DIA),  # sáb forzado
+        (date(2026, 11, 15), DEL_DIA),  # dom forzado
+    ],
+)
+def test_modo_reporte(fecha, modo):
+    assert modo_reporte(fecha) == modo
+
+
+def test_modos_son_str_simples():
+    assert (EXTENDIDO, DEL_DIA) == ("extendido", "del_dia")
+
+
+@pytest.mark.parametrize(
+    "fecha,fin",
+    [
+        (date(2026, 11, 9), date(2026, 11, 9)),  # lun
+        (date(2026, 11, 10), date(2026, 11, 10)),  # mar
+        (date(2026, 11, 11), date(2026, 11, 11)),  # mié
+        (date(2026, 11, 12), date(2026, 11, 12)),  # jue
+        (date(2026, 11, 6), date(2026, 11, 8)),  # vie -> dom
+        (date(2026, 11, 7), date(2026, 11, 8)),  # sáb -> dom
+        (date(2026, 11, 8), date(2026, 11, 8)),  # dom
+        (date(2026, 12, 25), date(2026, 12, 27)),  # vie feriado: igual cubre el finde
+        (date(2027, 1, 1), date(2027, 1, 3)),  # vie 1° de año
+    ],
+)
+def test_fin_de_hoy(fecha, fin):
+    assert fin_de_hoy(fecha) == fin
 
 
 @pytest.mark.parametrize(

@@ -1,23 +1,31 @@
 """PDF del reporte diario con fpdf2 + Poppins (puro: sin DB ni Flask).
 
 Dos pasos:
-1. `armar_secciones(reporte)` arma, en orden, lo que se dibuja: títulos,
+1. `armar_secciones(reporte)` arma, en orden y según el modo del reporte
+   (lunes EXTENDIDO, martes a domingo DEL_DIA), lo que se dibuja: títulos,
    columnas y celdas YA formateadas en castellano ("1.234,56", DD/MM/YYYY,
-   "Sin monto"), y el total solo donde corresponde. Es lo que se testea.
+   "Sin monto"), el total solo donde corresponde y, el lunes, el total
+   general. Es lo que se testea.
 2. `render_pdf(reporte, generado_en)` lo dibuja en A4 apaisado y devuelve
    los bytes (todo en memoria).
 """
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 
-from backend.services.reporte_diario.clasificar import totales
-from backend.services.reporte_diario.fechas import TZ_NEGOCIO
-from backend.services.reporte_diario.modelo import FilaCobranza, FilaCumple, Reporte
+from backend.services.reporte_diario.clasificar import total_general, totales
+from backend.services.reporte_diario.fechas import EXTENDIDO, TZ_NEGOCIO
+from backend.services.reporte_diario.modelo import (
+    SECCIONES_POR_MODO,
+    FilaCobranza,
+    FilaCumple,
+    Reporte,
+    TotalGeneral,
+)
 from backend.utils.formato import DIAS_ABREV, fmt_dia_mes, fmt_fecha_es, fmt_plata_es
 
 FUENTES = Path(__file__).resolve().parent / "fuentes"
@@ -26,6 +34,7 @@ FAMILIA = "Poppins"
 SIN_MONTO = "Sin monto"
 SIN_REGISTROS = "Sin registros"
 SIN_NOVEDADES = "Sin novedades"
+TITULO_TOTAL_GENERAL = "Total general de deuda vigente"
 REMITENTE = "Arabia Representaciones"
 CREADOR = "Sirio-Arabia CRM"
 
@@ -66,6 +75,14 @@ class Seccion:
     @property
     def encabezado(self) -> str:
         return f"{self.titulo} ({self.conteo})"
+
+
+@dataclass(frozen=True)
+class BloqueTotal:
+    """Una línea destacada (el total general del lunes), no una tabla."""
+
+    texto: str
+    titulo: str = TITULO_TOTAL_GENERAL
 
 
 # ---------------------------------------------------------------- contenido
@@ -118,27 +135,89 @@ def _cobranzas(titulo, filas, *, dias=False, estado=True, total=None) -> Seccion
     return _seccion(titulo, columnas, (_fila_cobranza(f, dias=dias, estado=estado) for f in filas), total)
 
 
-def armar_secciones(reporte: Reporte) -> tuple[Seccion, ...]:
-    """Secciones en el orden de la spec, con celdas ya formateadas.
+def _fin_hoy(reporte: Reporte) -> date:
+    return reporte.fin_hoy or reporte.hoy
 
-    Totales SOLO en vencen hoy, semana, ATRASADAS y parciales (excluyen
-    "Sin monto"; las pagadas sin registrar nunca están en esas secciones), y
-    solo si la sección tiene filas: vacía muestra únicamente "Sin registros".
-    "Sin fecha de vencimiento" solo aparece si tiene filas.
+
+def _titulos(reporte: Reporte) -> dict[str, str]:
+    """Título de cada sección. Si "hoy" llega hasta el domingo (viernes), lo dice."""
+    con_finde = _fin_hoy(reporte) > reporte.hoy
+    return {
+        "cumples_hoy": "Cumpleaños de hoy y del fin de semana" if con_finde else "Cumpleaños de hoy",
+        "cumples_semana": "Cumpleaños de la semana",
+        "vencen_hoy": "Cobranzas que vencen hoy y el fin de semana" if con_finde else "Cobranzas que vencen hoy",
+        "vencen_semana": "Cobranzas que vencen en la semana",
+        "atrasadas": "ATRASADAS",
+        "vencen_mas_adelante": (
+            f"Cobranzas que vencen más adelante (después del domingo {fmt_dia_mes(reporte.domingo)})"
+        ),
+        "sin_vencimiento": "Sin fecha de vencimiento",
+        "parciales": "Pagos parciales",
+        "pagadas_sin_registrar": "Pagadas sin registrar cobro",
+    }
+
+
+def texto_total_general(t: TotalGeneral) -> str:
+    texto = f"{TITULO_TOTAL_GENERAL}: ${fmt_plata_es(t.monto)}"
+    if t.sin_monto == 1:
+        texto += " (1 pedido sin monto cargado no incluido)"
+    elif t.sin_monto > 1:
+        texto += f" ({t.sin_monto} pedidos sin monto cargado no incluidos)"
+    return texto
+
+
+def armar_secciones(reporte: Reporte) -> tuple[Seccion | BloqueTotal, ...]:
+    """Secciones del modo del reporte, en orden, con celdas ya formateadas.
+
+    El orden es el de SECCIONES_POR_MODO. Totales al pie SOLO en vencen hoy,
+    semana, ATRASADAS, más adelante y parciales (excluyen "Sin monto"; las
+    pagadas sin registrar nunca están en esas secciones), y solo si la sección
+    tiene filas: vacía muestra únicamente "Sin registros". "Sin fecha de
+    vencimiento" solo aparece si tiene filas. El lunes, el total general va
+    justo antes del lugar de la regularidad.
     """
     tot = {k: fmt_plata_es(v) for k, v in totales(reporte).items()}
-    secciones = [
-        _seccion("Cumpleaños de hoy", _COL_CUMPLE, map(_fila_cumple, reporte.cumples_hoy)),
-        _seccion("Cumpleaños de la semana", _COL_CUMPLE, map(_fila_cumple, reporte.cumples_semana)),
-        _cobranzas("Cobranzas que vencen hoy", reporte.vencen_hoy, total=tot["vencen_hoy"]),
-        _cobranzas("Cobranzas que vencen en la semana", reporte.vencen_semana, total=tot["vencen_semana"]),
-        _cobranzas("ATRASADAS", reporte.atrasadas, dias=True, total=tot["atrasadas"]),
-        _cobranzas("Pagos parciales", reporte.parciales, estado=False, total=tot["parciales"]),
-        _cobranzas("Pagadas sin registrar cobro", reporte.pagadas_sin_registrar, estado=False),
-    ]
-    if reporte.sin_vencimiento:
-        secciones.append(_cobranzas("Sin fecha de vencimiento", reporte.sin_vencimiento))
-    return tuple(secciones)
+    titulo = _titulos(reporte)
+
+    def cumples(nombre):
+        return _seccion(titulo[nombre], _COL_CUMPLE, map(_fila_cumple, getattr(reporte, nombre)))
+
+    def cobranzas(nombre, **opciones):
+        return _cobranzas(titulo[nombre], getattr(reporte, nombre), **opciones)
+
+    armar = {
+        "cumples_hoy": lambda: cumples("cumples_hoy"),
+        "cumples_semana": lambda: cumples("cumples_semana"),
+        "vencen_hoy": lambda: cobranzas("vencen_hoy", total=tot["vencen_hoy"]),
+        "vencen_semana": lambda: cobranzas("vencen_semana", total=tot["vencen_semana"]),
+        "atrasadas": lambda: cobranzas("atrasadas", dias=True, total=tot["atrasadas"]),
+        "vencen_mas_adelante": lambda: cobranzas("vencen_mas_adelante", total=tot["vencen_mas_adelante"]),
+        "sin_vencimiento": lambda: cobranzas("sin_vencimiento"),
+        "parciales": lambda: cobranzas("parciales", estado=False, total=tot["parciales"]),
+        "pagadas_sin_registrar": lambda: cobranzas("pagadas_sin_registrar", estado=False),
+    }
+
+    partes: list[Seccion | BloqueTotal] = []
+    for nombre in SECCIONES_POR_MODO[reporte.modo]:
+        if nombre == "regularidad":
+            # El total general va justo antes; la tabla de regularidad todavía no se dibuja.
+            partes.append(BloqueTotal(texto_total_general(total_general(reporte))))
+            continue
+        if nombre == "sin_vencimiento" and not reporte.sin_vencimiento:
+            continue
+        partes.append(armar[nombre]())
+    return tuple(partes)
+
+
+def subtitulo(reporte: Reporte) -> str:
+    """Fecha de negocio y, si corresponde, el rango que cubre el reporte."""
+    hoy, fin_hoy = reporte.hoy, _fin_hoy(reporte)
+    if reporte.modo == EXTENDIDO:
+        return f"{_con_dia(hoy)} · resumen semanal hasta {_con_dia(reporte.domingo)}"
+    if fin_hoy > hoy:
+        dias = " y ".join(DIAS_ABREV[(hoy + timedelta(days=n)).weekday()] for n in range(1, (fin_hoy - hoy).days + 1))
+        return f"{_con_dia(hoy)} · incluye {dias} hasta {_con_dia(fin_hoy)}"
+    return _con_dia(hoy)
 
 
 def titulo_documento(reporte: Reporte) -> str:
@@ -227,6 +306,15 @@ def _dibujar_seccion(pdf: _Documento, s: Seccion) -> None:
     pdf.ln(4)
 
 
+def _dibujar_total(pdf: _Documento, b: BloqueTotal) -> None:
+    if pdf.will_page_break(12):
+        pdf.add_page()
+    pdf.set_font(FAMILIA, "B", 10.5)
+    pdf.set_fill_color(*_FONDO_TOTAL)
+    pdf.cell(0, 8, b.texto, fill=True, new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(4)
+
+
 def render_pdf(reporte: Reporte, generado_en: datetime) -> bytes:
     """Dibuja el reporte y devuelve los bytes del PDF.
 
@@ -237,9 +325,8 @@ def render_pdf(reporte: Reporte, generado_en: datetime) -> bytes:
         raise ValueError("generado_en debe tener zona horaria")
     generado_art = generado_en.astimezone(_TZ)
 
-    subtitulo = f"{_con_dia(reporte.hoy)} · semana hasta {_con_dia(reporte.domingo)}"
     pie = f"Generado {generado_art:%d/%m/%Y %H:%M} ART"
-    pdf = _Documento(subtitulo, pie)
+    pdf = _Documento(subtitulo(reporte), pie)
     pdf.set_title(titulo_documento(reporte))
     pdf.set_author(REMITENTE)
     pdf.set_creator(CREADOR)
@@ -252,7 +339,10 @@ def render_pdf(reporte: Reporte, generado_en: datetime) -> bytes:
         pdf.cell(0, 10, SIN_NOVEDADES, align="C", fill=True, new_x="LMARGIN", new_y="NEXT")
         pdf.ln(4)
 
-    for seccion in armar_secciones(reporte):
-        _dibujar_seccion(pdf, seccion)
+    for parte in armar_secciones(reporte):
+        if isinstance(parte, BloqueTotal):
+            _dibujar_total(pdf, parte)
+        else:
+            _dibujar_seccion(pdf, parte)
 
     return bytes(pdf.output())

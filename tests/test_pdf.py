@@ -14,6 +14,7 @@ from decimal import Decimal
 import pytest
 
 from backend.services.reporte_diario.clasificar import componer_reporte
+from backend.services.reporte_diario.fechas import EXTENDIDO
 from backend.services.reporte_diario.modelo import (
     A_COBRAR,
     ATRASADO,
@@ -21,34 +22,61 @@ from backend.services.reporte_diario.modelo import (
     FilaCobranza,
     FilaCumple,
     Reporte,
+    TotalGeneral,
 )
 from backend.services.reporte_diario.pdf import (
     SIN_MONTO,
     SIN_NOVEDADES,
     SIN_REGISTROS,
+    BloqueTotal,
+    Seccion,
     armar_secciones,
     render_pdf,
+    subtitulo,
+    texto_total_general,
 )
 from backend.services.saldos import armar_saldo
 
 D = Decimal
-JUEVES = date(2026, 10, 29)
-DOMINGO = date(2026, 11, 1)
+# Semana del lunes 09/11/2026: el lunes es el reporte EXTENDIDO (todas las secciones).
+LUNES = date(2026, 11, 9)
+MARTES = date(2026, 11, 10)
+JUEVES = date(2026, 11, 12)
+VIERNES = date(2026, 11, 13)
+DOMINGO = date(2026, 11, 15)
 # 11:03 UTC = 08:03 ART.
-GENERADO = datetime(2026, 10, 29, 11, 3, tzinfo=timezone.utc)
+GENERADO = datetime(2026, 11, 9, 11, 3, tzinfo=timezone.utc)
 
-TITULOS = (
+MAS_ADELANTE = "Cobranzas que vencen más adelante (después del domingo 15/11)"
+TITULOS_LUNES = (
     "Cumpleaños de hoy",
     "Cumpleaños de la semana",
     "Cobranzas que vencen hoy",
     "Cobranzas que vencen en la semana",
     "ATRASADAS",
+    MAS_ADELANTE,
+    "Sin fecha de vencimiento",
     "Pagos parciales",
     "Pagadas sin registrar cobro",
+    "Total general de deuda vigente",
+)
+TITULOS_DEL_DIA = (
+    "Cumpleaños de hoy",
+    "Cobranzas que vencen hoy",
+    "ATRASADAS",
+    "Pagadas sin registrar cobro",
+    "Sin fecha de vencimiento",
+)
+TITULOS_VIERNES = (
+    "Cumpleaños de hoy y del fin de semana",
+    "Cobranzas que vencen hoy y el fin de semana",
+    "ATRASADAS",
+    "Pagadas sin registrar cobro",
+    "Sin fecha de vencimiento",
 )
 
 
-def cobranza(order_id=1, venc=JUEVES, monto="1000", pagado="0", nc="0", cliente="Cliente", estado=A_COBRAR):
+def cobranza(order_id=1, venc=LUNES, monto="1000", pagado="0", nc="0", cliente="Cliente", estado=A_COBRAR):
     monto = None if monto is None else D(monto)
     return FilaCobranza(
         order_id=order_id,
@@ -60,57 +88,85 @@ def cobranza(order_id=1, venc=JUEVES, monto="1000", pagado="0", nc="0", cliente=
     )
 
 
-def cumple(nombre="Ana", fecha=date(1985, 10, 29)):
+def cumple(nombre="Ana", fecha=date(1985, 11, 9)):
     return FilaCumple(nombre=nombre, puesto="Compras", cliente="Cliente", empresa="Empresa", fecha=fecha)
 
 
-def reporte(cobranzas=(), cumples=(), hoy=JUEVES):
+def reporte(cobranzas=(), cumples=(), hoy=LUNES):
     return componer_reporte(hoy, cobranzas, cumples)
 
 
 def por_titulo(secciones):
-    return {s.titulo: s for s in secciones}
+    """Solo las tablas (Seccion), por título; el total general va aparte."""
+    return {s.titulo: s for s in secciones if isinstance(s, Seccion)}
+
+
+def bloque_total(secciones) -> BloqueTotal:
+    (bloque,) = [s for s in secciones if isinstance(s, BloqueTotal)]
+    return bloque
 
 
 def paginas(pdf: bytes) -> int:
     return len(re.findall(rb"/Type\s*/Page\b(?!s)", pdf))
 
 
-def reporte_completo():
-    return reporte(
-        cobranzas=[
-            cobranza(1, venc=JUEVES, monto="1000"),
-            cobranza(2, venc=DOMINGO, monto="2500.5", estado=EN_CAMINO),
-            cobranza(3, venc=date(2026, 6, 30), monto="1234567.5", estado=ATRASADO, cliente="Muñoz “El Ñandú” — Pérez"),
-            cobranza(4, venc=date(2026, 10, 24), monto="1000", pagado="400", estado=ATRASADO),
-            cobranza(5, venc=date(2026, 10, 15), monto="1000", pagado="1000", estado=ATRASADO),
-            cobranza(6, venc=date(2026, 10, 20), monto=None, estado=ATRASADO),
-            cobranza(7, venc=None, monto="300"),
-        ],
-        cumples=[cumple("Ana"), cumple("Beto", date(1990, 11, 1))],
-    )
+FILAS_COMPLETAS = (
+    cobranza(1, venc=LUNES, monto="1000"),
+    cobranza(2, venc=DOMINGO, monto="2500.5", estado=EN_CAMINO),
+    cobranza(3, venc=date(2026, 6, 30), monto="1234567.5", estado=ATRASADO, cliente="Muñoz “El Ñandú” — Pérez"),
+    cobranza(4, venc=date(2026, 11, 4), monto="1000", pagado="400", estado=ATRASADO),
+    cobranza(5, venc=date(2026, 10, 26), monto="1000", pagado="1000", estado=ATRASADO),
+    cobranza(6, venc=date(2026, 10, 31), monto=None, estado=ATRASADO),
+    cobranza(7, venc=None, monto="300"),
+    cobranza(8, venc=date(2026, 11, 30), monto="700"),
+)
+CUMPLES_COMPLETOS = (cumple("Ana"), cumple("Beto", date(1990, 11, 15)))
+
+
+def reporte_completo(hoy=LUNES):
+    return reporte(cobranzas=FILAS_COMPLETAS, cumples=CUMPLES_COMPLETOS, hoy=hoy)
 
 
 # ---------------------------------------------------------------- secciones
 
 
 class TestSecciones:
-    def test_orden_y_titulos_con_conteo(self):
+    def test_orden_y_titulos_con_conteo_lunes(self):
         secciones = armar_secciones(reporte_completo())
 
-        assert [s.titulo for s in secciones] == [*TITULOS, "Sin fecha de vencimiento"]
-        conteos = {s.titulo: s.conteo for s in secciones}
+        assert [s.titulo for s in secciones] == list(TITULOS_LUNES)
+        conteos = {s.titulo: s.conteo for s in secciones if isinstance(s, Seccion)}
         assert conteos == {
             "Cumpleaños de hoy": 1,
             "Cumpleaños de la semana": 1,
             "Cobranzas que vencen hoy": 1,
             "Cobranzas que vencen en la semana": 1,
             "ATRASADAS": 3,
+            MAS_ADELANTE: 1,
+            "Sin fecha de vencimiento": 1,
             "Pagos parciales": 1,
             "Pagadas sin registrar cobro": 1,
-            "Sin fecha de vencimiento": 1,
         }
         assert secciones[4].encabezado == "ATRASADAS (3)"
+
+    def test_orden_y_titulos_martes(self):
+        assert [s.titulo for s in armar_secciones(reporte_completo(MARTES))] == list(TITULOS_DEL_DIA)
+
+    def test_orden_y_titulos_viernes(self):
+        assert [s.titulo for s in armar_secciones(reporte_completo(VIERNES))] == list(TITULOS_VIERNES)
+
+    def test_jueves_sin_secciones_del_lunes(self):
+        titulos = " | ".join(s.titulo for s in armar_secciones(reporte_completo(JUEVES))).casefold()
+
+        for prohibido in ("de la semana", "pagos parciales", "vencen más adelante", "total general", "regularidad"):
+            assert prohibido not in titulos
+
+    def test_pagadas_sin_registrar_siempre_aunque_este_vacia(self):
+        for hoy in (LUNES, MARTES, VIERNES):
+            secciones = por_titulo(armar_secciones(reporte(hoy=hoy)))
+
+            assert secciones["Pagadas sin registrar cobro"].filas == ()
+            assert "Sin fecha de vencimiento" not in secciones
 
     def test_seccion_vacia_dice_sin_registros(self):
         secciones = por_titulo(armar_secciones(reporte(cumples=[cumple()])))
@@ -122,11 +178,13 @@ class TestSecciones:
     def test_sin_vencimiento_condicional(self):
         sin = [s.titulo for s in armar_secciones(reporte([cobranza(1)]))]
         con = [s.titulo for s in armar_secciones(reporte([cobranza(1, venc=None)]))]
+        con_martes = [s.titulo for s in armar_secciones(reporte([cobranza(1, venc=None)], hoy=MARTES))]
 
         assert "Sin fecha de vencimiento" not in sin
-        assert con[-1] == "Sin fecha de vencimiento"
+        assert con[con.index(MAS_ADELANTE) + 1] == "Sin fecha de vencimiento"
+        assert con_martes[-1] == "Sin fecha de vencimiento"
 
-    def test_totales_solo_en_4_secciones(self):
+    def test_totales_solo_en_5_secciones(self):
         secciones = por_titulo(armar_secciones(reporte_completo()))
 
         con_total = {t for t, s in secciones.items() if s.total is not None}
@@ -135,12 +193,39 @@ class TestSecciones:
             "Cobranzas que vencen hoy",
             "Cobranzas que vencen en la semana",
             "ATRASADAS",
+            MAS_ADELANTE,
             "Pagos parciales",
         }
         # ATRASADAS: 1.234.567,50 + 600 (parcial); excluye Sin monto y la pagada.
         assert secciones["ATRASADAS"].total == "1.235.167,50"
         assert secciones["Pagos parciales"].total == "600,00"
         assert secciones["Cobranzas que vencen en la semana"].total == "2.500,50"
+        assert secciones[MAS_ADELANTE].total == "700,00"
+
+    def test_vencen_mas_adelante_columnas_de_vencen(self):
+        secciones = por_titulo(armar_secciones(reporte_completo()))
+        fila = dict(zip(secciones[MAS_ADELANTE].columnas, secciones[MAS_ADELANTE].filas[0]))
+
+        assert secciones[MAS_ADELANTE].columnas == secciones["Cobranzas que vencen en la semana"].columnas
+        assert (fila["Pedido #"], fila["Vencimiento"], fila["Saldo"]) == ("8", "30/11/2026", "700,00")
+
+    def test_total_general_del_lunes(self):
+        # 1.000 + 2.500,50 + 1.235.167,50 + 700 + 300; la Sin monto no suma pero se cuenta.
+        bloque = bloque_total(armar_secciones(reporte_completo()))
+
+        assert bloque.texto == (
+            "Total general de deuda vigente: $1.239.668,00 (1 pedido sin monto cargado no incluido)"
+        )
+
+    def test_texto_total_general_con_y_sin_sin_monto(self):
+        assert texto_total_general(TotalGeneral(D("3900"), 0)) == "Total general de deuda vigente: $3.900,00"
+        assert texto_total_general(TotalGeneral(D("0"), 2)) == (
+            "Total general de deuda vigente: $0,00 (2 pedidos sin monto cargado no incluidos)"
+        )
+
+    def test_total_general_solo_el_lunes(self):
+        for hoy in (MARTES, JUEVES, VIERNES):
+            assert not [s for s in armar_secciones(reporte_completo(hoy)) if isinstance(s, BloqueTotal)]
 
     def test_seccion_vacia_no_lleva_total(self):
         # Vacía = solo "Sin registros"; un "Total saldo: 0,00" ahí es ruido.
@@ -149,11 +234,12 @@ class TestSecciones:
         assert all(s.total is None for s in secciones.values())
 
     def test_seccion_vacia_no_lleva_total_aunque_otras_si(self):
-        secciones = por_titulo(armar_secciones(reporte([cobranza(1, venc=JUEVES)])))
+        secciones = por_titulo(armar_secciones(reporte([cobranza(1, venc=LUNES)])))
 
         assert secciones["Cobranzas que vencen hoy"].total == "1.000,00"
         assert secciones["ATRASADAS"].total is None
         assert secciones["Cobranzas que vencen en la semana"].total is None
+        assert secciones[MAS_ADELANTE].total is None
         assert secciones["Pagos parciales"].total is None
 
     def test_sin_monto_en_monto_y_saldo(self):
@@ -188,7 +274,7 @@ class TestSecciones:
             "Empresa": "Empresa",
             "Pedido #": "3",
             "Vencimiento": "30/06/2026",
-            "Días de atraso": "121",
+            "Días de atraso": "132",
             "Estado": "ATRASADO",
             "Monto": "1.234.567,50",
             "Pagado": "0,00",
@@ -209,7 +295,14 @@ class TestSecciones:
         secciones = por_titulo(armar_secciones(reporte_completo()))
         fila = dict(zip(secciones["Cumpleaños de la semana"].columnas, secciones["Cumpleaños de la semana"].filas[0]))
 
-        assert fila == {"Nombre": "Beto", "Puesto": "Compras", "Cliente": "Cliente", "Empresa": "Empresa", "Fecha": "01/11"}
+        assert fila == {"Nombre": "Beto", "Puesto": "Compras", "Cliente": "Cliente", "Empresa": "Empresa", "Fecha": "15/11"}
+
+    def test_viernes_cumples_del_fin_de_semana(self):
+        r = reporte(cumples=[cumple("Dom", date(1990, 11, 15)), cumple("Vie", date(1990, 11, 13))], hoy=VIERNES)
+        seccion = por_titulo(armar_secciones(r))["Cumpleaños de hoy y del fin de semana"]
+
+        assert [f[0] for f in seccion.filas] == ["Vie", "Dom"]
+        assert [f[-1] for f in seccion.filas] == ["13/11", "15/11"]
 
     def test_pagada_muestra_saldo_cero(self):
         secciones = por_titulo(armar_secciones(reporte_completo()))
@@ -220,7 +313,7 @@ class TestSecciones:
         assert pagadas.total is None
 
     def test_columnas_de_plata_alineadas_a_la_derecha(self):
-        for seccion in armar_secciones(reporte_completo()):
+        for seccion in por_titulo(armar_secciones(reporte_completo())).values():
             alineacion = dict(zip(seccion.columnas, seccion.alineacion))
             for col in ("Monto", "Pagado", "NC", "Saldo"):
                 if col in alineacion:
@@ -276,7 +369,34 @@ class TestRender:
 
     def test_generado_en_naive_falla(self):
         with pytest.raises(ValueError):
-            render_pdf(Reporte(hoy=JUEVES, domingo=DOMINGO), datetime(2026, 10, 29, 8, 0))
+            render_pdf(Reporte(hoy=JUEVES, domingo=DOMINGO), datetime(2026, 11, 12, 8, 0))
+
+    @pytest.mark.parametrize("hoy", [LUNES, MARTES, VIERNES, date(2026, 11, 14)])
+    def test_smoke_por_modo(self, hoy):
+        pdf = render_pdf(reporte_completo(hoy), GENERADO)
+
+        assert pdf.startswith(b"%PDF-")
+
+    def test_lunes_vacio_sin_novedades_igual_dibuja_total(self):
+        rep = reporte()
+
+        assert rep.modo == EXTENDIDO and rep.sin_novedades
+        assert render_pdf(rep, GENERADO).startswith(b"%PDF-")
+
+
+class TestSubtitulo:
+    def test_martes_a_jueves_solo_la_fecha(self):
+        assert subtitulo(reporte(hoy=MARTES)) == "mar 10/11/2026"
+        assert subtitulo(reporte(hoy=JUEVES)) == "jue 12/11/2026"
+
+    def test_viernes_incluye_sabado_y_domingo(self):
+        assert subtitulo(reporte(hoy=VIERNES)) == "vie 13/11/2026 · incluye sáb y dom hasta dom 15/11/2026"
+
+    def test_lunes_resumen_semanal(self):
+        assert subtitulo(reporte(hoy=LUNES)) == "lun 09/11/2026 · resumen semanal hasta dom 15/11/2026"
+
+    def test_reporte_sin_fin_hoy_es_del_dia(self):
+        assert subtitulo(Reporte(hoy=JUEVES, domingo=DOMINGO)) == "jue 12/11/2026"
 
 
 @pytest.mark.skipif(shutil.which("pdftotext") is None, reason="pdftotext (poppler) no instalado")
@@ -305,10 +425,22 @@ class TestTextoExtraido:
     def test_encabezado_y_pie(self, tmp_path):
         texto = self.texto(render_pdf(reporte_completo(), GENERADO), tmp_path)
 
-        assert "jue 29/10/2026" in texto
-        assert "dom 01/11/2026" in texto
+        assert "lun 09/11/2026 · resumen semanal hasta dom 15/11/2026" in texto
         assert re.search(r"Página 1 de \d+", texto)
-        assert "Generado 29/10/2026 08:03 ART" in texto
+        assert "Generado 09/11/2026 08:03 ART" in texto
+
+    def test_jueves_sin_textos_del_lunes(self, tmp_path):
+        texto = self.texto(render_pdf(reporte_completo(JUEVES), GENERADO), tmp_path)
+
+        for prohibido in ("de la semana", "Pagos parciales", "más adelante", "Total general", "Regularidad"):
+            assert prohibido not in texto
+        assert "jue 12/11/2026" in texto
+
+    def test_lunes_dibuja_total_general(self, tmp_path):
+        texto = self.texto(render_pdf(reporte_completo(), GENERADO), tmp_path)
+
+        assert "Total general de deuda vigente: $1.239.668,00" in texto
+        assert "Cobranzas que vencen más adelante (después del domingo 15/11) (1)" in texto
 
     def test_caracteres_especiales_identicos(self, tmp_path):
         texto = self.texto(render_pdf(reporte_completo(), GENERADO), tmp_path)
@@ -329,4 +461,6 @@ class TestTextoExtraido:
         assert "Cliente 001" in texto and "Cliente 200" in texto
         con_encabezado = [p for p in paginas_txt if "Vencimiento" in p and "Saldo" in p]
         assert len(con_encabezado) > 3
-        assert "200.000,00" in paginas_txt[-2] or "200.000,00" in paginas_txt[-1]
+        # El total de ATRASADAS queda en la misma página que su última fila.
+        (ultima,) = [p for p in paginas_txt if "Cliente 200" in p]
+        assert "200.000,00" in ultima

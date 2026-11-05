@@ -88,6 +88,7 @@ SECCIONES = (
     "vencen_hoy",
     "vencen_semana",
     "atrasadas",
+    "vencen_mas_adelante",
     "parciales",
     "pagadas_sin_registrar",
     "sin_vencimiento",
@@ -295,7 +296,8 @@ def _texto_error(exc: BaseException) -> str:
 
 
 def _log_conteos(reporte) -> None:
-    log.info("conteos: %s", " ".join(f"{s}={len(getattr(reporte, s))}" for s in SECCIONES))
+    conteos = " ".join(f"{s}={len(getattr(reporte, s))}" for s in SECCIONES)
+    log.info("conteos: modo=%s %s", reporte.modo, conteos)
 
 
 def _generar_pdf(session, fecha: date) -> bytes:

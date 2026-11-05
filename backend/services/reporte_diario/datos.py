@@ -105,6 +105,8 @@ def leer_cobranzas(session: Session, hoy: date) -> list[FilaCobranza]:
     q = (
         select(
             Order.id,
+            Order.client_id,
+            Order.company_id,
             Client.apellido,
             Client.nombre,
             Company.nombre.label("empresa"),
@@ -130,6 +132,8 @@ def leer_cobranzas(session: Session, hoy: date) -> list[FilaCobranza]:
             vencimiento=_fecha(f.venc),
             estado=f.estado,
             saldo=saldos[f.id],
+            client_id=f.client_id,
+            company_id=f.company_id,
         )
         for f in filas
     ]

@@ -2,7 +2,11 @@
 
 - "Hoy" es SIEMPRE la fecha en America/Argentina/Buenos_Aires, nunca UTC.
 - Día hábil = lunes a viernes (los feriados cuentan como hábiles).
-- Ventana "semana" = (hoy, domingo]: excluye hoy, incluye el domingo.
+- Ventana "semana" = (hoy, domingo]: excluye hoy, incluye el domingo. Solo
+  la usa el reporte EXTENDIDO (lunes).
+- Modo del reporte: lunes -> EXTENDIDO; martes a domingo -> DEL_DIA. Depende
+  SOLO de la fecha (sin feriados, sin mirar envíos anteriores).
+- "Hoy" de viernes a domingo cubre hasta el domingo (`fin_de_hoy`).
 """
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -12,7 +16,13 @@ from zoneinfo import ZoneInfo
 TZ_NEGOCIO = "America/Argentina/Buenos_Aires"
 _TZ = ZoneInfo(TZ_NEGOCIO)
 
-_DOMINGO = 6  # date.weekday()
+_LUNES = 0  # date.weekday()
+_VIERNES = 4
+_DOMINGO = 6
+
+# Modos del reporte (str simples: compatible con Python 3.10).
+EXTENDIDO = "extendido"  # lunes
+DEL_DIA = "del_dia"  # martes a domingo (sáb/dom solo con --force/--dry-run/botón)
 
 
 def _a_art(momento: datetime) -> datetime:
@@ -37,6 +47,16 @@ def es_habil(fecha: date) -> bool:
 def fin_de_semana(hoy: date) -> date:
     """El domingo igual o posterior a `hoy`."""
     return hoy + timedelta(days=_DOMINGO - hoy.weekday())
+
+
+def modo_reporte(fecha: date) -> str:
+    """Lunes -> EXTENDIDO; cualquier otro día -> DEL_DIA."""
+    return EXTENDIDO if fecha.weekday() == _LUNES else DEL_DIA
+
+
+def fin_de_hoy(fecha: date) -> date:
+    """Último día que cuenta como "hoy": vie/sáb/dom -> el domingo; resto -> la misma fecha."""
+    return fin_de_semana(fecha) if fecha.weekday() >= _VIERNES else fecha
 
 
 def proyectar_cumple(fecha: date, anio: int) -> date:

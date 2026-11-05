@@ -16,7 +16,7 @@ import pytest
 
 import backend.jobs.reporte_diario as rd
 from backend.services.mailer.base import EnvioIncierto, MailerError, TokenRevocadoError
-from backend.services.reporte_diario.fechas import fin_de_semana
+from backend.services.reporte_diario.fechas import fin_de_hoy, fin_de_semana, modo_reporte
 from backend.services.reporte_diario.modelo import Reporte
 
 REPO = Path(__file__).resolve().parent.parent
@@ -89,7 +89,7 @@ def job(monkeypatch):
 
     def armar_reporte(hoy, session=None):
         r.lecturas.append(hoy)
-        return Reporte(hoy=hoy, domingo=fin_de_semana(hoy))
+        return Reporte(hoy=hoy, domingo=fin_de_semana(hoy), modo=modo_reporte(hoy), fin_hoy=fin_de_hoy(hoy))
 
     def render_pdf(reporte, generado_en):
         assert generado_en.tzinfo is not None
@@ -141,8 +141,33 @@ def test_dia_habil_envia_y_registra_sent(job, caplog):
 def test_log_tiene_conteos_por_seccion(job, caplog):
     caplog.set_level(logging.INFO)
     assert rd.main([]) == 0
+    assert "modo=del_dia" in caplog.text
     assert "atrasadas=0" in caplog.text
     assert "cumples_hoy=0" in caplog.text
+    assert "vencen_mas_adelante=0" in caplog.text
+
+
+def test_log_del_lunes_tiene_modo_extendido_y_vencen_mas_adelante(job, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    _hoy(monkeypatch, date(2026, 11, 9))
+
+    assert rd.main([]) == 0
+
+    assert job.lecturas == [date(2026, 11, 9)]
+    assert "conteos: modo=extendido" in caplog.text
+    assert "vencen_mas_adelante=0" in caplog.text
+    assert job.mailer.enviados[0]["subject"] == "Reporte diario – lun 09/11/2026"
+
+
+def test_dry_run_de_un_lunes_corrido_otro_dia_sale_extendido(job, tmp_path, caplog):
+    caplog.set_level(logging.INFO)
+    out = tmp_path / "lunes.pdf"
+
+    # El reloj del fixture dice jueves; el modo depende solo de --fecha.
+    assert rd.main(["--dry-run", "--out", str(out), "--fecha", "2026-11-09"]) == 0
+
+    assert "modo=extendido" in caplog.text
+    assert job.claims == []
 
 
 # --------------------------------------------------------------------------
