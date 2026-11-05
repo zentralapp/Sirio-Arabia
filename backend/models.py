@@ -435,6 +435,36 @@ class ClientAlertState(db.Model):
     )
 
 
+REPORT_SEND_STATUSES = ("PENDING", "SENT", "FAILED")
+
+
+class ReportSendLog(db.Model):
+    """Registro de envíos de reportes automáticos (hoy solo el "diario").
+
+    Una fila por (report_key, fecha_negocio): los reintentos y los --force
+    reutilizan la fila e incrementan `attempts`. Espejo exacto de la migración
+    c3e5a9d1f7b2. Timestamps UTC naive (convención del repo).
+    """
+
+    __tablename__ = "report_send_log"
+    id = db.Column(db.Integer, primary_key=True)
+    report_key = db.Column(db.String(32), nullable=False)
+    fecha_negocio = db.Column(db.Date, nullable=False)
+    status = db.Column(db.String(16), nullable=False)  # PENDING | SENT | FAILED
+    attempts = db.Column(db.Integer, nullable=False, server_default="1")
+    recipient = db.Column(db.String(255))
+    message_id = db.Column(db.String(128))
+    error = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, nullable=False, server_default=func.now())
+    updated_at = db.Column(db.DateTime, nullable=False, server_default=func.now())
+    sent_at = db.Column(db.DateTime)
+
+    __table_args__ = (
+        db.UniqueConstraint("report_key", "fecha_negocio", name="uq_report_send_log_key_fecha"),
+        db.CheckConstraint("status IN ('PENDING','SENT','FAILED')", name="ck_report_send_log_status"),
+    )
+
+
 # ===========================================================================
 #  FUENTE ÚNICA DE VERDAD — vencimiento efectivo de una cobranza y su estado
 # ===========================================================================

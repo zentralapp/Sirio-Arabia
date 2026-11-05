@@ -60,3 +60,7 @@ railway up
 ```
 
 Se recomienda tener dos entornos (development y production) en Railway y usar variables por entorno.
+
+## Reporte diario
+Job que manda L-V 08:00 ART un PDF de cumpleaños y cobranzas por Gmail (`python -m backend.jobs.reporte_diario`, servicio cron aparte en Railway).
+Configuración de Google Cloud, variables, Railway, operación y checklist de puesta en producción: [docs/reporte-diario.md](docs/reporte-diario.md).

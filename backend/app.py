@@ -346,6 +346,8 @@ def create_app():
     app.register_blueprint(auth_bp)
     from .views.main import bp as main_bp
     app.register_blueprint(main_bp)
+    from .views.reporte_estado import bp as reporte_estado_bp
+    app.register_blueprint(reporte_estado_bp)
 
     return app
 

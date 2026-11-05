@@ -1,0 +1,96 @@
+{% extends "layout.html" %}
+
+{# Botón "Generar reporte" (REPORTE_BOTON=1, solo admin global). Rutas en backend/views/reporte_estado.py. #}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h1 class="h4 m-0"><i class="bi bi-file-earmark-pdf me-2"></i>Generar reporte</h1>
+</div>
+
+{% with mensajes = get_flashed_messages(with_categories=True) %}
+  {% for categoria, mensaje in mensajes %}
+  <div class="alert alert-{{ categoria if categoria in ('success', 'warning', 'danger', 'info') else 'info' }} text-break" role="alert">{{ mensaje }}</div>
+  {% endfor %}
+{% endwith %}
+{% if error_fecha %}
+<div class="alert alert-danger" role="alert">{{ error_fecha }}</div>
+{% endif %}
+
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="row g-3 align-items-end">
+      <div class="col-12 col-md-4">
+        <label for="reporteFecha" class="form-label">Fecha de negocio</label>
+        <input type="date" class="form-control" id="reporteFecha" value="{{ fecha.isoformat() }}"
+               min="{{ fecha_min.isoformat() }}" max="{{ fecha_max.isoformat() }}" required>
+        {# Texto fijo a propósito: el tipo depende solo del día de la semana (fechas.modo_reporte)
+           y un texto calculado al cargar quedaba viejo al cambiar la fecha. #}
+        <div class="form-text" id="reporteTipos">Lunes: extendido (semana, vencen más adelante, total general y regularidad).
+          Martes a domingo: del día (viernes, sábado y domingo cubren hasta el domingo).</div>
+      </div>
+      <div class="col-12 col-md-8 d-flex flex-wrap gap-2">
+        <form method="get" action="{{ url_for('reporte_estado.pdf') }}" target="_blank" class="m-0" id="formVerPdf">
+          <input type="hidden" name="fecha" value="{{ fecha.isoformat() }}" data-reporte-fecha>
+          <button type="submit" class="btn btn-outline-primary"><i class="bi bi-eye me-1"></i>Ver PDF</button>
+        </form>
+        <form method="post" action="{{ url_for('reporte_estado.enviar') }}" class="m-0" id="formEnviarPrueba">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="fecha" value="{{ fecha.isoformat() }}" data-reporte-fecha>
+          <button type="submit" class="btn btn-primary" id="btnEnviarPrueba"><i class="bi bi-send me-1"></i>Enviar prueba</button>
+        </form>
+      </div>
+    </div>
+    <p class="small text-muted mt-3 mb-0">
+      "Enviar prueba" manda el reporte de esa fecha SOLO a {{ destinatario }}, con asunto "[PRUEBA] …".
+      No toca el envío automático del día. Entre un envío y otro tienen que pasar al menos 60 segundos.
+    </p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <h2 class="h6">Últimas pruebas</h2>
+    {% if pruebas %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead>
+          <tr><th>Fecha del reporte</th><th>Estado</th><th>Intento</th><th>Actualizado (ART)</th></tr>
+        </thead>
+        <tbody>
+          {% for p in pruebas %}
+          <tr>
+            <td>{{ p.fecha_negocio.strftime('%d/%m/%Y') }}</td>
+            <td>{{ p.status }}</td>
+            <td>{{ p.attempts if p.attempts is not none else '' }}</td>
+            <td>{{ hora_art(p.updated_at) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">Sin registros</p>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+  (function () {
+    var fecha = document.getElementById('reporteFecha');
+    var ocultos = document.querySelectorAll('[data-reporte-fecha]');
+    if (fecha) {
+      fecha.addEventListener('change', function () {
+        for (var i = 0; i < ocultos.length; i++) { ocultos[i].value = fecha.value; }
+      });
+    }
+    var form = document.getElementById('formEnviarPrueba');
+    var boton = document.getElementById('btnEnviarPrueba');
+    if (form && boton) {
+      form.addEventListener('submit', function (ev) {
+        if (boton.disabled) { ev.preventDefault(); return; }
+        boton.disabled = true;
+        boton.textContent = 'Enviando…';
+      });
+    }
+  })();
+</script>
+{% endblock %}
