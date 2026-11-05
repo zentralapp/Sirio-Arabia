@@ -970,8 +970,9 @@
       if (formaPagoSel) delete formaPagoSel.dataset.touched;
       if (plazoPagoInput) delete plazoPagoInput.dataset.touched;
       if (!id){
-        if (empresaSel) empresaSel.innerHTML = '<option value="">Empresa...</option>';
-        if (prevWrap) prevWrap.innerHTML = '';
+        // Vía loadCompanies / loadPrevOrders: suben el token e invalidan respuestas en vuelo
+        await loadCompanies('');
+        try{ await loadPrevOrders(); }catch(e){}
         refreshPreview();
         updateEnabledBySelection();
         return;
@@ -1250,9 +1251,10 @@
       }
       if (alertBox) alertBox.classList.add('d-none');
 
-      const subject = buildPreviewTitle();
       // Misma fuente que "Copiar borrador" (respeta ediciones manuales, incluye la nota)
       let body = (previewTa && previewTa.value) || buildPreviewText();
+      // Asunto = primera línea no vacía del cuerpo que se manda (antes de reemplazarlo por el aviso)
+      const subject = (body.split('\n').map(function(l){ return l.trim(); }).find(Boolean)) || buildPreviewTitle();
       // Copia síncrona dentro del click, ANTES de abrir Gmail / navegar al esquema de la app
       const copiado = copiarTextoSync(body);
       const destino = esIOS() ? 'app' : 'web';
@@ -1283,8 +1285,8 @@
       window.open(webUrl, '_blank');
     });
 
-    // Título del pedido (primera línea de la Vista previa y asunto del mail).
-    // Única fuente: así el asunto y la vista previa no pueden divergir.
+    // Título del pedido (primera línea de la Vista previa generada).
+    // El asunto del mail sale de la primera línea del cuerpo enviado; esto es sólo el respaldo.
     function buildPreviewTitle(){
       const empresaOpt = empresaSel.options[empresaSel.selectedIndex];
       const clienteOpt = clienteSel.options[clienteSel.selectedIndex];
