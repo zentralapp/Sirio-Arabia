@@ -364,18 +364,22 @@
         return;
       }
 
+      // Sugerencias del par actual: si cambia la selección mientras viaja, se descarta
+      const signal = selCtl.signal;
       try {
         const qs = new URLSearchParams();
         qs.set('client_id', cid);
         if (eid) qs.set('company_id', eid);
         qs.set('limit', '20');
-        const res = await fetch('/api/pedidos/notas_previas?' + qs.toString(), { headers: { 'Accept': 'application/json' } });
+        const res = await fetch('/api/pedidos/notas_previas?' + qs.toString(), { headers: { 'Accept': 'application/json' }, signal });
+        if (signal.aborted) return;
         if (!res.ok) {
           noteSuggestionsAll = [];
           hideNoteSuggestions();
           return;
         }
         const items = await res.json();
+        if (signal.aborted) return;
         noteSuggestionsAll = Array.isArray(items) ? items.filter(function(it){
           return it && String(it.note || '').trim() !== '';
         }).map(function(it){
@@ -384,6 +388,7 @@
         lastNoteSuggestKey = key;
         renderNoteSuggestions(notaInput ? notaInput.value : '');
       } catch(e) {
+        if (signal.aborted) return; // AbortError: la selección nueva ya reseteó las sugerencias
         noteSuggestionsAll = [];
         hideNoteSuggestions();
       }
@@ -802,19 +807,20 @@
         const tdA = document.createElement('td'); tdA.className = 'text-end d-flex justify-content-end gap-2';
         const btn = document.createElement('button'); btn.type='button'; btn.className='btn btn-sm btn-outline-primary'; btn.textContent='Cargar';
         btn.addEventListener('click', async ()=>{
+          // Selección nueva: cancela un "Cargar" o cambio anterior todavía en vuelo
+          const signal = nuevaSeleccion();
           // Seleccionar cliente y cargar empresas correspondientes
           if (clienteSel){
             clienteSel.value = String(d.client_id);
-            clienteSel.dispatchEvent(new Event('change'));
+            cambiarHeredando(clienteSel);
           }
-          // Esperar a que se carguen empresas para ese cliente
-          try{
-            // loadCompanies está en este scope; volver a cargar para el cliente actual
-            await loadCompanies(String(d.client_id));
-          }catch(e){}
+          // Esperar a que el change del cliente termine de cargar sus empresas (sin pedirlas dos veces)
+          try{ await cambioCliente; }catch(e){}
+          // Si mientras tanto se eligió otro borrador u otro cliente, este ya no aplica
+          if (signal.aborted) return;
           if (empresaSel){
             empresaSel.value = String(d.company_id);
-            empresaSel.dispatchEvent(new Event('change'));
+            cambiarHeredando(empresaSel);
           }
           applyDraft(d);
           // cerrar modal si existe bootstrap
@@ -906,23 +912,44 @@
 
     function updateEnabledBySelection(){ return; }
 
-    // Token de secuencia: el change del cliente y applyEditOrder / "Cargar" borrador
-    // disparan llamadas solapadas. Sólo la última puede poblar el select; las
-    // anteriores resuelven igual pero sin tocar nada (si no, duplican opciones).
-    let companiesSeq = 0;
-    // Idem para loadPrevOrders (declarado acá arriba para que exista antes de applyEditOrder)
-    let prevOrdersSeq = 0;
-    async function loadCompanies(clientId){
+    // Cancelación de cargas obsoletas: UN AbortController por "selección activa".
+    // Cada acción del usuario que cambia la selección (cliente, empresa, "Cargar"
+    // borrador, edición) llama a nuevaSeleccion() una vez, al principio y antes de
+    // cualquier await: aborta los fetch de la selección anterior y devuelve la señal
+    // nueva. Esa señal viaja a cada fetch y se mira después de cada await antes de
+    // escribir el form, así el que llamó también se entera y no sigue con datos viejos
+    // (un token de secuencia sólo frenaba el pintado, no al que hacía await).
+    // Anidamiento: "Cargar" / edición disparan el change del cliente y de la empresa
+    // por código. Esos change HEREDAN la selección de quien los dispara (vía
+    // cambiarHeredando) en vez de abrir otra: si no, el change interno abortaría su
+    // propio flujo externo. Un change de empresa hecho por el usuario sí abre una
+    // selección nueva (cambia el par cliente+empresa de pedidos anteriores y notas).
+    // Declarado acá arriba para que exista antes de applyEditOrder.
+    let selCtl = new AbortController();
+    let heredarSeleccion = false;
+    function nuevaSeleccion(){
+      if (heredarSeleccion) return selCtl.signal;
+      selCtl.abort();
+      selCtl = new AbortController();
+      return selCtl.signal;
+    }
+    // dispatchEvent es síncrono: los listeners leen heredarSeleccion antes de su primer await
+    function cambiarHeredando(el){
+      heredarSeleccion = true;
+      try { el.dispatchEvent(new Event('change')); } finally { heredarSeleccion = false; }
+    }
+    async function loadCompanies(clientId, signal){
       if(!empresaSel) return;
-      const seq = ++companiesSeq;
+      signal = signal || selCtl.signal;
+      if (signal.aborted) return;
       // Reset inmediato: que no se pueda elegir una empresa del cliente anterior mientras carga
       empresaSel.innerHTML = '<option value="">Empresa...</option>';
       if (mailInput) mailInput.value = '';
       if(!clientId) return;
       try{
-        const res = await fetch(`/api/clientes/${clientId}/empresas`);
+        const res = await fetch(`/api/clientes/${clientId}/empresas`, { signal });
         const items = await res.json();
-        if (seq !== companiesSeq) return;
+        if (signal.aborted) return;
         if (!Array.isArray(items)) return;
         // Limpiar y poblar en la misma pasada síncrona (un solo rebuild de Tom Select)
         empresaSel.innerHTML = '<option value="">Empresa...</option>';
@@ -940,7 +967,7 @@
           opt.setAttribute('data-plazo', ((e.plazo_pago_dias != null ? e.plazo_pago_dias : e.plazo_pago_promedio_dias) || '').toString());
           empresaSel.appendChild(opt);
         }
-      }catch(e){/* noop */}
+      }catch(e){/* noop (incluye AbortError de una selección cancelada) */}
     }
 
     notaPedidoBtn?.addEventListener('click', function(){
@@ -959,8 +986,13 @@
       } catch(e){ /* noop */ }
     });
 
-    // Cargar empresas al seleccionar cliente
-    clienteSel?.addEventListener('change', async ()=>{
+    // Cargar empresas al seleccionar cliente. La promesa queda en cambioCliente para
+    // que "Cargar" / edición esperen ESTA carga en vez de pedir las empresas otra vez.
+    let cambioCliente = Promise.resolve();
+    clienteSel?.addEventListener('change', ()=>{
+      cambioCliente = alCambiarCliente(nuevaSeleccion());
+    });
+    async function alCambiarCliente(signal){
       const id = clienteSel.value;
       clearFormForClientChange();
       resetNoteSuggestions();
@@ -970,20 +1002,24 @@
       if (formaPagoSel) delete formaPagoSel.dataset.touched;
       if (plazoPagoInput) delete plazoPagoInput.dataset.touched;
       if (!id){
-        // Vía loadCompanies / loadPrevOrders: suben el token e invalidan respuestas en vuelo
-        await loadCompanies('');
-        try{ await loadPrevOrders(); }catch(e){}
+        // nuevaSeleccion() ya abortó lo que estaba en vuelo; esto vacía empresas y pedidos anteriores
+        await loadCompanies('', signal);
+        try{ await loadPrevOrders(signal); }catch(e){}
+        if (signal.aborted) return;
         refreshPreview();
         updateEnabledBySelection();
         return;
       }
-      await loadCompanies(id);
+      await loadCompanies(id, signal);
+      if (signal.aborted) return;
       updateEnabledBySelection();
-      try{ await loadPrevOrders(); }catch(e){}
-    });
+      try{ await loadPrevOrders(signal); }catch(e){}
+    }
 
     // Autorellenar mail pedido al seleccionar empresa leyendo data-mail del option seleccionado
     empresaSel?.addEventListener('change', ()=>{
+      // Elegida por el usuario: selección nueva. Desde "Cargar" / edición: hereda la de ellos.
+      const signal = nuevaSeleccion();
       // Al cambiar empresa, NO borrar sucursales ni otros datos del cliente;
       // sólo actualizar mails, pedidos anteriores y destinatarios.
       const opt = empresaSel.options[empresaSel.selectedIndex];
@@ -1024,7 +1060,7 @@
       updateEnabledBySelection();
       // Intentar cargar borrador si ya hay empresa seleccionada
       tryLoadDraftForSelection();
-      try { loadPrevOrders(); } catch(e) {}
+      try { loadPrevOrders(signal); } catch(e) {}
       try {
         if (document.activeElement === notaInput) loadNoteSuggestions(true);
       } catch(e) {}
@@ -1509,17 +1545,20 @@
 
     async function applyEditOrder(){
       if (!editOrder) return;
+      const signal = nuevaSeleccion();
       try {
         if (clienteSel) {
           clienteSel.value = String(editOrder.client_id);
-          clienteSel.dispatchEvent(new Event('change'));
+          cambiarHeredando(clienteSel);
         }
 
-        try { await loadCompanies(String(editOrder.client_id)); } catch(e) {}
+        try { await cambioCliente; } catch(e) {}
+        // El usuario cambió de cliente antes de que terminara: no pisar su elección
+        if (signal.aborted) return;
 
         if (empresaSel) {
           empresaSel.value = String(editOrder.company_id);
-          empresaSel.dispatchEvent(new Event('change'));
+          cambiarHeredando(empresaSel);
         }
 
         try {
@@ -1560,7 +1599,7 @@
           }
         } catch(e) {}
 
-        try { await loadPrevOrders(); } catch(e) {}
+        try { await loadPrevOrders(signal); } catch(e) {}
       } catch(e) {}
     }
 
@@ -1568,19 +1607,20 @@
       applyEditOrder();
     }
 
-    async function loadPrevOrders(){
+    async function loadPrevOrders(signal){
       if(!prevWrap) return;
-      // Sólo la última llamada renderiza (edición / borrador / cambios rápidos la disparan solapada)
-      const seq = ++prevOrdersSeq;
-      const isLatest = function(){ return seq === prevOrdersSeq; };
+      // Sin señal (refrescar / eliminar uno): la de la selección activa. Una selección
+      // nueva aborta esta carga y nada de lo de abajo pinta.
+      signal = signal || selCtl.signal;
+      if (signal.aborted) return;
       // No mostrar pedidos del par anterior mientras carga
       prevWrap.innerHTML = '';
       if (prevCountEl) prevCountEl.textContent = '';
       const cid = clienteSel?.value; const eid = empresaSel?.value;
       if(!cid || !eid) return;
       try{
-        const res = await fetch(`/api/pedidos/anteriores?client_id=${encodeURIComponent(cid)}&company_id=${encodeURIComponent(eid)}&limit=10`);
-        if (!isLatest()) return;
+        const res = await fetch(`/api/pedidos/anteriores?client_id=${encodeURIComponent(cid)}&company_id=${encodeURIComponent(eid)}&limit=10`, { signal });
+        if (signal.aborted) return;
         if (!res.ok) {
           prevWrap.innerHTML = '<div class="text-danger">Error al cargar</div>';
           return;
@@ -1591,7 +1631,7 @@
           return;
         }
         const items = await res.json();
-        if (!isLatest()) return;
+        if (signal.aborted) return;
         const hiddenIds = new Set(getHiddenPrevIds(cid, eid));
         const visibleItems = (Array.isArray(items) ? items : []).filter(function(o){ return !hiddenIds.has(String(o.id)); });
         // Cantidad visible en el encabezado (útil con la sección colapsada)
@@ -1660,10 +1700,11 @@
         // Limpiar y renderizar juntos, después de la respuesta
         prevWrap.innerHTML = '';
         prevWrap.appendChild(fr);
-      }catch(e){ if (isLatest()) prevWrap.innerHTML = '<div class="text-danger">Error al cargar</div>'; }
+      }catch(e){ if (!signal.aborted) prevWrap.innerHTML = '<div class="text-danger">Error al cargar</div>'; }
     }
 
-    refreshPrevBtn?.addEventListener('click', loadPrevOrders);
+    // Sin pasar el evento como si fuera la señal
+    refreshPrevBtn?.addEventListener('click', ()=>{ loadPrevOrders(); });
     copyPrevBtn?.addEventListener('click', async ()=>{
       const txt = previewTa?.value || buildPreviewText();
       try{ await navigator.clipboard.writeText(txt); }catch(e){}
