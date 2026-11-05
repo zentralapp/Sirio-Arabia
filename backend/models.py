@@ -186,6 +186,20 @@ class Company(db.Model):
     links = db.relationship("ClientCompanyLink", backref="company", cascade="all, delete-orphan")
     orders = db.relationship("Order", backref="company", cascade="all, delete-orphan")
 
+    @property
+    def display_name(self):
+        """Como se muestra la empresa en Pedidos: "Razon social (Marca)".
+
+        nombre = RAZON SOCIAL, marca = marca comercial. Si no hay marca (vacia o
+        el literal "none" que quedo de datos viejos, mismo guard que
+        empresas_form.html) devuelve solo la razon social.
+        """
+        razon_social = (self.nombre or "").strip()
+        marca = (self.marca or "").strip()
+        if not marca or marca.lower() == "none":
+            return razon_social
+        return f"{razon_social} ({marca})"
+
 
 class CompanyDocument(db.Model):
     __tablename__ = "company_document"

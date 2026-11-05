@@ -1007,7 +1007,18 @@
       if (pageInput) pageInput.value = params.get('page') || '1';
       // El default del backend es all=1; si la URL no lo trae, es "Ver todos".
       if (allInput) allInput.value = params.get('all') || '1';
-      if (searchInput) searchInput.value = params.get('q') || '';
+      // NO pisar el buscador con el `q` de la respuesta si el usuario siguio
+      // tipeando mientras el fetch estaba en vuelo (debounce de 350ms): eso le
+      // "borraba" las letras nuevas y encima el siguiente buildUrl() volvia a
+      // mandar el texto viejo. Si difiere y tiene foco o hay un debounce
+      // pendiente, se respeta lo tipeado (ya viene otro request). Se compara
+      // con trim() para que un `q` normalizado por el server (p.ej. en los
+      // links de paginacion) no le coma el espacio final a "juan ".
+      if (searchInput) {
+        var qUrl = params.get('q') || '';
+        var typing = t !== null || document.activeElement === searchInput;
+        if (searchInput.value.trim() !== qUrl && !typing) searchInput.value = qUrl;
+      }
       if (provSelect) provSelect.value = params.get('prov') || '';
       if (alertasSelect) alertasSelect.value = (params.get('alertas') || '').toUpperCase();
     } catch (e) {}
@@ -1073,7 +1084,10 @@
         replaceListFromHtml(html);
         syncControlsFromUrl(url);
         try { window.history.replaceState({}, '', url); } catch (e) {}
-        if (hadFocus && searchInput) {
+        // Solo restaurar foco/cursor si el input lo perdio. Si sigue enfocado
+        // (el usuario siguio tipeando) volver a selStart le saltaba el cursor
+        // hacia atras y las letras siguientes caian en el medio.
+        if (hadFocus && searchInput && document.activeElement !== searchInput) {
           searchInput.focus({ preventScroll: true });
           try {
             var end = searchInput.value.length;
@@ -1097,7 +1111,7 @@
 
   function debounceSubmit(){
     if (t) clearTimeout(t);
-    t = setTimeout(submitFilters, 350);
+    t = setTimeout(function(){ t = null; submitFilters(); }, 350);
   }
 
   if (searchInput) searchInput.addEventListener('input', debounceSubmit);
