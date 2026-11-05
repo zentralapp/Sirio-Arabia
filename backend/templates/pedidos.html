@@ -728,10 +728,14 @@
         fecha_compra: fechaInput?.value || ''
       };
     }
+    // "Cargar" / edición disparan el change por código con el form recién limpiado:
+    // el autosave de ese change subiría el borrador vacío y pisaría el guardado.
+    let autosaveSuspendido = false;
     function saveDraft(){
       // En modo edición no autoguardar: el server sólo borra el borrador al crear
       // (sin order_id), así que quedaría un "Pendiente" huérfano para siempre.
       if (document.querySelector('input[name="order_id"]')) return;
+      if (autosaveSuspendido) return;
       try{
         const d = collectDraft();
         if (!d) return;
@@ -936,7 +940,9 @@
     // dispatchEvent es síncrono: los listeners leen heredarSeleccion antes de su primer await
     function cambiarHeredando(el){
       heredarSeleccion = true;
-      try { el.dispatchEvent(new Event('change')); } finally { heredarSeleccion = false; }
+      autosaveSuspendido = true;
+      try { el.dispatchEvent(new Event('change')); }
+      finally { heredarSeleccion = false; autosaveSuspendido = false; }
     }
     async function loadCompanies(clientId, signal){
       if(!empresaSel) return;
