@@ -35,7 +35,7 @@ import logging
 import re
 import sys
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import date
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -43,15 +43,8 @@ from dotenv import load_dotenv
 from backend.extensions import db
 from backend.jobs.app_job import create_job_app
 from backend.services.mailer import get_mailer
-from backend.services.mailer.base import (
-    CUERPO_REPORTE,
-    Adjunto,
-    EnvioIncierto,
-    MailerError,
-    asunto_reporte,
-    nombre_adjunto,
-)
-from backend.services.reporte_diario.datos import armar_reporte
+from backend.services.mailer.base import EnvioIncierto, MailerError
+from backend.services.reporte_diario import generar
 from backend.services.reporte_diario.envios import (  # noqa: F401 - re-export (rd.*)
     EN_CURSO,
     FAILED,
@@ -73,7 +66,6 @@ from backend.services.reporte_diario.envios import (  # noqa: F401 - re-export (
     registrar_falla,
 )
 from backend.services.reporte_diario.fechas import es_habil, hoy_negocio
-from backend.services.reporte_diario.pdf import render_pdf
 
 log = logging.getLogger("backend.jobs.reporte_diario")
 
@@ -179,9 +171,9 @@ def _log_conteos(reporte) -> None:
 
 
 def _generar_pdf(session, fecha: date) -> bytes:
-    reporte = armar_reporte(fecha, session=session)
-    _log_conteos(reporte)
-    return render_pdf(reporte, datetime.now(timezone.utc))
+    # Conteos ANTES del render (al_armar): mismo orden de logs que siempre.
+    _, pdf = generar.generar_pdf(session, fecha, al_armar=_log_conteos)
+    return pdf
 
 
 def _vista_previa(fecha: date, out: Path) -> int:
@@ -230,11 +222,12 @@ def _enviar(session, fecha: date, mailer, *, force: bool, out: Path | None) -> i
         pdf = _generar_pdf(session, fecha)
         if out is not None:
             _guardar_copia(pdf, out)
+        mail = generar.armar_mail(fecha, pdf)
         message_id = mailer.send(
             to=mailer.destinatario,
-            subject=asunto_reporte(fecha),
-            body=CUERPO_REPORTE,
-            attachments=[Adjunto(nombre_adjunto(fecha), pdf)],
+            subject=mail.subject,
+            body=mail.body,
+            attachments=list(mail.attachments),
         )
     except Exception as exc:  # noqa: BLE001 - toda falla tras el claim queda FAILED
         error = _texto_error(exc)

@@ -18,6 +18,9 @@ from typing import Protocol, Sequence
 from backend.utils.formato import DIAS_ABREV, fmt_fecha_es
 
 CUERPO_REPORTE = "Adjunto el reporte del día."
+# Botón "Generar reporte" de la web (envío de prueba, nunca el automático).
+CUERPO_PRUEBA = "Envío de prueba generado desde la web (no es el envío automático). Adjunto el reporte del día."
+PREFIJO_PRUEBA = "[PRUEBA] "
 
 # Una sola dirección "pelada" (sin nombre, sin listas): S7.
 _DIRECCION = re.compile(r"^[^@\s<>,;\"']+@[^@\s<>,;\"']+$")
@@ -55,9 +58,13 @@ def es_direccion_unica(valor: str) -> bool:
     return bool(_DIRECCION.match(valor or ""))
 
 
-def asunto_reporte(fecha: date) -> str:
-    """"Reporte diario – jue 29/10/2026" (guion medio, día en minúscula)."""
-    return f"Reporte diario – {DIAS_ABREV[fecha.weekday()]} {fmt_fecha_es(fecha)}"
+def asunto_reporte(fecha: date, *, prueba: bool = False) -> str:
+    """"Reporte diario – jue 29/10/2026" (guion medio, día en minúscula).
+
+    Con `prueba=True` (botón de la web) antepone "[PRUEBA] ".
+    """
+    asunto = f"Reporte diario – {DIAS_ABREV[fecha.weekday()]} {fmt_fecha_es(fecha)}"
+    return PREFIJO_PRUEBA + asunto if prueba else asunto
 
 
 def nombre_adjunto(fecha: date) -> str:

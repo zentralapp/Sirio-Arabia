@@ -98,7 +98,7 @@ class Reloj:
         self.esperas.append(segundos)
 
 
-def mailer(sesion, reloj=None):
+def mailer(sesion, reloj=None, **opciones):
     return GmailApiMailer(
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,
@@ -108,6 +108,7 @@ def mailer(sesion, reloj=None):
         destinatario=CASILLA,
         session=sesion,
         dormir=reloj or Reloj(),
+        **opciones,
     )
 
 
@@ -485,3 +486,97 @@ def test_exito_no_loguea_secretos_ni_raw(caplog):
     for secreto in (*SECRETOS, raw[:40]):
         assert secreto not in caplog.text
     assert "id-ok" in caplog.text
+
+
+# ---------------------------------------------------------------- opciones de la web (L "Reintentos y timeouts reducidos")
+
+
+def test_web_un_intento_send_503_falla_sin_dormir():
+    sesion = SesionFalsa(token=[ok_token()], send=[error_gmail(503)])
+    reloj = Reloj()
+
+    with pytest.raises(MailerError) as exc:
+        enviar(mailer(sesion, reloj, max_intentos=1))
+
+    assert not isinstance(exc.value, (TokenRevocadoError, EnvioIncierto))
+    assert "tras 1 intento " in str(exc.value)
+    assert len(sesion.a(SEND_URL)) == 1
+    assert reloj.esperas == []
+
+
+def test_web_un_intento_refresh_503_falla_sin_reintento():
+    sesion = SesionFalsa(token=[RespuestaFalsa(503)])
+    reloj = Reloj()
+
+    with pytest.raises(MailerError) as exc:
+        enviar(mailer(sesion, reloj, max_intentos=1))
+
+    assert not isinstance(exc.value, (TokenRevocadoError, EnvioIncierto))
+    assert len(sesion.a(TOKEN_URL)) == 1
+    assert sesion.a(SEND_URL) == []
+    assert reloj.esperas == []
+
+
+def test_web_un_intento_read_timeout_es_incierto_con_una_sola_llamada():
+    sesion = SesionFalsa(token=[ok_token()], send=[requests.exceptions.ReadTimeout("lento")])
+    reloj = Reloj()
+
+    with pytest.raises(EnvioIncierto) as exc:
+        enviar(mailer(sesion, reloj, max_intentos=1))
+
+    assert "estado incierto" in str(exc.value)
+    assert len(sesion.a(SEND_URL)) == 1
+    assert reloj.esperas == []
+
+
+def test_timeout_inyectado_llega_a_session_post():
+    sesion = SesionFalsa(token=[ok_token()], send=[ok_send()])
+
+    enviar(mailer(sesion, timeout=(5, 20)))
+
+    (refresh,) = sesion.a(TOKEN_URL)
+    (envio,) = sesion.a(SEND_URL)
+    assert refresh["timeout"] == (5, 20)
+    assert envio["timeout"] == (5, 20)
+
+
+def test_esperas_inyectadas_se_usan_en_el_backoff():
+    sesion = SesionFalsa(token=[ok_token()], send=[error_gmail(503)] * 3)
+    reloj = Reloj()
+
+    with pytest.raises(MailerError, match="tras 3 intentos"):
+        enviar(mailer(sesion, reloj, esperas=(0.5,)))
+
+    assert reloj.esperas == [0.5, 0.5]
+
+
+@pytest.mark.parametrize("opciones", [{"max_intentos": 0}, {"esperas": ()}])
+def test_opciones_invalidas_fallan_al_construir(opciones):
+    with pytest.raises(ValueError):
+        mailer(SesionFalsa(), **opciones)
+
+
+def test_desde_config_pasa_las_opciones():
+    from backend.services.mailer import OPCIONES_WEB, ConfigMailer
+    from pathlib import Path
+
+    config = ConfigMailer(
+        modo="gmail_api",
+        mail_from=CASILLA,
+        mail_to=CASILLA,
+        remitente_nombre="Arabia Representaciones",
+        archivo_dir=Path("/tmp/no-se-usa"),
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        refresh_token=REFRESH_TOKEN,
+    )
+    sesion = SesionFalsa(token=[RespuestaFalsa(503)])
+    reloj = Reloj()
+    m = GmailApiMailer.desde_config(config, session=sesion, dormir=reloj, **OPCIONES_WEB)
+
+    with pytest.raises(MailerError):
+        enviar(m)
+
+    (refresh,) = sesion.a(TOKEN_URL)
+    assert refresh["timeout"] == (5, 20)
+    assert reloj.esperas == []

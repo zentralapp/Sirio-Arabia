@@ -16,7 +16,9 @@ Flujo:
    el pedido no se procesó.
 
 Como máximo 3 intentos por paso, esperando 2 s y 4 s entre ellos (el sleep es
-inyectable para los tests). Timeouts (connect=5 s, read=30 s).
+inyectable para los tests). Timeouts (connect=5 s, read=30 s). Intentos,
+esperas y timeouts son inyectables: el cron usa los defaults y la web pasa
+`OPCIONES_WEB` (1 intento, timeouts más cortos) para no colgar un thread.
 
 Nunca se loguea ni se pone en un error: refresh token, client secret, access
 token, el `raw` ni el PDF. Los errores de requests se resumen por tipo y no se
@@ -119,7 +121,13 @@ class GmailApiMailer:
         session=None,
         dormir: Callable[[float], None] = time.sleep,
         timeout=TIMEOUT,
+        max_intentos: int = MAX_INTENTOS,
+        esperas: Sequence[float] = ESPERAS,
     ):
+        if max_intentos < 1:
+            raise ValueError("max_intentos tiene que ser al menos 1")
+        if not esperas:
+            raise ValueError("esperas no puede estar vacío")
         self._client_id = client_id
         self._client_secret = client_secret
         self._refresh_token = refresh_token
@@ -129,9 +137,12 @@ class GmailApiMailer:
         self._session = session if session is not None else requests.Session()
         self._dormir = dormir
         self._timeout = timeout
+        self._max_intentos = max_intentos
+        self._esperas = tuple(esperas)
 
     @classmethod
-    def desde_config(cls, config) -> "GmailApiMailer":
+    def desde_config(cls, config, **opciones) -> "GmailApiMailer":
+        """Mailer desde la config validada. `opciones`: timeout, max_intentos, esperas, ..."""
         return cls(
             client_id=config.client_id,
             client_secret=config.client_secret,
@@ -139,6 +150,7 @@ class GmailApiMailer:
             remitente_nombre=config.remitente_nombre,
             remitente=config.mail_from,
             destinatario=config.mail_to,
+            **opciones,
         )
 
     def __repr__(self) -> str:
@@ -164,9 +176,15 @@ class GmailApiMailer:
 
     # ------------------------------------------------------------ internos
 
+    def _texto_intentos(self) -> str:
+        n = self._max_intentos
+        return f"{n} intento" if n == 1 else f"{n} intentos"
+
     def _esperar(self, intento: int, motivo: str, paso: str) -> None:
-        espera = ESPERAS[min(intento - 1, len(ESPERAS) - 1)]
-        log.warning("Gmail %s: intento %d/%d falló (%s); reintento en %ss", paso, intento, MAX_INTENTOS, motivo, espera)
+        espera = self._esperas[min(intento - 1, len(self._esperas) - 1)]
+        log.warning(
+            "Gmail %s: intento %d/%d falló (%s); reintento en %ss", paso, intento, self._max_intentos, motivo, espera
+        )
         self._dormir(espera)
 
     def _refrescar(self) -> str:
@@ -177,7 +195,7 @@ class GmailApiMailer:
             "grant_type": "refresh_token",
         }
         motivo = ""
-        for intento in range(1, MAX_INTENTOS + 1):
+        for intento in range(1, self._max_intentos + 1):
             try:
                 respuesta = self._session.post(TOKEN_URL, data=datos, timeout=self._timeout)
             except requests.RequestException as exc:
@@ -200,9 +218,11 @@ class GmailApiMailer:
                 motivo = f"HTTP {respuesta.status_code} {error}"
                 if not _transitorio(respuesta.status_code):
                     raise MailerError(f"No se pudo renovar el token de Gmail: {motivo}.")
-            if intento < MAX_INTENTOS:
+            if intento < self._max_intentos:
                 self._esperar(intento, motivo, "token")
-        raise MailerError(f"No se pudo renovar el token de Gmail tras {MAX_INTENTOS} intentos (último: {motivo}).")
+        raise MailerError(
+            f"No se pudo renovar el token de Gmail tras {self._texto_intentos()} (último: {motivo})."
+        )
 
     def _enviar(self, raw: str, access_token: str) -> str:
         refresco_por_401 = False
@@ -241,7 +261,7 @@ class GmailApiMailer:
                     raise EnvioIncierto(f"{MENSAJE_INCIERTO} ({motivo})")
                 if not _transitorio(status):
                     raise MailerError(f"Gmail rechazó el envío: {motivo}.")
-            if intento >= MAX_INTENTOS:
-                raise MailerError(f"Gmail no aceptó el envío tras {MAX_INTENTOS} intentos (último: {motivo}).")
+            if intento >= self._max_intentos:
+                raise MailerError(f"Gmail no aceptó el envío tras {self._texto_intentos()} (último: {motivo}).")
             self._esperar(intento, motivo, "send")
             intento += 1

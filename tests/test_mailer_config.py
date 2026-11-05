@@ -8,9 +8,10 @@ from email.parser import BytesParser
 
 import pytest
 
-from backend.services.mailer import ENV_MAILER, get_mailer, leer_config
+from backend.services.mailer import ENV_MAILER, OPCIONES_WEB, get_mailer, leer_config
 from backend.services.mailer.archivo import ArchivoMailer
 from backend.services.mailer.base import (
+    CUERPO_PRUEBA,
     CUERPO_REPORTE,
     Adjunto,
     MailerError,
@@ -58,6 +59,20 @@ def test_nombre_adjunto():
 
 def test_cuerpo():
     assert CUERPO_REPORTE == "Adjunto el reporte del día."
+
+
+def test_asunto_de_prueba_lleva_prefijo():
+    lunes = date(2026, 11, 9)
+    assert asunto_reporte(lunes) == "Reporte diario – lun 09/11/2026"
+    assert asunto_reporte(lunes, prueba=False) == "Reporte diario – lun 09/11/2026"
+    assert asunto_reporte(lunes, prueba=True) == "[PRUEBA] Reporte diario – lun 09/11/2026"
+    assert asunto_reporte(date(2026, 11, 7), prueba=True) == "[PRUEBA] Reporte diario – sáb 07/11/2026"
+
+
+def test_cuerpo_de_prueba():
+    assert CUERPO_PRUEBA == (
+        "Envío de prueba generado desde la web (no es el envío automático). Adjunto el reporte del día."
+    )
 
 
 # ---------------------------------------------------------------- configuración
@@ -350,3 +365,64 @@ def test_archivo_no_permite_salir_del_directorio(tmp_path):
 
     assert (tmp_path / "dir" / "afuera.eml").exists()
     assert not (tmp_path / "afuera.eml").exists()
+
+
+# ---------------------------------------------------------------- opciones de la web (L)
+
+
+def test_opciones_web():
+    assert OPCIONES_WEB == {"max_intentos": 1, "timeout": (5, 20)}
+
+
+def test_opciones_gmail_llegan_al_gmail_api_mailer():
+    from backend.services.mailer.gmail_api import GmailApiMailer
+
+    mailer = get_mailer(dict(ENV_GMAIL_COMPLETO), opciones_gmail=OPCIONES_WEB, servicio="web")
+
+    assert isinstance(mailer, GmailApiMailer)
+    assert mailer._max_intentos == 1
+    assert mailer._timeout == (5, 20)
+
+
+def test_sin_opciones_gmail_quedan_los_defaults_del_cron():
+    from backend.services.mailer.gmail_api import ESPERAS, MAX_INTENTOS, TIMEOUT
+
+    mailer = get_mailer(dict(ENV_GMAIL_COMPLETO))
+
+    assert mailer._max_intentos == MAX_INTENTOS == 3
+    assert mailer._timeout == TIMEOUT == (5, 30)
+    assert mailer._esperas == ESPERAS
+
+
+def test_opciones_gmail_se_ignoran_en_modo_archivo(tmp_path):
+    mailer = get_mailer({"REPORTE_ARCHIVO_DIR": str(tmp_path)}, opciones_gmail=OPCIONES_WEB, servicio="web")
+
+    assert isinstance(mailer, ArchivoMailer)
+
+
+@pytest.mark.parametrize(
+    "env",
+    [{"RAILWAY_ENVIRONMENT_NAME": "production"}, {"RAILWAY_ENVIRONMENT_NAME": "production", ENV_MAILER: "archivo"}],
+    ids=["sin-reporte-mailer", "archivo-explicito"],
+)
+def test_w1_nombra_el_servicio(env):
+    with pytest.raises(MailerError) as cron:
+        get_mailer(env)
+    with pytest.raises(MailerError) as web:
+        get_mailer(env, opciones_gmail=OPCIONES_WEB, servicio="web")
+
+    assert str(cron.value).endswith("en el servicio cron.")
+    assert str(web.value).endswith("en el servicio web.")
+    assert str(web.value) == str(cron.value).replace("servicio cron.", "servicio web.")
+
+
+def test_web_con_gmail_password_y_sin_refresh_token_falla():
+    env = dict(ENV_GMAIL_COMPLETO)
+    del env["REPORTE_GMAIL_REFRESH_TOKEN"]
+    env.update({"GMAIL_USER": CASILLA, "GMAIL_FROM": CASILLA, "GMAIL_PASSWORD": "clave-vieja"})
+
+    with pytest.raises(MailerError) as exc:
+        get_mailer(env, opciones_gmail=OPCIONES_WEB, servicio="web")
+
+    assert "REPORTE_GMAIL_REFRESH_TOKEN" in str(exc.value)
+    assert "clave-vieja" not in str(exc.value)

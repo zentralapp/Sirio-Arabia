@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 import backend.jobs.reporte_diario as rd
+import backend.services.reporte_diario.generar as generar
 from backend.services.mailer.base import EnvioIncierto, MailerError, TokenRevocadoError
 from backend.services.reporte_diario.fechas import fin_de_hoy, fin_de_semana, modo_reporte
 from backend.services.reporte_diario.modelo import Reporte
@@ -104,8 +105,8 @@ def job(monkeypatch):
     monkeypatch.setattr(rd, "reclamar_envio", reclamar_envio)
     monkeypatch.setattr(rd, "registrar_envio", lambda s, id_, message_id: r.enviados.append((id_, message_id)))
     monkeypatch.setattr(rd, "registrar_falla", lambda s, id_, error: r.fallas.append((id_, error)))
-    monkeypatch.setattr(rd, "armar_reporte", armar_reporte)
-    monkeypatch.setattr(rd, "render_pdf", render_pdf)
+    monkeypatch.setattr(generar, "armar_reporte", armar_reporte)
+    monkeypatch.setattr(generar, "render_pdf", render_pdf)
     monkeypatch.setattr(rd, "hoy_negocio", lambda: JUEVES)
     return r
 
@@ -169,8 +170,8 @@ def test_log_del_lunes_cuenta_la_regularidad_sin_secretos(job, monkeypatch, capl
     _hoy(monkeypatch, lunes)
     monkeypatch.setenv("REPORTE_GMAIL_REFRESH_TOKEN", SECRETO)
     fila = FilaRegularidad("Cliente", "Empresa", date(2026, 10, 13), 27, 14, 4, DeudaPar())
-    original = rd.armar_reporte
-    monkeypatch.setattr(rd, "armar_reporte", lambda hoy, session=None: replace(original(hoy), regularidad=(fila, fila)))
+    original = generar.armar_reporte
+    monkeypatch.setattr(generar, "armar_reporte", lambda hoy, session=None: replace(original(hoy), regularidad=(fila, fila)))
 
     assert rd.main([]) == 0
 
@@ -203,7 +204,7 @@ def test_dry_run_del_viernes_sale_del_dia_sin_secciones_de_semana(job, monkeypat
         return FilaCobranza(order_id, "Cliente", "Empresa", venc, A_COBRAR, saldo, client_id=1, company_id=1)
 
     filas = [cobranza(1, date(2026, 11, 7)), cobranza(2, date(2026, 11, 8)), cobranza(3, date(2026, 11, 11))]
-    monkeypatch.setattr(rd, "armar_reporte", lambda hoy, session=None: componer_reporte(hoy, filas, []))
+    monkeypatch.setattr(generar, "armar_reporte", lambda hoy, session=None: componer_reporte(hoy, filas, []))
     caplog.set_level(logging.INFO)
 
     assert rd.main(["--dry-run", "--out", str(tmp_path / "vie.pdf"), "--fecha", "2026-11-06"]) == 0
@@ -313,7 +314,7 @@ def test_dry_run_falla_de_lectura_exit1(job, monkeypatch, tmp_path):
     def explota(hoy, session=None):
         raise RuntimeError("se cayó la base")
 
-    monkeypatch.setattr(rd, "armar_reporte", explota)
+    monkeypatch.setattr(generar, "armar_reporte", explota)
     out = tmp_path / "r.pdf"
     assert rd.main(["--dry-run", "--out", str(out)]) == 1
     assert not out.exists()
@@ -550,11 +551,22 @@ def test_falla_render_registra_failed_exit1_sin_envio(job):
     assert job.enviados == []
 
 
+def test_conteos_se_loguean_antes_del_render_aunque_el_render_falle(job, caplog):
+    # El job genera vía generar.generar_pdf: el orden de logs no cambia.
+    caplog.set_level(logging.INFO)
+    job.error_render = ValueError("fuente rota")
+
+    assert rd.main([]) == 1
+
+    assert "conteos: modo=del_dia" in caplog.text
+    assert caplog.text.index("conteos:") < caplog.text.index("fuente rota")
+
+
 def test_falla_lectura_registra_failed_exit1(job, monkeypatch):
     def explota(hoy, session=None):
         raise RuntimeError("timeout de la base")
 
-    monkeypatch.setattr(rd, "armar_reporte", explota)
+    monkeypatch.setattr(generar, "armar_reporte", explota)
     assert rd.main([]) == 1
     assert job.mailer.enviados == []
     assert len(job.fallas) == 1

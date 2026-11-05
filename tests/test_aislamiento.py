@@ -17,6 +17,7 @@ MODULOS_DEL_JOB = (
     "backend.jobs.app_job",
     "backend.services.reporte_diario.pdf",
     "backend.services.reporte_diario.envios",
+    "backend.services.reporte_diario.generar",
     "backend.services.mailer",
     "backend.services.mailer.archivo",
     "backend.services.mailer.gmail_api",
